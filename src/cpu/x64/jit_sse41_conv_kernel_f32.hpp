@@ -17,6 +17,7 @@
 #ifndef CPU_X64_JIT_SSE41_CONV_KERNEL_F32_HPP
 #define CPU_X64_JIT_SSE41_CONV_KERNEL_F32_HPP
 
+#include "common/memory_tracking.hpp"
 #include "common/c_types_map.hpp"
 #include "common/memory.hpp"
 
@@ -40,6 +41,9 @@ struct jit_sse41_conv_fwd_kernel_f32_t : public jit_generator_t {
             int nthreads);
 
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_sse41_conv_fwd_kernel_f32_t)
+    static void init_scratchpad(memory_tracking::registrar_t &scratchpad,
+                                const jit_conv_conf_t &jcp);
+
     jit_conv_conf_t jcp;
     const primitive_attr_t &attr_;
 
