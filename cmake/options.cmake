@@ -305,7 +305,7 @@ onednn_option(CPU_RUNTIME "OMP"
     "Specifies the threading runtime for CPU engines;
     supports OMP (default), TBB, SYCL, SEQ, or THREADPOOL.")
 
-if(NOT "${DNNL_CPU_RUNTIME}" MATCHES "^(NONE|OMP|TBB|SEQ|THREADPOOL|DPCPP|SYCL)$")
+if(NOT "${DNNL_CPU_RUNTIME}" MATCHES "^(NONE|OMP|TBB|TBB_AUTO|SEQ|THREADPOOL|DPCPP|SYCL)$")
     message(FATAL_ERROR "Unsupported CPU runtime: ${DNNL_CPU_RUNTIME}")
 endif()
 
