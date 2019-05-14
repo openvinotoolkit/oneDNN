@@ -1,6 +1,5 @@
 #===============================================================================
 # Copyright 2016 Intel Corporation
-# Copyright 2026 Advanced Micro Devices, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -117,10 +116,6 @@ if(DNNL_EXPERIMENTAL_SYCL_KERNEL_COMPILER)
     message(STATUS "Experimental SYCL OpenCL kernel compiler is enabled")
 endif()
 
-if(DNNL_EXPERIMENTAL_ENABLE_SYCL_PROFILING_TAG)
-    message(STATUS "Experimental SYCL profiling tag extension is enabled for verbose profiling")
-endif()
-
 if(DNNL_ENABLE_ITT_TASKS AND NOT DNNL_CPU_RUNTIME STREQUAL "NONE")
     # Only supported for certain architectures (see src/common/CMakeLists.txt)
     if(DNNL_TARGET_ARCH STREQUAL "AARCH64" OR DNNL_TARGET_ARCH STREQUAL "X64")
@@ -168,9 +163,11 @@ if(DNNL_WITH_SYCL)
     # Enable linking SYCL kernels.
     if(DNNL_SYCL_CUDA OR (DNNL_SYCL_GENERIC AND NVIDIA_TARGET_SUPPORTED))
         append(CMAKE_SHARED_LINKER_FLAGS "-fsycl-targets=nvptx64-nvidia-cuda")
+        append(CMAKE_STATIC_LINKER_FLAGS "-fsycl-targets=nvptx64-nvidia-cuda")
     endif()
     if(DNNL_AMD_ENABLE_SYCL_KERNELS)
         append(CMAKE_SHARED_LINKER_FLAGS "-fsycl-targets=amdgcn-amd-amdhsa -Xsycl-target-backend --offload-arch=${DNNL_AMD_SYCL_KERNELS_TARGET_ARCH}")
+        append(CMAKE_STATIC_LINKER_FLAGS "-fsycl-targets=amdgcn-amd-amdhsa -Xsycl-target-backend --offload-arch=${DNNL_AMD_SYCL_KERNELS_TARGET_ARCH}")
     endif()
 endif()
 
@@ -218,14 +215,6 @@ add_library(${LIB_PACKAGE_NAME} ${DNNL_LIBRARY_TYPE}
     ${VERSION_RESOURCE_FILE} ${HEADERS_ROOT} ${HEADERS_SUBDIR} ${LIB_DEPS})
 
 target_link_libraries(${LIB_PACKAGE_NAME} PRIVATE ${STATIC_LIB_DEPS} ${SHARED_LIB_DEPS})
-
-if(DNNL_X64_USE_ZEN)
-    set(_zendnn_link_visibility PRIVATE)
-    if(DNNL_LIBRARY_TYPE STREQUAL "STATIC")
-        set(_zendnn_link_visibility PUBLIC)
-    endif()
-    target_link_zendnnl(${LIB_PACKAGE_NAME} ${_zendnn_link_visibility})
-endif()
 
 set_property(TARGET ${LIB_PACKAGE_NAME} PROPERTY OUTPUT_NAME ${DNNL_LIBRARY_NAME})
 set_property(TARGET ${LIB_PACKAGE_NAME} PROPERTY VERSION "${DNNL_VERSION_MAJOR}.${DNNL_VERSION_MINOR}")
@@ -308,6 +297,19 @@ if(UNIX AND DNNL_INSTALL_MODE STREQUAL "BUNDLE")
 endif()
 
 # Install custom find modules for transitive dependencies
+if("${DNNL_CPU_THREADING_RUNTIME}" MATCHES "^(TBB|TBB_AUTO)$")
+    if(WIN32)
+        install(FILES "../cmake/win/TBBConfig.cmake" RENAME "FindTBB.cmake"
+            DESTINATION ${LIB_CONFIG_INSTALL_DIR})
+    elseif(APPLE)
+        install(FILES "../cmake/mac/TBBConfig.cmake" RENAME "FindTBB.cmake"
+            DESTINATION ${LIB_CONFIG_INSTALL_DIR})
+    elseif(UNIX)
+        install(FILES "../cmake/lnx/TBBConfig.cmake" RENAME "FindTBB.cmake"
+            DESTINATION ${LIB_CONFIG_INSTALL_DIR})
+    endif()
+endif()
+
 if(DNNL_BLAS_VENDOR STREQUAL "ACCELERATE")
     install(FILES
     "../cmake/FindBLAS.cmake"

@@ -69,7 +69,7 @@ inline void dnnl_thr_barrier() {
 #pragma omp barrier
 }
 
-#elif DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB
+#elif (DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB || DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB_AUTO)
 
 #include "common/dnnl_thread_tbb_proxy.hpp"
 

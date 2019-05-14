@@ -50,7 +50,7 @@ macro(add_tbb_threading)
     endif()
 endmacro()
 
-if(NOT DNNL_CPU_THREADING_RUNTIME STREQUAL "TBB")
+if(NOT "${DNNL_CPU_THREADING_RUNTIME}" MATCHES "^(TBB|TBB_AUTO)$")
     return()
 endif()
 
