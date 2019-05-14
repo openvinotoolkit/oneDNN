@@ -162,7 +162,7 @@ endif()
 
 # Do not build C examples for TBB threading runtime because
 # TBB doesn't provide C API to do explicit finalization.
-if (DNNL_CPU_RUNTIME STREQUAL "TBB" OR DNNL_CPU_SYCL)
+if (DNNL_CPU_RUNTIME MATCHES "^(TBB|TBB_AUTO)$" OR DNNL_CPU_SYCL)
     foreach(f ${sources})
         get_filename_component(fname ${f} NAME)
         if(${fname} MATCHES ".*\\.c$")

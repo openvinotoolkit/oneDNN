@@ -2267,7 +2267,8 @@ status_t jit_uni_batch_normalization_fwd_t<isa>::pd_t::init(
     // TBB utilizes jit_uni_tbb_batch_normalization implementation.
     VDISPATCH_BNORM(dnnl_thr_syncable(),
             "implementation is not supported by %s cpu runtime",
-            (DNNL_CPU_RUNTIME == DNNL_RUNTIME_TBB ? "tbb" : "threadpool"));
+            (utils::one_of(DNNL_CPU_RUNTIME, DNNL_RUNTIME_TBB,
+                     DNNL_RUNTIME_TBB_AUTO) ? "tbb" : "threadpool"));
     VDISPATCH_BNORM(one_of(src_md()->data_type, f32, bf16, f16),
             VERBOSE_UNSUPPORTED_DT);
     VDISPATCH_BNORM(src_md()->data_type == dst_md()->data_type,
@@ -2408,7 +2409,8 @@ status_t jit_uni_batch_normalization_bwd_t<isa>::pd_t::init(
     // TBB utilizes jit_uni_tbb_batch_normalization implementation.
     VDISPATCH_BNORM(dnnl_thr_syncable(),
             "implementation is not supported by %s cpu runtime",
-            (DNNL_CPU_RUNTIME == DNNL_RUNTIME_TBB ? "tbb" : "threadpool"));
+            (utils::one_of(DNNL_CPU_RUNTIME, DNNL_RUNTIME_TBB,
+                     DNNL_RUNTIME_TBB_AUTO) ? "tbb" : "threadpool"));
     VDISPATCH_BNORM(one_of(src_md()->data_type, f32, bf16, f16),
             VERBOSE_UNSUPPORTED_DT);
     VDISPATCH_BNORM(src_md()->data_type == diff_src_md()->data_type,

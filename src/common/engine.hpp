@@ -195,6 +195,8 @@ inline runtime_kind_t get_default_runtime(engine_kind_t kind) {
     return runtime_kind::omp;
 #elif DNNL_CPU_RUNTIME == DNNL_RUNTIME_TBB
     return runtime_kind::tbb;
+#elif DNNL_CPU_RUNTIME == DNNL_RUNTIME_TBB_AUTO
+    return runtime_kind::tbb_auto;
 #elif DNNL_CPU_RUNTIME == DNNL_RUNTIME_THREADPOOL
     return runtime_kind::threadpool;
 #elif DNNL_CPU_RUNTIME == DNNL_RUNTIME_SYCL
@@ -211,6 +213,8 @@ inline runtime_kind_t get_cpu_native_runtime() {
     return runtime_kind::omp;
 #elif DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB
     return runtime_kind::tbb;
+#elif DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB_AUTO
+    return runtime_kind::tbb_auto;
 #elif DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_THREADPOOL
     return runtime_kind::threadpool;
 #else

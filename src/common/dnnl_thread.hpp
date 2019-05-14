@@ -69,7 +69,7 @@ inline void dnnl_thr_barrier() {
 #pragma omp barrier
 }
 
-#elif DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB
+#elif (DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB || DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB_AUTO)
 
 #include "common/dnnl_thread_tbb_proxy.hpp"
 
@@ -158,7 +158,8 @@ inline int dnnl_get_current_num_threads() {
     if (dnnl_in_parallel()) return 1;
 #if DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_OMP
     return omp_get_max_threads();
-#elif DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB
+#elif DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB \
+    || DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB_AUTO
     return tbb::this_task_arena::max_concurrency();
 #elif DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_THREADPOOL
     using namespace dnnl::impl::threadpool_utils;
@@ -301,7 +302,8 @@ static inline void parallel(int nthr, const std::function<void(int, int)> &f) {
         if (ithr_ && itt_enable)
             itt::primitive_task_end(task_primitive_log_kind);
     }
-#elif DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB
+#elif DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB \
+    || DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB_AUTO
     tbb::parallel_for(0, nthr, [&](int ithr) {
         bool mark_task = itt::primitive_task_get_current_kind()
                 == primitive_kind::undefined;
@@ -314,7 +316,11 @@ static inline void parallel(int nthr, const std::function<void(int, int)> &f) {
         f(ithr, nthr);
         if (mark_task && itt_enable)
             itt::primitive_task_end(task_primitive_log_kind);
+#if DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB_AUTO
+    }, tbb::auto_partitioner());
+#else
     }, tbb::static_partitioner());
+#endif
 #elif DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_THREADPOOL
     using namespace dnnl::impl::threadpool_utils;
     dnnl::threadpool_interop::threadpool_iface *tp = get_active_threadpool();

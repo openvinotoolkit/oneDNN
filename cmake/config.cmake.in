@@ -23,7 +23,7 @@ set(DNNL_BLAS_VENDOR "@DNNL_BLAS_VENDOR@")
 
 set(DNNL_GPU_VENDOR "@DNNL_GPU_VENDOR@")
 
-if(DNNL_CPU_THREADING_RUNTIME STREQUAL "TBB")
+if("${DNNL_CPU_THREADING_RUNTIME}" MATCHES "^(TBB|TBB_AUTO)$")
     find_package(TBB 2017.0 REQUIRED COMPONENTS tbb)
     if(WIN32)
         # On Windows we must link to debug version of TBB library to ensure ABI compatibility

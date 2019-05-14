@@ -63,7 +63,8 @@
 #define PRAGMA_OMP_PARALLEL_FOR_COLLAPSE(n)
 #endif
 
-#if DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB
+#if DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB \
+    || DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB_AUTO
 // TBB_INTERFACE_VERSION lives in tbb/version.h since oneTBB 2021 and in
 // tbb/tbb_stddef.h in older TBB releases.
 #if __has_include("tbb/version.h")

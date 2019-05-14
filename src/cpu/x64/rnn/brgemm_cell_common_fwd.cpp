@@ -128,7 +128,8 @@ int brgemm_dst_layer_iter_t<src_t, weights_t, scratch_t,
         gemm_acc_t>::calculate_nthr() const {
     const auto max_nthr = nstl::min(dnnl_get_current_num_threads(), rnn_.nthr);
     // TODO: add support for other cases
-#if DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB
+#if DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB \
+    || DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB_AUTO
     constexpr dim_t k2_i8_avx2 = 192;
     constexpr dim_t k2_f32_avx2 = 112;
 #elif DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_OMP
@@ -136,6 +137,7 @@ int brgemm_dst_layer_iter_t<src_t, weights_t, scratch_t,
     constexpr dim_t k2_f32_avx2 = 96;
 #endif
 #if (DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB) \
+    || (DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB_AUTO) \
         || (DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_OMP)
     if (rnn_.brgemm_isa == x64::avx2 && !need_gemm_layer_ && rnn_.M == 1
             && utils::one_of(rnn_.cell_kind, alg_kind::vanilla_lstm,

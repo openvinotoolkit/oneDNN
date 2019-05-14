@@ -87,7 +87,7 @@ if(NOT DNNL_CPU_RUNTIME STREQUAL "NONE" AND
    # TBB threading runtime requires explicit finalization for tests used
    # under CTest. Since TBB doesn't provide C API to perform finalization
    # we have to skip C tests.
-   NOT DNNL_CPU_RUNTIME STREQUAL "TBB" AND
+    NOT DNNL_CPU_RUNTIME MATCHES "^(TBB|TBB_AUTO)$" AND
    NOT DNNL_CPU_SYCL)
     find_libm(LIBM)
     register_exe(api-c api.c "test" "${LIBM}")
