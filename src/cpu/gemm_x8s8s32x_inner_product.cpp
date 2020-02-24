@@ -60,7 +60,7 @@ void gemm_x8s8s32x_inner_product_fwd_t<src_type, dst_type
                  wei_tr ? &K : &M, &off_a, src, &K, &off_b, &zerof, acc, &M, &off_c);
 
     if (!pd()->attr()->has_default_values() || !pd()->dst_is_acc_
-            || pd()->with_bias()) {
+            || pd()->with_bias() || (!pd()->with_bias() && dst_type == memory::f32)) {
         const bool force_sequential = MB * OC < 2000;
         parallel(force_sequential ? 1 : 0, (size_t)OC * MB, [&](int ithr, int nthr) {
             size_t start = 0, end = 0;

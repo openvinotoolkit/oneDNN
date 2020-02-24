@@ -102,8 +102,13 @@ struct gemm_x8s8s32x_inner_product_fwd_t: public cpu_primitive_t {
                 CHECK(this->src_pd_.set_format(
                         utils::pick(ndims() - 2, nc, nwc, nhwc, ndhwc)));
             }
-            if (this->dst_pd_.desc()->format == any)
-                CHECK(this->dst_pd_.set_format(nc));
+            if (this->dst_pd_.desc()->format == any) {
+                if (dst_pd_.desc()->ndims == 2) {
+                    CHECK(this->dst_pd_.set_format(nc));
+                } else {
+                    CHECK(this->dst_pd_.set_format(tnc));
+                }
+            }
             if (this->weights_pd_.desc()->format == any) {
                 if (MB() > 1) {
                     CHECK(this->weights_pd_.set_format(

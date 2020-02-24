@@ -71,12 +71,12 @@ inline bool dense_gemm_consitency_check(const memory_desc_wrapper &src_d,
     using namespace memory_format;
     using namespace utils;
     return true
-        && src_d.format() == src_compatible_fmt(wei_d.ndims(), wei_d.format())
-        && dst_d.format() == nc
+        && (src_d.format() == src_compatible_fmt(wei_d.ndims(), wei_d.format()) || (src_d.format() == tnc && wei_d.format() == oi))
+        && ((dst_d.format() == nc) || (src_d.format() == tnc && dst_d.format() == tnc))
         && src_d.only_padded_dim(1)
         && wei_d.only_padded_dim(1)
-        && src_d.blocking_desc().padding_dims[1]
-            == wei_d.blocking_desc().padding_dims[1]
+        && (src_d.blocking_desc().padding_dims[1] == wei_d.blocking_desc().padding_dims[1] ||
+            src_d.blocking_desc().padding_dims[2] == wei_d.blocking_desc().padding_dims[1])
         && src_d.is_dense(true)
         && dst_d.is_dense()
         && wei_d.is_dense(true);
@@ -112,8 +112,9 @@ struct cpu_inner_product_fwd_pd_t: public inner_product_fwd_pd_t {
         assert(src_md.is_blocking_desc());
         if (!src_md.is_blocking_desc()) return -1;
 
-        return utils::array_product(src_md.blocking_desc().padding_dims + 1,
-                ndims() - 1);
+        int idx = src_md.format() == memory::tnc ? 2 : 1;
+        return utils::array_product(src_md.blocking_desc().padding_dims + idx,
+                ndims() - idx);
     }
 
 protected:
@@ -134,8 +135,13 @@ protected:
         else if (weights_pd_.desc()->format == any)
             CHECK(weights_pd_.set_format(
                     wei_compatible_fmt(ndims(), src_pd_.desc()->format)));
-        if (dst_pd_.desc()->format == any)
-            CHECK(dst_pd_.set_format(nc));
+        if (dst_pd_.desc()->format == any) {
+            if (dst_pd_.desc()->ndims == 2) {
+                CHECK(dst_pd_.set_format(nc));
+            } else {
+                CHECK(dst_pd_.set_format(tnc));
+            }
+        }
         if (bias_pd_.desc()->format == any)
             CHECK(bias_pd_.set_format(x));
         return status::success;

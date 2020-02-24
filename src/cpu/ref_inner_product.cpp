@@ -38,8 +38,8 @@ void ref_inner_product_fwd_t<src_type, wei_type, dst_type, acc_type>
     auto bias = reinterpret_cast<const char *>(this->input_memory(2));
     auto dst = reinterpret_cast<dst_data_t *>(this->memory());
 
-    const memory_desc_wrapper src_d(pd()->src_pd());
-    const memory_desc_wrapper dst_d(pd()->dst_pd());
+    memory_desc_wrapper src_d(pd()->src_pd());
+    memory_desc_wrapper dst_d(pd()->dst_pd());
     const memory_desc_wrapper weights_d(pd()->weights_pd(0));
     const memory_desc_wrapper bias_d(pd()->weights_pd(1));
 
@@ -47,7 +47,19 @@ void ref_inner_product_fwd_t<src_type, wei_type, dst_type, acc_type>
     const int OC = pd()->OC();
     const int IC = pd()->IC();
 
-    const bool src_has_spatial = utils::one_of(src_d.ndims(), 3, 4, 5);
+    auto src_md = zero_md();
+    if (src_d.format() == memory::tnc) {
+        src_md = mkldnn::memory::desc({MB, IC}, static_cast<mkldnn::memory::data_type>(src_type), memory::nc);
+        src_d = memory_desc_wrapper(src_md.data);
+    }
+
+    auto dst_md = zero_md();
+    if (dst_d.format() == memory::tnc) {
+        dst_md = mkldnn::memory::desc({MB, OC}, static_cast<mkldnn::memory::data_type>(dst_type), memory::nc);
+        dst_d = memory_desc_wrapper(dst_md.data);
+    }
+
+    const bool src_has_spatial = src_d.format() != memory::tnc && utils::one_of(src_d.ndims(), 3, 4, 5);
     const int ndims = src_d.ndims() - 2;
 
     const auto &post_ops = pd()->attr()->post_ops_;

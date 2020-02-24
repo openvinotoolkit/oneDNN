@@ -68,7 +68,20 @@ status_t ip_desc_init(inner_product_desc_t *ip_desc, prop_kind_t prop_kind,
         && array_cmp(&src_desc->dims[1], &weights_desc->dims[1],
                 src_desc->ndims - 1)
         && dst_desc->dims[1] == weights_desc->dims[0];
-    if (!consistency) return invalid_arguments;
+
+    bool consistency_3d = true
+        && memory_desc_wrapper(weights_desc).nelems()
+        && src_desc->ndims == 3
+        && dst_desc->ndims == 3
+        && weights_desc->ndims == 2
+        && (with_bias ? bias_desc->ndims == 1 : true)
+        && (with_bias ? bias_desc->dims[0] == dst_desc->dims[2] : true)
+        && src_desc->dims[0] == dst_desc->dims[0]
+        && src_desc->dims[1] == dst_desc->dims[1]
+        && src_desc->dims[2] == weights_desc->dims[1]
+        && dst_desc->dims[2] == weights_desc->dims[0];
+
+    if (!consistency && !consistency_3d) return invalid_arguments;
 
     *ip_desc = id;
     return success;

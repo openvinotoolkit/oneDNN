@@ -69,11 +69,20 @@ struct inner_product_fwd_pd_t: public primitive_desc_t {
 
     /* common inner_product aux functions */
 
-    inline int MB() const { return input_pd()->desc()->dims[0]; }
-    inline int IC() const { return input_pd()->desc()->dims[1]; }
-    inline int IC_total() const
-    { return utils::array_product(&input_pd()->desc()->dims[1], ndims() - 1); }
-    inline int OC() const { return output_pd()->desc()->dims[1]; }
+    inline int MB() const { return input_pd()->desc()->format == mkldnn_tnc ?
+    input_pd()->desc()->dims[0] * input_pd()->desc()->dims[1] : input_pd()->desc()->dims[0]; }
+    inline int IC() const {
+        int idx = input_pd()->desc()->format == mkldnn_tnc ? 2 : 1;
+        return input_pd()->desc()->dims[idx];
+    }
+    inline int IC_total() const {
+        int idx = input_pd()->desc()->format == mkldnn_tnc ? 2 : 1;
+        return utils::array_product(&input_pd()->desc()->dims[idx], ndims() - idx);
+    }
+    inline int OC() const {
+        int idx = input_pd()->desc()->format == mkldnn_tnc ? 2 : 1;
+        return output_pd()->desc()->dims[idx];
+    }
 
     inline int ID() const
     { return ndims() == 5 ? input_pd()->desc()->dims[2] : 1; }

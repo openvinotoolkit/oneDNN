@@ -234,7 +234,8 @@ struct jit_uni_scale_shift_kernel_f32 : public jit_uni_depthwise_kernel_f32,
         assert(desc.alg_kind == alg_kind::depthwise_scale_shift);
         assert(isa == sse42 || isa == avx2 || isa == avx512_common);
 
-        bool isFlat = (desc.src_desc.format == nchw && desc.dst_desc.format == nchw) ||
+        bool isFlat = (desc.src_desc.format == tnc && desc.dst_desc.format == tnc) ||
+                      (desc.src_desc.format == nchw && desc.dst_desc.format == nchw) ||
                       (desc.src_desc.format == ncdhw && desc.dst_desc.format == ncdhw);
 
         Reg64 param = abi_param1;
@@ -375,7 +376,8 @@ struct jit_uni_prelu_kernel_f32 : public jit_uni_depthwise_kernel_f32,
         assert(desc.alg_kind == alg_kind::depthwise_prelu);
         assert(isa == sse42 || isa == avx2 || isa == avx512_common);
 
-        bool isFlat = (desc.src_desc.format == nchw && desc.dst_desc.format == nchw) ||
+        bool isFlat = (desc.src_desc.format == tnc && desc.dst_desc.format == tnc) ||
+                      (desc.src_desc.format == nchw && desc.dst_desc.format == nchw) ||
                       (desc.src_desc.format == ncdhw && desc.dst_desc.format == ncdhw);
 
         Reg64 param = abi_param1;
@@ -533,6 +535,9 @@ status_t jit_uni_depthwise_fwd_t<isa>::pd_t::init() {
     } else if (desc()->src_desc.ndims == 4) {
         desired_blk_fmt = isa == avx512_common ? nChw16c : nChw8c;
         desired_pln_fmt = nchw;
+    } else if (desc()->src_desc.ndims == 3) {
+        desired_blk_fmt = tnc;
+        desired_pln_fmt = tnc;
     } else {
         desired_blk_fmt = nc;
         desired_pln_fmt = nc;
@@ -610,7 +615,7 @@ void jit_uni_depthwise_fwd_t<isa>::execute_forward() const {
     const int W = pd()->W();
 
     const int simd_w = isa == avx512_common ? 16 : 8;
-    const int ch_block_size = (data_d.format() == nchw) || (data_d.format() == ncdhw) ? 1 : simd_w;
+    const int ch_block_size = (data_d.format() == tnc || data_d.format() == nchw || data_d.format() == ncdhw) ? 1 : simd_w;
     const int CB = div_up(C, ch_block_size);
 
     if (pd()->want_padded_weights()) {
@@ -625,25 +630,40 @@ void jit_uni_depthwise_fwd_t<isa>::execute_forward() const {
         }
     }
 
-    parallel_nd(MB, CB, D, H,
-        [&](int mb, int cb, int d, int h) {
-        auto arg = jit_depthwise_args();
+    if (data_d.format() == tnc) {
+        parallel_nd(MB, CB, [&](int mb, int cb) {
+            auto arg = jit_depthwise_args();
 
-        size_t data_off = data_d.ndims() == 4
-                          ? data_d.blk_off(mb, cb, h)
-                          : data_d.ndims() == 5
-                            ? data_d.blk_off(mb, cb, d, h)
-                            : data_d.blk_off(mb, cb * ch_block_size);
+            size_t data_off = data_d.blk_off(mb, cb, 0);
 
-        arg.from    = &src[data_off];
-        arg.to      = &dst[data_off];
-        arg.weights = &weights[weights_d.blk_off(cb * ch_block_size)];
-        if (bias)
-            arg.bias = &bias[bias_d.blk_off(cb * ch_block_size)];
-        arg.work_amount = data_d.format() == nc ? nstl::min(ch_block_size, C - cb * ch_block_size) : (size_t)W;
+            arg.from    = &src[data_off];
+            arg.to      = &dst[data_off];
+            arg.weights = &weights[weights_d.blk_off(cb * ch_block_size)];
+            if (bias)
+                arg.bias = &bias[bias_d.blk_off(cb * ch_block_size)];
+            arg.work_amount = (size_t)H;
 
-        (*kernel_)(&arg);
-    });
+            (*kernel_)(&arg);
+        });
+    } else {
+        parallel_nd(MB, CB, D, H, [&](int mb, int cb, int d, int h) {
+            auto arg = jit_depthwise_args();
+
+            size_t data_off = data_d.ndims() == 5 ? data_d.blk_off(mb, cb, d, h) :
+                              data_d.ndims() == 4 ? data_d.blk_off(mb, cb, h) :
+                              data_d.ndims() == 3 ? data_d.blk_off(mb, cb, h) :
+                              data_d.ndims() == 2 ? data_d.blk_off(mb, cb * ch_block_size) : 0;
+
+            arg.from    = &src[data_off];
+            arg.to      = &dst[data_off];
+            arg.weights = &weights[weights_d.blk_off(cb * ch_block_size)];
+            if (bias)
+                arg.bias = &bias[bias_d.blk_off(cb * ch_block_size)];
+            arg.work_amount = data_d.format() == nc ? nstl::min(ch_block_size, C - cb * ch_block_size) : (size_t)W;
+
+            (*kernel_)(&arg);
+        });
+    }
 }
 
 template struct jit_uni_depthwise_fwd_t<sse42>;
