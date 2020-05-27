@@ -65,10 +65,10 @@ private:
     size_t preserved_vec_idxs[preserved_vecs_max] = {0};
     size_t start_idx_tail = 0;
 
-    int aux_vecs_count(alg_kind_t elt_alg);
+    int aux_vecs_count(alg_kind_t elt_alg, bool is_broadcast);
 
     void compute_body(size_t start_idx, size_t end_idx, const Xbyak::Reg64& p_weights, const Xbyak::Reg64& p_bias, bool is_broadcast = false);
-    void injector_preamble(size_t start_idx, size_t end_idx);
+    void injector_preamble(size_t start_idx, size_t end_idx, bool is_broadcast = false);
     void injector_preamble_tail(size_t start_idx, size_t end_idx);
     void injector_postamble();
     void assign_regs();
