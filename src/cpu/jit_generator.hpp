@@ -596,6 +596,19 @@ public:
         vfnmadd231ps(x1, x2, op);
     }
 
+    void uni_vfmsub213ps(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
+            const Xbyak::Operand &op) {
+        // Note: x1 gets overriden by x1*x2
+        // This is incorrect if x1 == op
+        assert(!x1.isEqualIfNotInherited(op));
+        mulps(x1, x2);
+        subps(x1, op);
+    }
+    void uni_vfmsub213ps(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
+            const Xbyak::Operand &op) {
+        vfmsub213ps(x1, x2, op);
+    }
+
     void uni_vsqrtps(const Xbyak::Xmm &x, const Xbyak::Operand &op) {
         sqrtps(x, op);
     }
@@ -647,6 +660,19 @@ public:
             vorps(x1, x2, op);
         else
             vpord(x1, x2, op);
+    }
+
+    void uni_vxorps(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
+            const Xbyak::Operand &op = Xbyak::Operand()) {
+        if (x1.getIdx() != x2.getIdx()) { uni_vmovups(x1, x2); }
+        xorps(x1, op);
+    }
+    void uni_vxorps(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
+            const Xbyak::Operand &op = Xbyak::Operand()) {
+        if (!mayiuse(avx512_common) || x1.getBit() < 512)
+            vxorps(x1, x2, op);
+        else
+            vpxord(x1, x2, op);
     }
 
     void uni_vpslld(const Xbyak::Xmm &x, const Xbyak::Operand &op,
@@ -803,6 +829,16 @@ public:
     }
     void uni_vpmovzxbd(const Xbyak::Ymm &x, const Xbyak::Operand &op) {
         vpmovzxbd(x, op);
+    }
+
+    void uni_vcmpps(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
+            const Xbyak::Operand &op, int cmp_predicate) {
+        if (x1.getIdx() != x2.getIdx()) uni_vmovups(x1, x2);
+        cmpps(x1, op, cmp_predicate);
+    }
+    void uni_vcmpps(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
+            const Xbyak::Operand &op, int cmp_predicate) {
+        vcmpps(x1, x2, op, cmp_predicate);
     }
 
     void uni_vpackusdw(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2, const Xbyak::Operand &op) {

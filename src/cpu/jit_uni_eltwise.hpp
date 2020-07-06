@@ -47,7 +47,9 @@ struct jit_uni_eltwise_injector_f32 {
         assert(utils::one_of(alg_, eltwise_relu, eltwise_tanh, eltwise_elu,
                     eltwise_square, eltwise_abs, eltwise_sqrt, eltwise_linear,
                     eltwise_bounded_relu, eltwise_soft_relu, eltwise_logistic,
-                    eltwise_exp, eltwise_gelu, eltwise_clamp, eltwise_swish));
+                    eltwise_exp, eltwise_gelu, eltwise_clamp, eltwise_swish,
+                    eltwise_log));
+        register_table_entries();
     }
 
     // note that eltwise.scale is ignored
@@ -77,15 +79,22 @@ struct jit_uni_eltwise_injector_f32 {
 private:
     // if only the injector was inherited from jit_generator...
     enum {
+        _cmp_eq_oq = jit_generator::_cmp_eq_oq,
         _cmp_lt_os = jit_generator::_cmp_lt_os,
         _cmp_le_os = jit_generator::_cmp_le_os,
         _cmp_nle_us = jit_generator::_cmp_nle_us,
         _op_floor = jit_generator::_op_floor,
     };
 
+    static constexpr bool has_avx512() {
+        return utils::one_of(isa, avx512_common, avx512_core);
+    }
+
     size_t vlen = cpu_isa_traits<isa>::vlen;
 
     const static size_t preserved_vecs_max = 5;
+
+    static constexpr int n_mantissa_bits = 23;
 
     size_t vecs_to_preserve = 0;
     size_t vecs_count = isa == avx512_common ? 32 : 16;
@@ -104,6 +113,10 @@ private:
     void injector_preamble_tail(size_t start_idx);
     void injector_postamble();
     void assign_regs();
+    void compute_cmp_mask(const Vmm &vmm_src,
+            const Xbyak::Operand &compare_operand, int cmp_predicate);
+    void blend_with_mask(const Vmm &vmm_dst, const Xbyak::Operand &src);
+    void test_mask();
 
     void exp_compute_vector(const Vmm &vmm_src);
     void relu_compute_vector(const Vmm &vmm_src);
@@ -120,6 +133,7 @@ private:
     void gelu_compute_vector(const Vmm &vmm_src);
     void clamp_compute_vector(const Vmm &vmm_src);
     void swish_compute_vector(const Vmm &vmm_src);
+    void log_compute_vector(const Vmm &vmm_src);
 
     void relu_prepare_table();
     void elu_prepare_table();
@@ -129,6 +143,86 @@ private:
     void linear_prepare_table();
     void bounded_relu_prepare_table();
     void clamp_prepare_table();
+    void log_prepare_table();
+
+    enum key_t {
+        alpha = 0, // alpha argument
+        beta, // beta argument
+        zero, // 0.f
+        half, // 0.5f
+        one, // 1.f  or  mask for exponent bits
+        two, // 2.f
+        minus_one, // -1.f  or  changes sign to opposite
+        minus_two, // -2.f
+        ln2f, // 0.69314718f
+        positive_mask, // changes sign to positive
+        sign_mask, // gets sign value
+        exponent_bias, // (127 = 2^7 - 1), gets exponent bits
+        exp_log2ef, // 1.44269502f - formula-based for approx
+        exp_ln_flt_max_f, // logf(FLT_MAX) - max normal value
+        exp_ln_flt_min_f, // logf(FLT_MIN) - min normal value
+        exp_pol, // see correspondent table for float values
+        tanh_idx_bias, // bias applied during index computation
+        tanh_idx_mask, // mask applied to extract index
+        tanh_linear_ubound, // arg below which tanh(x) = x
+        tanh_saturation_lbound, // arg after which tanh(x) = 1.f
+        tanh_pol_table, // table of polynomial coefficients
+        soft_relu_one_twenty_six, // 126.f
+        soft_relu_mantissa_sign_mask, // mask for mantissa bits and sign
+        soft_relu_pol, // see correspondent table for float values
+        gelu_tanh_fitting_const, // 0.044715f
+        gelu_tanh_fitting_const_times_three, // 0.134145f
+        gelu_tanh_sqrt_two_over_pi, // sqrtf(2.f/pi) = 0.797884f
+        gelu_erf_approx_const, // 0.3275911f - implementation based for approx
+        gelu_erf_one_over_sqrt_two, // 1.f / sqrtf(2.f)
+        gelu_erf_one_over_sqrt_pi, // 1.f / sqrtf(pi) = 0.564190f
+        gelu_erf_pol, // see correspondent table for float values
+        log_minus_inf, // -inf
+        log_qnan, // qnan
+        log_mantissa_mask, // gets mantissa bits
+        log_full_k_reg_mask, // sets k_register with all bits of 1
+        log_full_vector_reg_mask, // sets vector register will all bits of 1
+        log_five_bit_offset, // 5 bits off (31 = 2^5 - 1)
+        log_pol, // see correspondent table for float values
+        log_predefined_vals, // see correspondent table for float values
+        undef_key,
+    };
+
+    size_t table_off(key_t key, size_t key_off_val_shift = 0) {
+        // assumption: all table entries sharing the same key also
+        // share their broadcast property
+        // TODO: enforce through data structure
+        const auto it = entry_map_.find(key); // search an entry for a key
+        assert(it != entry_map_.end());
+        const auto &te = (*it).second;
+        const auto scale = te.bcast ? vlen : sizeof(table_entry_val_t);
+        return te.off + key_off_val_shift * scale;
+    }
+    Xbyak::Address table_val(key_t key, size_t key_off_val_shift = 0) {
+        auto off = table_off(key, key_off_val_shift);
+        return h->ptr[p_table + off];
+    }
+
+    // we accept only 32bit hexadecimal table values to avoid any rounding
+    using table_entry_val_t = uint32_t;
+    using table_entry_offset_t = size_t; // offsets are in bytes wrt p_table
+    using table_entry_bcast_t = bool; // true => bcast value
+
+    struct table_entry_t {
+        table_entry_val_t val;
+        table_entry_bcast_t bcast;
+    };
+    struct mapped_table_entry_t {
+        table_entry_offset_t off;
+        table_entry_val_t val;
+        table_entry_bcast_t bcast;
+    };
+
+    using table_t = std::multimap<key_t, table_entry_t>;
+    using mapped_table_t = std::multimap<key_t, mapped_table_entry_t>;
+
+    void register_table_entries();
+    mapped_table_t entry_map_;
 };
 
 struct jit_uni_eltwise_kernel_f32;

@@ -80,6 +80,7 @@ namespace alg_kind {
     const alg_kind_t eltwise_clamp = mkldnn_eltwise_clamp;
     const alg_kind_t eltwise_not = mkldnn_eltwise_not;
     const alg_kind_t eltwise_swish = mkldnn_eltwise_swish;
+    const alg_kind_t eltwise_log = mkldnn_eltwise_log;
     const alg_kind_t depthwise_scale_shift = mkldnn_depthwise_scale_shift;
     const alg_kind_t depthwise_prelu = mkldnn_depthwise_prelu;
     const alg_kind_t pooling_max = mkldnn_pooling_max;
