@@ -45,6 +45,8 @@ inline int mkldnn_in_parallel() { return 0; }
 inline void mkldnn_thr_barrier() {}
 
 #define PRAGMA_OMP(...)
+#define collapse(x)
+#define PRAGMA_OMP_SIMD(...)
 
 #elif MKLDNN_THR == MKLDNN_THR_OMP
 #include <omp.h>
@@ -60,6 +62,14 @@ inline void mkldnn_thr_barrier() {
 
 #define PRAGMA_OMP(...) PRAGMA_MACRO(CHAIN2(omp, __VA_ARGS__))
 
+/* MSVC still supports omp 2.0 only */
+#if defined(_MSC_VER) && !defined(__clang__) && !defined(__INTEL_COMPILER)
+#   define collapse(x)
+#   define PRAGMA_OMP_SIMD(...)
+#else
+#   define PRAGMA_OMP_SIMD(...) PRAGMA_MACRO(CHAIN2(omp, simd __VA_ARGS__))
+#endif // defined(_MSC_VER) && !defined(__INTEL_COMPILER)
+
 #elif (MKLDNN_THR == MKLDNN_THR_TBB || MKLDNN_THR == MKLDNN_THR_TBB_AUTO)
 #include "tbb/task_arena.h"
 #include "tbb/parallel_for.h"
@@ -74,16 +84,12 @@ inline int mkldnn_in_parallel() { return 0; }
 inline void mkldnn_thr_barrier() { assert(!"no barrier in TBB"); }
 
 #define PRAGMA_OMP(...)
+#define collapse(x)
+#define PRAGMA_OMP_SIMD(...)
 
 #endif
 
-/* MSVC still supports omp 2.0 only */
-#if defined(_MSC_VER) && !defined(__clang__) && !defined(__INTEL_COMPILER)
-#   define collapse(x)
-#   define PRAGMA_OMP_SIMD(...)
-#else
-#   define PRAGMA_OMP_SIMD(...) PRAGMA_MACRO(CHAIN2(omp, simd __VA_ARGS__))
-#endif // defined(_MSC_VER) && !defined(__INTEL_COMPILER)
+
 
 namespace mkldnn {
 namespace impl {
