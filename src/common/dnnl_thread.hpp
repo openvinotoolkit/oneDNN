@@ -185,8 +185,16 @@ inline int dnnl_get_current_num_threads() {
 #define OMP_GET_NUM_THREADS() 1
 #endif
 
-// Disabling OMP SIMD feature for MSVC as it only supports OpenMP 2.0
-#if defined(_MSC_VER)  && (_MSC_VER < 1900) && !defined(__clang__) && !defined(__INTEL_COMPILER)
+// Disabling OMP SIMD feature in the following scenarios:
+// * For MSVC as it only supports OpenMP 2.0
+// *   however VS2019 also now offers SIMD functionality
+// *   with the -openmp:experimental compilation switch that enables additional OpenMP features
+// *   not available when using the -openmp switch
+// * In debug mode on Windows to avoid incorrect code generation
+//   by Intel(R) oneAPI DPC++/C++ Compiler
+#if defined(_MSC_VER) && (_MSC_VER < 1900) \
+        && ((!defined(__clang__) && !defined(__INTEL_COMPILER)) \
+                || defined(_DEBUG))
 #define collapse(x)
 #define PRAGMA_OMP_SIMD(...)
 #else
