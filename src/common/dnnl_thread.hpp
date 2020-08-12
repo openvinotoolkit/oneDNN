@@ -180,7 +180,7 @@ inline int dnnl_get_current_num_threads() {
 #endif
 
 // Disabling OMP SIMD feature for MSVC as it only supports OpenMP 2.0
-#if defined(_MSC_VER) && !defined(__clang__) && !defined(__INTEL_COMPILER)
+#if defined(_MSC_VER)  && (_MSC_VER < 1900) && !defined(__clang__) && !defined(__INTEL_COMPILER)
 #define collapse(x)
 #define PRAGMA_OMP_SIMD(...)
 #else
