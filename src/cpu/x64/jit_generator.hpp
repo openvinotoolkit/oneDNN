@@ -193,6 +193,7 @@ public:
         _cmp_nlt_us = 5u,
         _cmp_nle_us = 6u,
 
+        _op_near = 0u,
         _op_floor = 1u,
         _op_mxcsr = 4u,
     };
@@ -839,13 +840,11 @@ public:
     }
 
     void uni_vhsubps(const Xbyak::Xmm &x, const Xbyak::Xmm &x2,
-                     const Xbyak::Operand &op) {
+            const Xbyak::Operand &op) {
         if (is_valid_isa(avx)) {
             vhsubps(x, x2, op);
         } else {
-            if (!x.isEqualIfNotInherited(x2)) {
-                movups(x, x2);
-            }
+            if (!x.isEqualIfNotInherited(x2)) { movups(x, x2); }
             hsubps(x, op);
         }
     }
@@ -951,13 +950,11 @@ public:
     }
 
     void uni_vaddsubps(const Xbyak::Xmm &x, const Xbyak::Operand &op1,
-                       const Xbyak::Operand &op2) {
+            const Xbyak::Operand &op2) {
         if (is_valid_isa(avx)) {
             vaddsubps(x, op1, op2);
         } else {
-            if (!x.isEqualIfNotInherited(op1)) {
-                movups(x, op1);
-            }
+            if (!x.isEqualIfNotInherited(op1)) { movups(x, op1); }
             addsubps(x, op2);
         }
     }
@@ -2119,7 +2116,8 @@ public:
         }
     }
 
-    void uni_vpminsd(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2, const Xbyak::Operand &op) {
+    void uni_vpminsd(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
+            const Xbyak::Operand &op) {
         vpminsd(x1, x2, op);
     }
 
@@ -2150,13 +2148,13 @@ public:
     // End of custom instructions section.
 
     void uni_vcmpgtps(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
-                      const Xbyak::Operand &op) {
+            const Xbyak::Operand &op) {
         assert(x1.getIdx() == x2.getIdx());
         cmpps(x1, op, _cmp_nle_us);
     }
 
     void uni_vcmpgtps(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
-                      const Xbyak::Operand &op) {
+            const Xbyak::Operand &op) {
         vcmpgtps(x1, x2, op);
     }
 
