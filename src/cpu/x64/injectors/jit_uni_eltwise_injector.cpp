@@ -44,6 +44,7 @@ bool is_alg_supported(alg_kind_t alg) {
             eltwise_gelu_tanh, eltwise_hardsigmoid, eltwise_hardswish,
             eltwise_swish, eltwise_log, eltwise_clip, eltwise_clip_v2,
             eltwise_pow, eltwise_gelu_erf, eltwise_round,
+            eltwise_hsigmoid, eltwise_round_half_away_from_zero, eltwise_round_half_to_even,
             eltwise_relu_use_dst_for_bwd, eltwise_tanh_use_dst_for_bwd,
             eltwise_elu_use_dst_for_bwd, eltwise_sqrt_use_dst_for_bwd,
             eltwise_logistic_use_dst_for_bwd, eltwise_exp_use_dst_for_bwd,
@@ -1841,6 +1842,49 @@ size_t jit_uni_eltwise_injector_t<isa, Wmm>::op_vecs_count(
 }
 
 template <cpu_isa_t isa, typename Wmm>
+void jit_uni_eltwise_injector_t<isa, Wmm>::hsigmoid_compute_vector_fwd(
+        const Vmm &vmm_src) {
+    // x + 3
+    h->uni_vaddps(vmm_src, vmm_src, table_val(hsigmoid, 0));
+    // relu6(x + 3)
+    h->uni_vmaxps(vmm_src, vmm_src, table_val(zero));
+    h->uni_vminps(vmm_src, vmm_src, table_val(hsigmoid, 1));
+    // relu6(x + 3) / 6
+    h->uni_vmulps(vmm_src, vmm_src, table_val(hsigmoid, 2));
+}
+
+template <cpu_isa_t isa, typename Wmm>
+void jit_uni_eltwise_injector_t<isa, Wmm>::round_half_to_even_compute_vector_fwd(
+        const Vmm &vmm_src) {
+    h->uni_vroundps(vmm_src, vmm_src, _op_near);
+}
+
+template <cpu_isa_t isa, typename Wmm>
+void jit_uni_eltwise_injector_t<isa, Wmm>::round_half_away_from_zero_compute_vector_fwd(
+        const Vmm &vmm_src) {
+    // create a mask of negative numbers for later returning sign
+    compute_cmp_mask(vmm_src, table_val(zero), _cmp_lt_os);
+
+    // round half away from zero for positive numbers
+    h->uni_vandps(vmm_src, vmm_src, table_val(positive_mask));
+    h->uni_vaddps(vmm_src, vmm_src, table_val(half));
+    h->uni_vroundps(vmm_src, vmm_src, _op_floor);
+
+    // return a sign for negative numbers using the mask
+    if (isa == sse41) {
+        h->movups(vmm_aux(1), vmm_src);
+        h->mulps(vmm_aux(1), table_val(minus_one));
+        h->blendvps(vmm_src, vmm_aux(1));
+    } else if (isa == avx2) {
+        h->vmulps(vmm_aux(1), vmm_src, table_val(minus_one));
+        h->vblendvps(vmm_src, vmm_src, vmm_aux(1), vmm_mask_);
+    } else if (isa == avx512_core) {
+        h->vmulps(vmm_aux(1), vmm_src, table_val(minus_one));
+        h->vblendmps(vmm_src | k_mask_, vmm_src, vmm_aux(1));
+    }
+}
+
+template <cpu_isa_t isa, typename Wmm>
 size_t jit_uni_eltwise_injector_t<isa, Wmm>::aux_vecs_count(
         alg_kind_t alg, bool is_fwd, float alpha) {
     // For avx we need a register to save the upper part of Ymm
@@ -1880,6 +1924,9 @@ size_t jit_uni_eltwise_injector_t<isa, Wmm>::aux_vecs_count(
             case eltwise_round: n_vmms = 0; break;
             case eltwise_hardswish: n_vmms = 1; break;
             case eltwise_hardsigmoid: n_vmms = 0; break;
+            case eltwise_hsigmoid: n_vmms = 0; break;
+            case eltwise_round_half_to_even: n_vmms = 0; break;
+            case eltwise_round_half_away_from_zero: n_vmms = 2; break;
             default: assert(!"unsupported eltwise algorithm");
         }
     } else {
@@ -2049,6 +2096,9 @@ void jit_uni_eltwise_injector_t<isa, Wmm>::compute_body(
                 case eltwise_hardsigmoid:
                     hardsigmoid_compute_vector_fwd(Vmm(idx));
                     break;
+                case eltwise_hsigmoid: hsigmoid_compute_vector_fwd(Vmm(idx)); break;
+                case eltwise_round_half_to_even: round_half_to_even_compute_vector_fwd(Vmm(idx)); break;
+                case eltwise_round_half_away_from_zero: round_half_away_from_zero_compute_vector_fwd(Vmm(idx)); break;
                 default: assert(!"unsupported eltwise algorithm");
             }
         } else {
@@ -2833,6 +2883,13 @@ void jit_uni_eltwise_injector_t<isa, Wmm>::register_table_entries() {
                     {0xc2b00f34, true}}, // 63: -88.029693603515625
     };
 
+    // hsigmoid(x) polynomial approximation
+    static const table_t hsigmoid_values {
+            {hsigmoid, {0x40400000, true}}, // 3
+            {hsigmoid, {0x40C00000, true}}, // 6
+            {hsigmoid, {0x3e2aaaaa, true}}, // 1 / 6
+    };
+
     // This object takes care about which constants and polynomials to include.
     struct need_t {
         need_t(alg_kind_t alg) {
@@ -2852,6 +2909,7 @@ void jit_uni_eltwise_injector_t<isa, Wmm>::register_table_entries() {
                 case eltwise_mish: mish_ = true; break;
                 case eltwise_tanh_use_dst_for_bwd:
                 case eltwise_tanh: tanh_ = true; break;
+                case eltwise_hsigmoid: hsigmoid_ = true; break;
                 default: break;
             }
         }
@@ -2863,6 +2921,7 @@ void jit_uni_eltwise_injector_t<isa, Wmm>::register_table_entries() {
         bool gelu_tanh_ = false;
         bool gelu_erf_ = false;
         bool log_ = false;
+        bool hsigmoid_ = false;
 
         bool exp() const { return exp_ || soft_relu_ || gelu_erf_ || mish_; }
         bool mish() const { return mish_; }
@@ -2871,6 +2930,7 @@ void jit_uni_eltwise_injector_t<isa, Wmm>::register_table_entries() {
         bool gelu_tanh() const { return gelu_tanh_; }
         bool gelu_erf() const { return gelu_erf_; }
         bool log() const { return log_; }
+        bool hsigmoid() const { return hsigmoid_; }
     };
 
     need_t need(alg_);
@@ -2910,6 +2970,7 @@ void jit_uni_eltwise_injector_t<isa, Wmm>::register_table_entries() {
     if (need.log()) push_entries_of(log_consts);
     if (need.log()) push_entries_of(log_polynomial);
     if (need.log()) push_entries_of(log_predefined_values);
+    if (need.hsigmoid()) push_entries_of(hsigmoid_values);
 
     // Now that we registered the entries, we set the offsets.  No
     // entries should be registered after this point.  This allows to
