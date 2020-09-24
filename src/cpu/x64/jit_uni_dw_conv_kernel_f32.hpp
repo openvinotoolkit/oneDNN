@@ -71,6 +71,12 @@ private:
     reg64_t reg_tail = rax;
     mask_t k_oc_tail_mask = Xbyak::Opmask(2);
 
+    reg64_t reg_d_weights = aux_reg_input_buffer_ptr;
+    reg64_t reg_d_bias = iter_kh;
+
+    Vmm vmm_d_weights = Vmm(0);
+    Vmm vmm_d_bias = Vmm(1);
+
     inline void load_src(int ur_ch_blocks, int ur_w, bool is_ch_tail);
     inline void compute_loop(int ur_w, int ur_ch_blocks, int pad_l, int pad_r);
     inline void ow_loop(int ur_ch_blocks);

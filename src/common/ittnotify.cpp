@@ -80,6 +80,8 @@ void primitive_task_start(primitive_kind_t kind) {
             CASE(layer_normalization),
             CASE(group_normalization),
             CASE(sdpa),
+            CASE(depthwise),
+            CASE(quantization),
     };
 #undef CASE
     int kind_idx = (int)kind;

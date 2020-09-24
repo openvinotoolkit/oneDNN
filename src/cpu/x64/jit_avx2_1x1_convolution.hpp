@@ -67,6 +67,9 @@ struct jit_avx2_1x1_convolution_fwd_t : public primitive_t {
             VDISPATCH_CONV(
                     attr_.set_default_formats(dst_md(0)) == status::success,
                     VERBOSE_UNSUPPORTED_POSTOP);
+            VDISPATCH_CONV(
+                    !this->attr()->has_asymmetric_quantization(),
+                    VERBOSE_UNSUPPORTED_ATTR);
 
             const convolution_desc_t *conv_d = desc();
             const memory_desc_t *src_d = src_md();

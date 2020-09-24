@@ -75,6 +75,8 @@ struct jit_avx512_core_x8s8s32x_convolution_fwd_t : public primitive_t {
 
             VDISPATCH_CONV(attr_scales_ok(), VERBOSE_UNSUPPORTED_SCALES_CFG);
             VDISPATCH_CONV(zero_points_ok(), VERBOSE_UNSUPPORTED_ZP_CFG);
+            VDISPATCH_CONV(!this->attr()->has_asymmetric_quantization(),
+                            VERBOSE_UNSUPPORTED_ATTR);
 
             // TODO: make `init_conf` assign initialized object to `jcp_`
             CHECK(jit_avx512_core_x8s8s32x_fwd_kernel::init_conf(jcp_, *desc(),
