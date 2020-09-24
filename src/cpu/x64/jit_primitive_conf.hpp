@@ -102,6 +102,8 @@ struct jit_conv_conf_t {
     bool with_sum;
     bool with_eltwise;
     bool with_binary;
+    bool with_depthwise;
+    bool with_quantization;
 
     data_type_t sum_dt;
 
@@ -407,6 +409,9 @@ struct jit_conv_args_t {
     int oc_flag = 0;
     size_t last_ic_block = 0;
     size_t last_oc_block = 0;
+
+    size_t oc_off;
+    size_t oc_off_prf;
 };
 
 struct jit_deconv_args_t {
@@ -437,6 +442,7 @@ struct jit_deconv_args_t {
     size_t kh_padding = 0;
     size_t kd_padding = 0;
     size_t oc_blocks = 0;
+    size_t oc_off;
 };
 
 struct jit_dw_conv_args_t {
@@ -468,6 +474,8 @@ struct jit_1x1_conv_conf_t {
     bool with_sum;
     bool with_eltwise;
     bool with_binary;
+    bool with_depthwise;
+    bool with_quantization;
     bool with_dw_conv;
 
     post_ops_t post_ops;
@@ -551,6 +559,8 @@ struct jit_1x1_conv_args_t {
     size_t output_stride = 0; // used in backward_weights only
 
     size_t first_last_flag = 0;
+
+    size_t oc_off;
 };
 
 struct jit_pool_conf_t {
@@ -592,6 +602,8 @@ struct jit_pool_conf_t {
     bool with_postops;
     bool with_eltwise;
     bool with_binary;
+    bool with_depthwise;
+    bool with_quantization;
     int nthr;
     memory_desc_t tmp_md;
     bool needs_f32_accum_for_bf16;

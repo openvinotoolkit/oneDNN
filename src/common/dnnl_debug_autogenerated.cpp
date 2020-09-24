@@ -1822,6 +1822,8 @@ const char *dnnl_prim_kind2str(dnnl_primitive_kind_t v) {
     if (v == dnnl_softmax) return "softmax";
     if (v == dnnl_layer_normalization) return "layer_normalization";
     if (v == dnnl_group_normalization) return "group_normalization";
+    if (v == dnnl_depthwise) return "depthwise";
+    if (v == dnnl_quantization) return "quantization";
     if (v == dnnl_primitive_kind_max) return "primitive_kind_max";
     if (v == dnnl::impl::primitive_kind::sdpa) return "sdpa";
     if (v == dnnl::impl::primitive_kind::gated_mlp) return "gated_mlp";
@@ -1903,6 +1905,11 @@ const char *dnnl_alg_kind2str(dnnl_alg_kind_t v) {
     if (v == dnnl_softmax_log) return "softmax_log";
     if (v == dnnl::impl::alg_kind::softmax_accurate_inf_as_zero)
         return "softmax_accurate_inf_as_zero";
+    if (v == dnnl_depthwise_scale_shift) return "depthwise_scale_shift";
+    if (v == dnnl_depthwise_prelu) return "depthwise_prelu";
+    if (v == dnnl_quantization_quantize_dequantize)
+        return "quantization_quantize_dequantize";
+    if (v == dnnl_quantization_quantize) return "quantization_quantize";
     assert(!"unknown alg_kind");
     return "unknown alg_kind";
 }

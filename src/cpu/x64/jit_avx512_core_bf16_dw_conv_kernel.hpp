@@ -26,6 +26,7 @@
 #include "cpu/x64/jit_primitive_conf.hpp"
 
 #include "cpu/x64/jit_avx512_core_bf16cvt.hpp"
+#include "cpu/x64/injectors/jit_uni_depthwise_injector.hpp"
 
 namespace dnnl {
 namespace impl {
@@ -70,6 +71,12 @@ private:
     mask_t k_oc_tail_mask = Xbyak::Opmask(2);
     mask_t ktail_mask = k_oc_tail_mask;
     mask_t k_ch_tail_mask_extended = Xbyak::Opmask(3);
+
+    reg64_t reg_d_weights = abi_not_param1;
+    reg64_t reg_d_bias = iter_kh;
+
+    Xbyak::Zmm zmm_d_weights = Xbyak::Zmm(31);
+    Xbyak::Zmm zmm_d_bias = Xbyak::Zmm(30);
 
     Xbyak::Zmm zmm_ker_reg = Xbyak::Zmm(0);
     Xbyak::Zmm zmm_src_reg = Xbyak::Zmm(1);
