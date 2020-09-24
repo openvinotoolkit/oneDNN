@@ -147,6 +147,12 @@ private:
     void kh_loop(
             dim_t ur_w, dim_t pad_l, dim_t pad_r, ker_block_t last_ker_block);
     void icb_loop(dim_t ur_w, dim_t pad_l, dim_t pad_r, bool last_block);
+
+    /* depthwise and quantization post ops */
+    const Xbyak::Reg64 reg_d_weights = r15;
+    const Xbyak::Reg64 reg_d_bias = r13;
+    Vmm vmm_d_weights = Vmm(0);
+    Vmm vmm_d_bias = Vmm(1);
     void generate() override;
     void cvt2ps(data_type_t type_in, const Vmm vmm_in, const Reg64 reg,
             dim_t offset, dim_t load_size);

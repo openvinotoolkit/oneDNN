@@ -67,7 +67,7 @@ private:
     reg64_t reg_load_loop_work = rsi;
     reg64_t reg_reduce_loop_work = r11;
     reg64_t reg_bcast_loop_iter = rdx;
-    reg64_t reduce_loop_iter = abi_param1;
+    reg64_t reduce_loop_iter = r13;
     reg64_t reg_reduce_pos_flag = rax;
     reg64_t reg_output_stride = r13;
     reg64_t reg_bias_data = r12;
@@ -90,6 +90,12 @@ private:
     void bcast_loop(dim_t load_loop_blk);
     void reduce_loop(
             dim_t load_loop_blk, dim_t ur, dim_t substep, bool wraparound);
+    reg64_t reg_oc_off = abi_param1;
+    reg64_t reg_d_weights = imm_addr64;
+    reg64_t reg_d_bias = r13;
+
+    Xbyak::Zmm zmm_d_weights = Xbyak::Zmm(31);
+    Xbyak::Zmm zmm_d_bias = Xbyak::Zmm(30);
 
     inline size_t get_output_offset(const bool is_out_layout_nxc,
             const dim_t i_load, const dim_t i_ur, bool ignore_dw_conv = false) {

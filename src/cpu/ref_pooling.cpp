@@ -171,8 +171,7 @@ status_t ref_pooling_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
     const bool is_max_pool = alg == alg_kind::pooling_max;
 
     float base_res
-            = is_max_pool ? types::lowest_value<float>(dst_d.data_type()) : 0.f;
-
+            = is_max_pool ? types::lowest_value<float>(src_d.data_type()) : 0.f;
     using ker_t
             = std::function<void(float &, dim_t, dim_t, dim_t, dim_t, dim_t)>;
     ker_t kernel = is_max_pool ? (ker_t)ker_max : (ker_t)ker_avg;

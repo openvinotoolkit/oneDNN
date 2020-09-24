@@ -73,7 +73,7 @@ struct ur_w_blks_params_t {
 
 template <typename Vmm>
 struct jit_avx512_core_x8s8s32x_deconv_fwd_kernel_t : public jit_generator_t {
-    DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_avx512_core_x8s8s32x_deconv_fwd_ker_t);
+    DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_avx512_core_x8s8s32x_deconv_fwd_kernel);
 
     jit_avx512_core_x8s8s32x_deconv_fwd_kernel_t(const jit_conv_conf_t &ajcp,
             const primitive_attr_t &attr, const memory_desc_t &dst_md);
@@ -84,7 +84,7 @@ struct jit_avx512_core_x8s8s32x_deconv_fwd_kernel_t : public jit_generator_t {
     const primitive_attr_t &attr_;
 
 private:
-    std::unique_ptr<injector::jit_uni_postops_injector_t<avx512_core, Vmm>>
+    std::unique_ptr<injector::jit_uni_postops_injector_t<avx512_core>>
             postops_injector_;
 
     const int ic_sub_step = 4;
@@ -141,6 +141,12 @@ private:
     const Vmm vmm_scale_adjust = Vmm(31);
     const Vmm vmm_prev_dst = Vmm(31);
 
+    /* depthwise and quantization post ops */
+    const Xbyak::Reg64 reg_d_weights = r15;
+    const Xbyak::Reg64 reg_d_bias = r13;
+    Vmm vmm_d_weights;
+    Vmm vmm_d_bias;
+
     Vmm vmm_out(dim_t i_ur, dim_t i_oc) {
         const dim_t idx = i_ur * jcp.nb_oc_blocking + i_oc;
         assert(idx < 31);
@@ -173,19 +179,20 @@ private:
 
     dim_t get_blocking_size() const noexcept;
     dim_t get_tail_size() const noexcept;
-    void prepare_output(int ur_w);
-    void store_output(int ur_w, bool last_oc_block);
+    void prepare_output(dim_t ur_w);
+    void store_output(dim_t ur_w, bool last_oc_block);
     void compute(const Vmm &vreg_acc, const Vmm &vreg_wei, const Vmm &vreg_src);
     std::function<Vmm()> prepare_round_robin_vmm_inp_generator(
-            int ur_w) const noexcept;
+            dim_t ur_w) const noexcept;
     void apply_zp_src_pad_str_comp(
-            int ur_w, int l_overflow, int r_overflow, bool h_padded);
-    void append_zp_src_pad_str_comp(int ur_w, int l_overflow, int r_overflow,
-            bool h_padded, bool last_oc_block);
-    void compute_ker(int ur_w, int l_overflow, int r_overflow,
+            dim_t ur_w, dim_t l_overflow, dim_t r_overflow, bool h_padded);
+    void append_zp_src_pad_str_comp(dim_t ur_w, dim_t l_overflow,
+            dim_t r_overflow, bool h_padded, bool last_oc_block);
+    void compute_ker(dim_t ur_w, dim_t l_overflow, dim_t r_overflow,
             ker_block_t last_ic_block_flag, bool h_padded = false);
-    void kh_loop(int ur_w, int pad_l, int pad_r, ker_block_t last_ker_block);
-    void icb_loop(int ur_w, int pad_l, int pad_r, bool last_block);
+    void kh_loop(
+            dim_t ur_w, dim_t pad_l, dim_t pad_r, ker_block_t last_ker_block);
+    void icb_loop(dim_t ur_w, dim_t pad_l, dim_t pad_r, bool last_block);
 
     ur_w_blks_params_t get_ur_w_blks_params();
 

@@ -183,6 +183,7 @@ status_t jit_avx512_core_amx_1x1_convolution_fwd_t::execute_forward(
             p.src_zero_point = src_zero_points;
             p.dst_zero_point = dst_zero_points;
 
+            p.oc_off = oc * sizeof(float);
             p.post_ops_binary_rhs_arg_vec = post_ops_binary_rhs_arg_vec.data();
             p.dst_orig = dst;
 
