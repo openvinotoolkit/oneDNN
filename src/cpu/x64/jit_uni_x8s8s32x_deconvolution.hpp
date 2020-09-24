@@ -135,6 +135,11 @@ private:
     void compute(const Vmm vreg_acc, const Vmm vreg_wei, const Vmm vreg_src);
     std::function<Vmm()> prepare_round_robin_vmm_inp_generator(
             dim_t ur_w) const noexcept;
+        const Xbyak::Reg64 reg_d_weights = r15;
+        const Xbyak::Reg64 reg_d_bias = r13;
+        Vmm vmm_d_weights = Vmm(0);
+        Vmm vmm_d_bias = Vmm(1);
+
     void apply_zp_src_pad_str_comp(
             dim_t ur_w, dim_t l_overflow, dim_t r_overflow, bool h_padded);
     void append_zp_src_pad_str_comp(dim_t ur_w, dim_t l_overflow,

@@ -95,6 +95,8 @@ struct jit_avx512_core_x8s8s32x_1x1_convolution_fwd_t : public primitive_t {
                     {DNNL_ARG_ATTR_POST_OP_DW | DNNL_ARG_WEIGHTS, {0, 1}},
                     {DNNL_ARG_ATTR_POST_OP_DW | DNNL_ARG_DST, {0}}}));
             CHECK(attr_zero_points_ok());
+            VDISPATCH_CONV(!this->attr()->has_asymmetric_quantization(),
+                    VERBOSE_UNSUPPORTED_ATTR);
 
             const convolution_desc_t *conv_d = desc();
             const memory_desc_t *src_d = src_md();

@@ -50,6 +50,17 @@ jit_uni_postops_injector_t<Vmm>::jit_uni_postops_injector_t(
         jit_generator_t *host, const post_ops_t &post_ops,
         const binary_injector::static_params_t &binary_static_params,
         const eltwise_injector::static_params_t &eltwise_static_params,
+    bool inject_sum)
+    : jit_uni_postops_injector_t(host, post_ops, binary_static_params,
+        eltwise_static_params, quantization_injector::static_params_t(),
+        inject_sum) {}
+
+template <typename Vmm>
+jit_uni_postops_injector_t<Vmm>::jit_uni_postops_injector_t(
+    jit_generator_t *host, const post_ops_t &post_ops,
+    const binary_injector::static_params_t &binary_static_params,
+    const eltwise_injector::static_params_t &eltwise_static_params,
+    const quantization_injector::static_params_t &quantization_static_params,
         bool inject_sum)
     : post_ops_(post_ops)
     , host_(host)
@@ -78,6 +89,17 @@ jit_uni_postops_injector_t<Vmm>::jit_uni_postops_injector_t(
             is_like_binary = true;
         } else if (post_op.is_sum(false, false)) {
             is_sum = true;
+        } else if (post_op.is_depthwise()) {
+            depthwise_injectors_.emplace(i,
+                    jit_uni_depthwise_injector_f32<injector_isa>(host, post_op,
+                        binary_static_params.rhs_arg_static_params.dst_d.dims()[1]));
+        } else if (post_op.is_quantization()) {
+            const auto &params = quantization_static_params;
+            quantization_injectors_.emplace(i,
+                    jit_uni_quantization_injector_f32<injector_isa, Vmm>(host,
+                            post_op, Vmm(params.vmm_d_weights_idx),
+                            Vmm(params.vmm_d_bias_idx), params.reg_d_weights,
+                            params.reg_d_bias));
         }
     }
 
@@ -140,10 +162,32 @@ void jit_uni_postops_injector_t<Vmm>::compute_vector_range(
 }
 
 template <typename Vmm>
+void jit_uni_postops_injector_t<Vmm>::compute_vector_range(size_t start_idx,
+        size_t end_idx,
+        const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
+        const depthwise_injector::dynamic_params_t &ddp,
+        const quantization_injector::dynamic_params_t &qdp) {
+    injector_utils::vmm_index_set_t vmm_idxs;
+    for (size_t idx = start_idx; idx < end_idx; ++idx)
+        vmm_idxs.emplace(idx);
+    compute_vector_range(vmm_idxs, rhs_arg_params, ddp, qdp);
+}
+
+template <typename Vmm>
 void jit_uni_postops_injector_t<Vmm>::compute_vector_range(
         const injector_utils::vmm_index_set_t &vmm_idxs,
         const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params) {
+    compute_vector_range(vmm_idxs, rhs_arg_params,
+        depthwise_injector::dynamic_params_t(),
+        quantization_injector::dynamic_params_t());
+}
 
+template <typename Vmm>
+void jit_uni_postops_injector_t<Vmm>::compute_vector_range(
+    const injector_utils::vmm_index_set_t &vmm_idxs,
+    const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
+    const depthwise_injector::dynamic_params_t &ddp,
+    const quantization_injector::dynamic_params_t &qdp) {
     int rhs_arg_idx = 0;
     for (int i = 0; i < post_ops_.len(); i++) {
         const auto &post_op = post_ops_.entry_[i];
@@ -159,6 +203,61 @@ void jit_uni_postops_injector_t<Vmm>::compute_vector_range(
         } else if (inject_sum_ && post_op.is_sum(false, false)) {
             idx_to_sum_injector_.at(i).compute_vector_range(
                     vmm_idxs, rhs_arg_params);
+        } else if (post_op.is_depthwise()) {
+            auto &depthwise_injector = depthwise_injectors_.at(i);
+            if (ddp.preserve_gprs) {
+                host_->push(ddp.reg_d_weights);
+                host_->push(ddp.reg_d_bias);
+            }
+            if (ddp.useAddr)
+                depthwise_injector.init_ptrs(ddp.reg_d_weights, ddp.reg_d_bias,
+                        ddp.reg_init_off_addr, false);
+            else
+                depthwise_injector.init_ptrs(ddp.reg_d_weights, ddp.reg_d_bias,
+                        ddp.reg_init_off, false);
+            for (auto vmm_idx : vmm_idxs)
+                depthwise_injector.compute(vmm_idx, vmm_idx + 1,
+                        ddp.vmm_d_weights_idx, ddp.vmm_d_bias_idx,
+                        ddp.reg_d_weights, ddp.reg_d_bias, false,
+                        ddp.vmm_idx_off.at(vmm_idx));
+            if (ddp.preserve_gprs) {
+                host_->pop(ddp.reg_d_bias);
+                host_->pop(ddp.reg_d_weights);
+            }
+        } else if (post_op.is_quantization()) {
+            auto &quantization_injector = quantization_injectors_.at(i);
+            if (ddp.preserve_gprs) {
+                host_->push(ddp.reg_d_weights);
+                host_->push(ddp.reg_d_bias);
+            }
+            const bool rounding = post_op.quantization.alg
+                            == alg_kind::quantization_quantize_dequantize
+                    || qdp.dst_dt == dnnl_f32 || i != post_ops_.len() - 1;
+            if (qdp.useAddr)
+                quantization_injector.init_crop_ptrs(qdp.reg_oc_off_addr);
+            else
+                quantization_injector.init_crop_ptrs(qdp.reg_oc_off);
+            for (auto vmm_idx : vmm_idxs)
+                quantization_injector.compute_crop(
+                        vmm_idx, vmm_idx + 1, qdp.vmm_idx_off.at(vmm_idx));
+            if (qdp.useAddr)
+                quantization_injector.init_input_scale_shift_ptrs(qdp.reg_oc_off_addr);
+            else
+                quantization_injector.init_input_scale_shift_ptrs(qdp.reg_oc_off);
+            for (auto vmm_idx : vmm_idxs)
+                quantization_injector.compute_input_scale_shift(vmm_idx,
+                        vmm_idx + 1, qdp.vmm_idx_off.at(vmm_idx), rounding);
+            if (qdp.useAddr)
+                quantization_injector.init_output_scale_shift_ptrs(qdp.reg_oc_off_addr);
+            else
+                quantization_injector.init_output_scale_shift_ptrs(qdp.reg_oc_off);
+            for (auto vmm_idx : vmm_idxs)
+                quantization_injector.compute_output_scale_shift(
+                        vmm_idx, vmm_idx + 1, qdp.vmm_idx_off.at(vmm_idx));
+            if (ddp.preserve_gprs) {
+                host_->pop(ddp.reg_d_bias);
+                host_->pop(ddp.reg_d_weights);
+            }
         }
         // A sum entry falls through when `inject_sum_` is unset. The kernel
         // applies it itself in that case.
@@ -319,6 +418,12 @@ bool post_ops_ok(const post_ops_ok_args_t &post_ops_ok_args) {
                         }
                         return ok;
                     }
+                    break;
+                case depthwise:
+                    if (entry.is_depthwise()) return true;
+                    break;
+                case quantization:
+                    if (entry.is_quantization()) return true;
                     break;
                 default: assert(!"Unhandled post_op type");
             }

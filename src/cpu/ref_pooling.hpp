@@ -42,21 +42,28 @@ struct ref_pooling_fwd_t : public primitive_t {
         status_t init(const engine_t *engine) {
             using sm = primitive_attr_t::skip_mask_t;
 
-            VDISPATCH_POOLING(
-                    platform::has_data_type_support(src_md()->data_type),
-                    VERBOSE_UNSUPPORTED_DT);
-            VDISPATCH_POOLING(
-                    platform::has_data_type_support(dst_md()->data_type),
+        const auto src_type = src_md()->data_type;
+        const auto dst_type = dst_md()->data_type;
+
+        VDISPATCH_POOLING(platform::has_data_type_support(src_type),
+            VERBOSE_UNSUPPORTED_DT);
+        VDISPATCH_POOLING(platform::has_data_type_support(dst_type),
                     VERBOSE_UNSUPPORTED_DT);
             VDISPATCH_POOLING(set_default_params() == status::success,
                     VERBOSE_UNSUPPORTED_TAG);
             VDISPATCH_POOLING(is_fwd(), VERBOSE_BAD_PROPKIND);
+        VDISPATCH_POOLING(
+            is_supported_data_types(), VERBOSE_UNSUPPORTED_DT);
             VDISPATCH_POOLING(attr()->has_default_values(sm::post_ops),
                     VERBOSE_UNSUPPORTED_ATTR);
-            VDISPATCH_POOLING(ref_post_ops_t::post_ops_ok(attr()->post_ops_),
+            VDISPATCH_POOLING(
+                    ref_post_ops_t::post_ops_ok(attr()->post_ops_, true),
                     VERBOSE_UNSUPPORTED_POSTOP);
             VDISPATCH_POOLING(
                     attr_.set_default_formats(dst_md(0)) == status::success,
+                    VERBOSE_UNSUPPORTED_POSTOP);
+            VDISPATCH_POOLING(
+                    is_supported_post_ops(),
                     VERBOSE_UNSUPPORTED_POSTOP);
 
             bool is_training = desc_.prop_kind == prop_kind::forward_training;
@@ -64,6 +71,48 @@ struct ref_pooling_fwd_t : public primitive_t {
                 init_default_ws();
 
             return status::success;
+        }
+
+        virtual bool is_supported_post_ops() const {
+            const auto &p = this->attr()->post_ops_;
+            const auto src_type = src_md()->data_type;
+
+            return IMPLICATION(p.find(primitive_kind::quantization) != -1,
+                    (desc()->alg_kind
+                            == dnnl_pooling_avg_include_padding
+                        || desc()->alg_kind
+                            == dnnl_pooling_avg_exclude_padding)
+                        && src_type != data_type::bf16);
+
+        }
+
+        virtual bool is_supported_data_types() const {
+            const auto src_type = src_md()->data_type;
+            const auto dst_type = dst_md()->data_type;
+            const auto acc_type = desc()->accum_data_type;
+
+            return utils::one_of(
+                std::make_tuple(src_type, dst_type, acc_type),
+                std::make_tuple(data_type::f32, data_type::f32,
+                    data_type::f32),
+                std::make_tuple(data_type::s32, data_type::s32,
+                    data_type::s32),
+                std::make_tuple(data_type::bf16, data_type::bf16,
+                    data_type::f32),
+                std::make_tuple(data_type::f16, data_type::f16,
+                    data_type::f32),
+                std::make_tuple(data_type::f8_e5m2, data_type::f8_e5m2,
+                    data_type::f32),
+                std::make_tuple(data_type::f8_e4m3, data_type::f8_e4m3,
+                    data_type::f32),
+                std::make_tuple(data_type::s8, data_type::s8,
+                    data_type::s32),
+                std::make_tuple(data_type::u8, data_type::u8,
+                    data_type::s32),
+                std::make_tuple(data_type::s8, data_type::f32,
+                    data_type::f32),
+                std::make_tuple(data_type::u8, data_type::f32,
+                    data_type::f32));
         }
     };
 

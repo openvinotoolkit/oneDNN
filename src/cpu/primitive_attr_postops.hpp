@@ -94,7 +94,8 @@ struct ref_post_ops_t {
         return po.has_default_values({binary, eltwise, prelu, sum});
     }
 
-    static bool post_ops_ok(const post_ops_t &po);
+        static bool post_ops_ok(
+            const post_ops_t &po, bool allow_quantization = false);
 
 private:
     const post_ops_t &po_;

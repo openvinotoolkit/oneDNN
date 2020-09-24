@@ -105,6 +105,8 @@ void primitive_task_start(primitive_kind_t kind, const char *log_kind) {
             CASE(softmax),
             CASE(layer_normalization),
             CASE(group_normalization),
+            CASE(depthwise),
+            CASE(quantization),
             CASE(sdpa),
     };
 #undef CASE

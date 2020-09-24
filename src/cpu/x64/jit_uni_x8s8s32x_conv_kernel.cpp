@@ -58,12 +58,12 @@ jit_uni_x8s8s32x_fwd_kernel_vmm_t<isa, Vmm>::jit_uni_x8s8s32x_fwd_kernel_vmm_t(
         const jit_conv_conf_t &ajcp, const primitive_attr_t &attr,
         const memory_desc_t &dst_md)
     : jit_generator_t(jit_name(), isa), jcp(ajcp), attr_(attr) {
-    if (jcp.with_eltwise || jcp.with_binary || jcp.with_sum) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_sum || jcp.with_depthwise || jcp.with_quantization) {
         using namespace binary_injector;
         static constexpr bool preserve_gpr = true;
-        static constexpr bool preserve_vmm = false;
-        static constexpr size_t helper_vmm_idx = 15;
-        const int block_tail = (jcp.is_depthwise ? jcp.ch_block : jcp.oc_block)
+        static constexpr bool preserve_vmm = true;
+        static constexpr size_t helper_vmm_idx = 2;
+    const int block_tail = (jcp.is_depthwise ? jcp.ch_block : jcp.oc_block)
                 % isa_simd_width_;
         const int tail_size = block_tail
                 ? block_tail
@@ -76,11 +76,14 @@ jit_uni_x8s8s32x_fwd_kernel_vmm_t<isa, Vmm>::jit_uni_x8s8s32x_fwd_kernel_vmm_t(
                 memory_desc_wrapper(dst_md), tail_size, true};
         const static_params_t static_params {
                 this->param1, rhs_arg_static_params};
+        quantization_injector::static_params_t quantization_static_params =
+                {vmm_d_weights.getIdx(), vmm_d_bias.getIdx(), reg_d_weights, reg_d_bias};
 
         postops_injector_
                 = utils::make_unique<injector::jit_uni_postops_injector_t<
                         typename cpu_isa_traits_t<isa>::Vmm>>(this,
-                        jcp.post_ops, static_params,
+                jcp.post_ops, static_params, eltwise_injector::static_params_t(),
+                quantization_static_params,
                         /* inject_sum = */ jcp.with_sum);
     }
 }
@@ -132,11 +135,20 @@ template <cpu_isa_t isa, typename Vmm>
 void jit_uni_x8s8s32x_fwd_kernel_vmm_t<isa, Vmm>::apply_postops(
         const int nb_oc_block, const int ur_w, const bool last_oc_block_flag,
         const int oc_block) {
-    if (jcp.with_eltwise || jcp.with_binary || jcp.with_sum) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_sum || jcp.with_depthwise || jcp.with_quantization) {
+        std::map<size_t, int> vmm_idx_off;
+        iterate(nb_oc_block, ur_w,
+                [&](const bool, const int k, const int j) {
+                    vmm_idx_off.insert({vmm_out_idx(j, k), k * oc_block * sizeof(float)});
+                });
+        depthwise_injector::dynamic_params_t ddp {vmm_d_weights.getIdx(), vmm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
+                                                  ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off};
+        quantization_injector::dynamic_params_t qdp {ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, jcp.dst_dt};
+
         vmm_index_set_t vmm_idxs;
+        binary_injector::rhs_arg_dynamic_params_t rhs_arg_params;
         // Sum post-op requires binary parameters to be set.
         if (jcp.with_binary || jcp.with_sum) {
-            binary_injector::rhs_arg_dynamic_params_t rhs_arg_params;
             const bool oc_blk_is_smaller_than_vmm = oc_block < isa_simd_width_;
             iterate(nb_oc_block, ur_w, last_oc_block_flag,
                     oc_blk_is_smaller_than_vmm,
@@ -154,13 +166,14 @@ void jit_uni_x8s8s32x_fwd_kernel_vmm_t<isa, Vmm>::apply_postops(
                 if (mask_flag) rhs_arg_params.vmm_tail_idx_.emplace(vmm_idx);
             });
 
-            postops_injector_->compute_vector_range(vmm_idxs, rhs_arg_params);
+            postops_injector_->compute_vector_range(vmm_idxs, rhs_arg_params, ddp, qdp);
         } else {
             iterate(nb_oc_block, ur_w,
                     [&](const bool, const int k, const int j) {
                 vmm_idxs.emplace(vmm_out_idx(j, k));
             });
-            postops_injector_->compute_vector_range(vmm_idxs);
+            postops_injector_->compute_vector_range(
+                    vmm_idxs, rhs_arg_params, ddp, qdp);
         }
     }
 }
@@ -1492,13 +1505,15 @@ status_t jit_uni_x8s8s32x_fwd_kernel_t<isa>::init_conf(jit_conv_conf_t &jcp,
     jcp.with_binary = !everyone_is(-1, binary_ind, prelu_ind);
     const int sum_ind = post_ops.find(primitive_kind::sum);
     jcp.with_sum = sum_ind != -1;
+    jcp.with_depthwise = post_ops.find(primitive_kind::depthwise) != -1;
+    jcp.with_quantization = post_ops.find(primitive_kind::quantization) != -1;
 
     jcp.post_ops = post_ops;
 
     using namespace injector;
 
     const bool post_ops_ok_ = post_ops_ok(post_ops_ok_args_t(isa,
-            {eltwise, binary, sum}, jcp.post_ops, &dst_d, false, false, false));
+            {eltwise, binary, sum, depthwise, quantization}, jcp.post_ops, &dst_d, false, false, false));
     VDISPATCH_CONV_IC(post_ops_ok_, VERBOSE_UNSUPPORTED_POSTOP);
 
     jcp.typesize_in

@@ -396,14 +396,48 @@ void ref_post_ops_t::execute(float &res, const args_t &args) const {
                 res = weights_value * res;
                 ++it_prelu_md;
             } break;
+            case primitive_kind::quantization: {
+                assert(args.ctx && args.dst_md && args.l_offset >= 0);
+                const auto dst_d
+                    = args.ctx->memory_mdw(DNNL_ARG_DST, args.dst_md);
+                dims_t position {};
+                utils::l_dims_by_l_offset(
+                        position, args.l_offset, dst_d.dims(), dst_d.ndims());
+                const dim_t channel = position[1];
+                const auto &quant = e.quantization;
+                const auto &crop_low = *quant.crop_low_data;
+                const auto &crop_high = *quant.crop_high_data;
+                const auto &input_scale = *quant.input_scale_data;
+                const auto &input_shift = *quant.input_shift_data;
+                res = nstl::max(res,
+                    crop_low.shifts_[crop_low.count_ == 1 ? 0 : channel]);
+                res = nstl::min(res,
+                    crop_high.shifts_[crop_high.count_ == 1 ? 0 : channel]);
+                res = std::fma(res,
+                    input_scale.scales_[input_scale.count_ == 1 ? 0 : channel],
+                        input_shift.shifts_[input_shift.count_ == 1 ? 0 : channel]);
+                const bool dequantize = quant.alg
+                    == alg_kind::quantization_quantize_dequantize;
+                if (dequantize || dst_d.data_type() == data_type::f32
+                    || idx != po_.len() - 1)
+                    res = std::nearbyint(res);
+                if (dequantize) {
+                    const auto &output_scale = *quant.output_scale_data;
+                    const auto &output_shift = *quant.output_shift_data;
+                        res = std::fma(res,
+                            output_scale.scales_[output_scale.count_ == 1 ? 0 : channel],
+                            output_shift.shifts_[output_shift.count_ == 1 ? 0 : channel]);
+                }
+            } break;
             default: assert(!"unsupported post op primitive kind!");
         }
     }
 }
 
-bool ref_post_ops_t::post_ops_ok(const post_ops_t &po) {
+bool ref_post_ops_t::post_ops_ok(
+    const post_ops_t &po, bool allow_quantization) {
 
-    if (!primitive_kind_ok(po)) return false;
+    if (!allow_quantization && !primitive_kind_ok(po)) return false;
 
     for (const auto &e : po.entry_) {
         switch (e.kind) {
@@ -415,6 +449,9 @@ bool ref_post_ops_t::post_ops_ok(const post_ops_t &po) {
                 break;
             case primitive_kind::eltwise:
             case primitive_kind::prelu: break;
+            case primitive_kind::quantization:
+                if (!allow_quantization) return false;
+                break;
             default: return false;
         }
     }

@@ -2099,6 +2099,10 @@ typedef enum {
     dnnl_layer_normalization,
     /// A group normalization primitive.
     dnnl_group_normalization,
+    /// An depthwise-wise primitive.
+    dnnl_depthwise,
+    /// A quantization primitive.
+    dnnl_quantization,
 
     // Max value to prevent UB for internal-use-only values.
     dnnl_primitive_kind_max = 0x7fff,
@@ -2258,6 +2262,12 @@ typedef enum {
     dnnl_softmax_accurate = 0x30000,
     /// Logsoftmax
     dnnl_softmax_log,
+
+    dnnl_depthwise_scale_shift = 0x3fff0,
+    dnnl_depthwise_prelu = 0x3fff1,
+
+    dnnl_quantization_quantize_dequantize = 0x4fff0,
+    dnnl_quantization_quantize = 0x4fff1,
 } dnnl_alg_kind_t;
 
 /// Flags for normalization primitives.

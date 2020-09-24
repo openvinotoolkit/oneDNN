@@ -257,7 +257,7 @@ status_t conv_attr_check(const convolution_desc_t &desc, const engine_t *engine,
             const auto &po = attr->post_ops_;
             using namespace primitive_kind;
             VCHECK_CONV_UNIMPL(po.has_default_values({binary, eltwise, prelu,
-                                       sum, convolution}),
+                                       sum, convolution, depthwise, quantization}),
                     VERBOSE_UNSUPPORTED_POSTOP);
 
             // Check sum

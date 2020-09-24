@@ -235,7 +235,8 @@ status_t deconv_attr_check(const deconvolution_desc_t &desc,
             const auto &po = attr->post_ops_;
             using namespace primitive_kind;
             VCHECK_DECONV_UNIMPL(
-                    po.has_default_values({binary, eltwise, prelu, sum}),
+                    po.has_default_values(
+                            {binary, eltwise, prelu, sum, depthwise, quantization}),
                     VERBOSE_UNSUPPORTED_POSTOP);
 
             // Check sum

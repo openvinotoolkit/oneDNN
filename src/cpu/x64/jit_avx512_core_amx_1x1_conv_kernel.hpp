@@ -113,6 +113,12 @@ private:
 
     const Xbyak::Opmask ktail_mask = k2;
 
+    const Xbyak::Reg64 reg_d_weights = reg_last_h;
+    const Xbyak::Reg64 reg_d_bias = reg_oc_blocks;
+
+    Xbyak::Zmm zmm_d_weights = Xbyak::Zmm(31);
+    Xbyak::Zmm zmm_d_bias = Xbyak::Zmm(30);
+
     bool is_bf16() const;
 
     void init_runtime_counters();
@@ -150,8 +156,8 @@ private:
     // `store_output_vector_bf16`, and the `is_fast_postops` whole-tile paths
     // bypass the injector altogether.
     bool is_sum_via_postops() const { return jcp.with_sum && !is_bf16(); }
-    void apply_postops(
-            const Xbyak::Zmm zmm_out, const size_t off, const bool mask_flag);
+    void apply_postops(const Xbyak::Zmm zmm_out, const size_t off,
+            const bool mask_flag, const int ocb);
     static bool is_fast_postops(const jit_conv_conf_t &jcp);
     void store_output_vectors_int8(int ocb, int osb);
     void store_output_vector_int8(

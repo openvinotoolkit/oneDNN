@@ -103,6 +103,12 @@ private:
     /* binary post-op operand */
     const Xbyak::Reg64 temp_offset_reg = r12;
 
+    const Xbyak::Reg64 reg_d_weights = r15;
+    const Xbyak::Reg64 reg_d_bias = r13;
+
+    const Xbyak::Zmm zmm_d_weights = Xbyak::Zmm(31);
+    const Xbyak::Zmm zmm_d_bias = Xbyak::Zmm(30);
+
     const Xbyak::Opmask ktail_mask = Xbyak::Opmask(2);
     const Xbyak::Opmask kblend_mask = Xbyak::Opmask(3);
     const Xbyak::Opmask postops_mask = Xbyak::Opmask(4);

@@ -73,6 +73,9 @@ struct jit_uni_x8s8s32x_convolution_fwd_t : public primitive_t {
                     VERBOSE_UNSUPPORTED_POSTOP);
             CHECK(attr_scales_ok());
             CHECK(attr_zero_points_ok());
+            VDISPATCH_CONV(
+                    !this->attr()->has_asymmetric_quantization(),
+                    VERBOSE_UNSUPPORTED_ATTR);
 
             // TODO: make `init_conf` assign initialized object to `jcp_`
             CHECK(jit_uni_x8s8s32x_fwd_kernel_t<isa>::init_conf(jcp_, *desc(),

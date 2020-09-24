@@ -18,6 +18,7 @@
 
 #include <map>
 #include <memory>
+#include <type_traits>
 
 #include "common/c_types_map.hpp"
 #include "common/primitive_attr.hpp"
@@ -25,7 +26,9 @@
 #include "common/utils.hpp"
 #include "cpu/x64/injectors/injector_utils.hpp"
 #include "cpu/x64/injectors/jit_uni_binary_injector.hpp"
+#include "cpu/x64/injectors/jit_uni_depthwise_injector.hpp"
 #include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
+#include "cpu/x64/injectors/jit_uni_quantization_injector.hpp"
 #include "cpu/x64/injectors/jit_uni_sum_injector.hpp"
 #include "cpu/x64/jit_generator.hpp"
 #include <initializer_list>
@@ -77,12 +80,26 @@ public:
             const binary_injector::static_params_t &binary_static_params,
             const eltwise_injector::static_params_t &eltwise_static_params,
             bool inject_sum);
+    jit_uni_postops_injector_t(jit_generator_t *host,
+            const post_ops_t &post_ops,
+            const binary_injector::static_params_t &binary_static_params,
+            const eltwise_injector::static_params_t &eltwise_static_params,
+            const quantization_injector::static_params_t &quantization_static_params,
+            bool inject_sum);
 
     // Generates code of post_ops chain injected to host primitive. Applied to
     // ordered set of vector registers' indexes.
     // @rhs_arg_params: see jit_uni_binary_injector description
     void compute_vector_range(const injector_utils::vmm_index_set_t &vmm_idxs,
             const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params);
+    void compute_vector_range(const injector_utils::vmm_index_set_t &vmm_idxs,
+            const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
+            const depthwise_injector::dynamic_params_t &ddp,
+            const quantization_injector::dynamic_params_t &qdp);
+    void compute_vector_range(size_t start_idx, size_t end_idx,
+            const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
+            const depthwise_injector::dynamic_params_t &ddp,
+            const quantization_injector::dynamic_params_t &qdp);
     void compute_vector_range(const injector_utils::vmm_index_set_t &vmm_idxs);
 
     // Generates code of post_ops chain injected to host primitive. Applied to
@@ -111,6 +128,8 @@ public:
     void prepare_table(bool gen_table);
 
 private:
+        static constexpr cpu_isa_t injector_isa
+                        = std::is_same<Vmm, Xbyak::Zmm>::value ? avx512_core : avx2;
     post_ops_t post_ops_;
     jit_generator_t *host_;
     // Key is a numerical order of a post-op in attributes.
@@ -122,11 +141,13 @@ private:
     // do not own it. Keep `idx_to_sum_injector_` after the `binary_injector_`
     // field, just in case.
     std::map<int, jit_uni_sum_injector_t<Vmm>> idx_to_sum_injector_;
+        std::map<int, jit_uni_depthwise_injector_f32<injector_isa>> depthwise_injectors_;
+        std::map<int, jit_uni_quantization_injector_f32<injector_isa, Vmm>> quantization_injectors_;
     // When unset, a sum entry is skipped because the kernel applies it itself.
     const bool inject_sum_;
 };
 
-enum post_op_type { sum = 0, eltwise, binary, prelu };
+enum post_op_type { sum = 0, eltwise, binary, prelu, depthwise, quantization };
 
 struct post_ops_ok_args_t {
     post_ops_ok_args_t(const cpu_isa_t isa,

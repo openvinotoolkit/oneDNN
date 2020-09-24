@@ -131,6 +131,12 @@ private:
             postops_injector_;
     std::unique_ptr<bf16_emulation_t> bf16_emu_;
 
+    reg64_t reg_d_weights = r15;
+    reg64_t reg_d_bias = reg_kj;
+
+    Xbyak::Zmm zmm_d_weights = Xbyak::Zmm(31);
+    Xbyak::Zmm zmm_d_bias = Xbyak::Zmm(30);
+
     inline void prepare_dst(int ur_w);
     void apply_postops(int ur_w);
     inline void store_dst(int ur_w);

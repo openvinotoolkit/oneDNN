@@ -108,6 +108,12 @@ private:
     Xbyak::Opmask half_mask = Xbyak::Opmask(6);
     Xbyak::Opmask half_mask_hi = Xbyak::Opmask(5);
     Xbyak::Label dst_prm_table;
+    reg64_t reg_oc_off = abi_param1;
+    reg64_t reg_d_weights = imm_addr64;
+    reg64_t reg_d_bias = aux_reg_bcast_data;
+
+    Xbyak::Zmm zmm_d_weights = Xbyak::Zmm(31);
+    Xbyak::Zmm zmm_d_bias = Xbyak::Zmm(30);
 
     constexpr static int reg64_size_ = sizeof(int64_t);
     constexpr static int bcast_loop_work_offt = 0;
@@ -116,7 +122,8 @@ private:
     constexpr static int broadcast_space = 3 * reg64_size_;
     constexpr static int reg_abi_param1_backup = 4 * reg64_size_;
     constexpr static int reg_dw_binary_output_off = 5 * reg64_size_;
-    constexpr static int stack_space_needed = 376;
+    constexpr static int reg_oc_off_backup = 376;
+    constexpr static int stack_space_needed = 384;
 
     void bcast_loop(int load_loop_blk);
     void reduce_loop(int load_loop_blk, int ur, int substep, bool wraparound);
