@@ -72,6 +72,9 @@ struct jit_avx2_1x1_convolution_fwd_t : public primitive_t {
             VDISPATCH_CONV(
                     attr_.set_default_formats(dst_md(0)) == status::success,
                     VERBOSE_UNSUPPORTED_POSTOP);
+            VDISPATCH_CONV(
+                    !this->attr()->has_asymmetric_quantization(),
+                    VERBOSE_UNSUPPORTED_ATTR);
 
             const convolution_desc_t *conv_d = desc();
             const memory_desc_t *src_d = src_md();
@@ -326,12 +329,12 @@ struct jit_avx2_1x1_convolution_fwd_t : public primitive_t {
             if (isa == avx2) {
                 CHECK(safe_ptr_assign(kernel_dw_avx2,
                         new dw_conv_kernel_t<avx2>(
-                                *(pd()->jcp_dw_), *pd()->dst_md(0))));
+                                *(pd()->jcp_dw_), *pd()->dst_md(0), *pd()->dw_conv_pd_->attr())));
                 CHECK(kernel_dw_avx2->create_kernel());
             } else {
                 CHECK(safe_ptr_assign(kernel_dw_sse41,
                         new dw_conv_kernel_t<sse41>(
-                                *(pd()->jcp_dw_), *pd()->dst_md(0))));
+                                *(pd()->jcp_dw_), *pd()->dst_md(0), *pd()->dw_conv_pd_->attr())));
                 CHECK(kernel_dw_sse41->create_kernel());
             }
         }

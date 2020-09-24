@@ -57,6 +57,9 @@ struct jit_sse41_convolution_fwd_t : public primitive_t {
             VDISPATCH_CONV(
                     attr_.set_default_formats(dst_md(0)) == status::success,
                     VERBOSE_UNSUPPORTED_POSTOP);
+            VDISPATCH_CONV(
+                    !this->attr()->has_asymmetric_quantization(),
+                    VERBOSE_UNSUPPORTED_ATTR);
 
             CHECK(jit_sse41_conv_fwd_kernel_f32::init_conf(jcp_, *desc(),
                     *src_md(), *weights_md(), *dst_md(), *attr(),

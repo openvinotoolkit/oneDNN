@@ -60,6 +60,9 @@ struct jit_uni_dw_convolution_fwd_t : public primitive_t {
                             utils::one_of(this->desc()->bias_desc.data_type,
                                     f32, bf16)),
                     VERBOSE_UNSUPPORTED_BIAS_CFG);
+            VDISPATCH_CONV(
+                    !this->attr()->has_asymmetric_quantization(),
+                    VERBOSE_UNSUPPORTED_ATTR);
 
             auto status = jit_uni_dw_conv_fwd_kernel<isa, src_type>::init_conf(
                     jcp_, *desc(), src_md_, weights_md_, bias_md_, dst_md_,
@@ -86,7 +89,7 @@ struct jit_uni_dw_convolution_fwd_t : public primitive_t {
     status_t init(engine_t *engine) override {
         CHECK(safe_ptr_assign(kernel_,
                 new jit_uni_dw_conv_fwd_kernel<isa, src_type>(
-                        pd()->jcp_, *pd()->dst_md(0))));
+                        pd()->jcp_, *pd()->dst_md(0), *pd()->attr())));
         return kernel_->create_kernel();
     }
 

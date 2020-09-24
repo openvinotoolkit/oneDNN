@@ -73,6 +73,9 @@ struct jit_avx512_common_1x1_convolution_fwd_t : public primitive_t {
             VDISPATCH_CONV(
                     attr_.set_default_formats(dst_md(0)) == status::success,
                     VERBOSE_UNSUPPORTED_POSTOP);
+            VDISPATCH_CONV(
+                    !this->attr()->has_asymmetric_quantization(),
+                    VERBOSE_UNSUPPORTED_ATTR);
 
             const convolution_desc_t *conv_d = desc();
             const memory_desc_t *src_d = src_md();
@@ -295,7 +298,7 @@ struct jit_avx512_common_1x1_convolution_fwd_t : public primitive_t {
         if (pd()->jcp_.with_dw_conv) {
             CHECK(safe_ptr_assign(kernel_dw_,
                     new dw_conv_kernel_t(
-                            pd()->dw_conv_pd_->jcp_, *pd()->dst_md(0))));
+                            pd()->dw_conv_pd_->jcp_, *pd()->dst_md(0), *pd()->dw_conv_pd_->attr())));
             CHECK(kernel_dw_->create_kernel());
         }
 

@@ -58,6 +58,8 @@ struct jit_avx512_common_convolution_fwd_t : public primitive_t {
                     attr()->has_default_values(
                             primitive_attr_t::skip_mask_t::post_ops, dst_type),
                     VERBOSE_UNSUPPORTED_ATTR);
+            VDISPATCH_CONV(!this->attr()->has_asymmetric_quantization(),
+                    VERBOSE_UNSUPPORTED_ATTR);
 
             CHECK(jit_avx512_common_conv_fwd_kernel::init_conf(jcp_, *desc(),
                     src_md_, weights_md_, dst_md_, bias_md_, attr_,
