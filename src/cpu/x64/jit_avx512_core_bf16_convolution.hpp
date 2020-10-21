@@ -142,8 +142,9 @@ struct jit_avx512_core_bf16_convolution_bwd_data_t : public primitive_t {
                     VERBOSE_BAD_ALGORITHM);
             VDISPATCH_CONV(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
             VDISPATCH_CONV(
-                    attr()->has_default_values(), VERBOSE_UNSUPPORTED_ATTR);
+                    attr()->has_default_values(primitive_attr_t::skip_mask_t::post_ops), VERBOSE_UNSUPPORTED_ATTR);
 
+            jcp_.post_ops = attr()->post_ops_;
             // TODO: make `init_conf` assign initialized object to `jcp_`
             CHECK(jit_avx512_core_bf16_bwd_data_kernel::init_conf(jcp_, *desc(),
                     diff_src_md_, weights_md_, diff_dst_md_,

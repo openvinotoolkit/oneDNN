@@ -85,6 +85,8 @@ struct jit_uni_dw_conv_bwd_data_kernel {
     }
     ~jit_uni_dw_conv_bwd_data_kernel() = default;
 
+    static bool post_ops_ok(const jit_conv_conf_t& jcp);
+
     static status_t init_conf(jit_conv_conf_t &jcp,
             const convolution_desc_t &cd, memory_desc_t &diff_src_md,
             memory_desc_t &weights_md, memory_desc_t &diff_dst_md);

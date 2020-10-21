@@ -278,6 +278,12 @@ struct _jit_avx512_core_bf16_bwd_data_kernel : public jit_generator_t {
                     bf16_emu_scratch, bf16_emu_reserv_4, bf16_emu_reserv_5);
     }
 
+    ~_jit_avx512_core_bf16_bwd_data_kernel() {
+        for (auto inj : depthwise_injectors)
+            delete inj;
+        depthwise_injectors.clear();
+    }
+
     DECLARE_CPU_JIT_AUX_FUNCTIONS(_jit_avx512_core_bf16_bwd_data_kernel_f32)
 
     const jit_conv_conf_t &jcp;
@@ -357,6 +363,11 @@ private:
 
     Vmm vmm_wei = Vmm(31);
     std::unique_ptr<bf16_emulation_t> bf16_emu_;
+
+    reg64_t reg_d_weights = r15;
+    reg64_t reg_d_bias = reg_kj;
+
+    nstl::vector<jit_uni_depthwise_injector_f32<avx512_core>*> depthwise_injectors;
 
     inline void prepare_output(int ur_w);
     inline void store_output(int ur_w);
@@ -442,18 +453,15 @@ struct jit_avx512_core_bf16_bwd_data_kernel {
         switch (ajcp.ic_block) {
             case 16:
                 kernel_ = utils::make_unique<
-                        _jit_avx512_core_bf16_bwd_data_kernel<Xbyak::Zmm>>(
-                        ajcp);
+                        _jit_avx512_core_bf16_bwd_data_kernel<Xbyak::Zmm>>(ajcp);
                 return;
             case 8:
                 kernel_ = utils::make_unique<
-                        _jit_avx512_core_bf16_bwd_data_kernel<Xbyak::Ymm>>(
-                        ajcp);
+                        _jit_avx512_core_bf16_bwd_data_kernel<Xbyak::Ymm>>(ajcp);
                 return;
             case 4:
                 kernel_ = utils::make_unique<
-                        _jit_avx512_core_bf16_bwd_data_kernel<Xbyak::Xmm>>(
-                        ajcp);
+                        _jit_avx512_core_bf16_bwd_data_kernel<Xbyak::Xmm>>(ajcp);
                 return;
             default: assert(!"invalid channel blocking");
         }
@@ -465,6 +473,8 @@ struct jit_avx512_core_bf16_bwd_data_kernel {
     }
 
     ~jit_avx512_core_bf16_bwd_data_kernel() = default;
+
+    static bool post_ops_ok(jit_conv_conf_t& jcp);
 
     static status_t init_conf(jit_conv_conf_t &jcp,
             const convolution_desc_t &cd, memory_desc_t &diff_src_md,
