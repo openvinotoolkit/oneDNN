@@ -1144,6 +1144,29 @@ void jit_avx512_core_bf16_bwd_data_kernel_vmm_t<Vmm>::store_output(int ur_w) {
     if (!isa_has_bf16(jcp.isa)) bf16_emu_->init_vcvtneps2bf16();
     const int ic_tail = jcp.ic_tail;
 
+    int depthwise_inj_idx = 0;
+    const auto& p = jcp.post_ops;
+    for (int i = 0; i < p.len(); i++) {
+        auto& post_op = p.entry_[i];
+        if (post_op.is_depthwise()) {
+            mov(reg_d_weights, reinterpret_cast<size_t>(post_op.depthwise.weights_data));
+            mov(reg_d_bias, reinterpret_cast<size_t>(post_op.depthwise.biases_data));
+
+            add(reg_d_weights, ptr[this->param1 + GET_OFF(oc_off)]);
+            add(reg_d_bias, ptr[this->param1 + GET_OFF(oc_off)]);
+
+            for (int k = 0; k < jcp.nb_ic_blocking; k++) {
+                depthwise_injectors[depthwise_inj_idx]->compute_vector_range(
+                    k * jcp.ur_w, k * jcp.ur_w + ur_w, reg_d_weights, reg_d_bias);
+
+                add(reg_d_weights, jcp.ic_block * sizeof(float));
+                add(reg_d_bias, jcp.ic_block * sizeof(float));
+            }
+
+            depthwise_inj_idx++;
+        }
+    }
+
     if (jcp.dst_dt == data_type::f32) {
         for (int k = 0; k < jcp.nb_ic_blocking; k++)
             for (int j = 0; j < ur_w; j++) {
@@ -1388,6 +1411,17 @@ void jit_avx512_core_bf16_bwd_data_kernel_vmm_t<Vmm>::compute_loop(
 
 template <typename Vmm>
 void jit_avx512_core_bf16_bwd_data_kernel_vmm_t<Vmm>::generate() {
+    const auto &p = jcp.post_ops;
+    for (int i = 0; i < p.len(); i++) {
+        auto &post_op = p.entry_[i];
+        if (post_op.is_depthwise()) {
+            depthwise_injectors.push_back(new jit_uni_depthwise_injector_f32<avx512_core>(
+                    this,
+                    post_op.depthwise.alg
+            ));
+        }
+    }
+
     int iw = jcp.iw;
     int kw = jcp.kw;
     int ur_w = jcp.ur_w;
@@ -1574,9 +1608,26 @@ void jit_avx512_core_bf16_bwd_data_kernel_vmm_t<Vmm>::generate() {
     postamble();
 }
 
+bool jit_avx512_core_bf16_bwd_data_kernel_t::post_ops_ok(
+    jit_conv_conf_t& jcp) {
+    const auto& p = jcp.post_ops;
+
+    auto all_post_ops_supported = [&]() {
+        bool ok = true;
+
+        for (int i = 0; i < p.len(); i++) {
+            ok = ok && utils::one_of(p.entry_[i].kind, primitive_kind::depthwise);
+        }
+        return ok;
+    };
+
+    return all_post_ops_supported();
+}
+
 status_t jit_avx512_core_bf16_bwd_data_kernel_t::init_conf(jit_conv_conf_t &jcp,
         const convolution_desc_t &cd, memory_desc_t &diff_src_md,
-        memory_desc_t &weights_md, memory_desc_t &diff_dst_md, int nthreads) {
+        memory_desc_t &weights_md, memory_desc_t &diff_dst_md,
+        int nthreads) {
 
     const memory_desc_wrapper diff_src_d(&diff_src_md);
     const memory_desc_wrapper weights_d(&weights_md);
@@ -1748,6 +1799,8 @@ status_t jit_avx512_core_bf16_bwd_data_kernel_t::init_conf(jit_conv_conf_t &jcp,
             && jcp.oc <= weights_d.padded_dims()[with_groups + 0];
     VDISPATCH_CONV_IC(args_ok, VERBOSE_UNSUPPORTED_PAD_FEATURE,
             "weight and src size mismatch");
+
+    if (!post_ops_ok(jcp)) return status::unimplemented;
 
     jcp.nb_ic = utils::div_up(jcp.ic, jcp.ic_block);
     jcp.nb_oc = utils::div_up(jcp.oc, jcp.oc_block);
