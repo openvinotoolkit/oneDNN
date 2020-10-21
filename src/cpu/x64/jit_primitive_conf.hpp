@@ -415,6 +415,7 @@ struct jit_conv_args_t {
     size_t last_oc_block = 0;
 
     size_t oc_off;
+    size_t ic_off;
     size_t oc_off_prf;
 };
 
