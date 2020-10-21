@@ -158,6 +158,13 @@ struct jit_avx2_conv_bwd_data_kernel_f32_t : public jit_generator_t {
     jit_avx2_conv_bwd_data_kernel_f32_t(const jit_conv_conf_t &ajcp)
         : jit_generator_t(jit_name()), jcp(ajcp) {}
 
+    ~jit_avx2_conv_bwd_data_kernel_f32_t() {
+        for (auto inj : depthwise_injectors)
+            delete inj;
+        depthwise_injectors.clear();
+    }
+
+    static bool post_ops_ok(const jit_conv_conf_t& jcp);
     static status_t init_conf(jit_conv_conf_t &jcp,
             const convolution_desc_t &cd, const memory_desc_wrapper &diff_src_d,
             const memory_desc_wrapper &weights_d,
@@ -191,6 +198,11 @@ private:
     reg64_t reg_long_offt = r15;
     reg64_t reg_reduce_work = reg_long_offt;
     Xbyak::Reg32 reg_ci_flag = r13d; // used for nxc tails
+
+    reg64_t reg_d_weights = r15;
+    reg64_t reg_d_bias = rbp;
+
+    nstl::vector<jit_uni_depthwise_injector_f32<avx2>*> depthwise_injectors;
 
     inline void compute_loop(int ur_w, int l_overflow, int r_overflow);
 
