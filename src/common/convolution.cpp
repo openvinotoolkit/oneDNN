@@ -269,6 +269,12 @@ status_t conv_attr_check(const convolution_desc_t &desc, const engine_t *engine,
         }
     } else {
         auto bwd_attr_mask = smask_t::fpmath_mode | smask_t::accumulation_mode;
+                if (desc.prop_kind == prop_kind::backward_data) {
+                        bwd_attr_mask |= smask_t::post_ops;
+                        VCHECK_CONV_UNIMPL(
+                                        attr->post_ops_.has_default_values({primitive_kind::depthwise}),
+                                        VERBOSE_UNSUPPORTED_POSTOP);
+                }
         VCHECK_CONV_UNIMPL(attr->has_default_values(bwd_attr_mask),
                 VERBOSE_UNSUPPORTED_ATTR);
     }

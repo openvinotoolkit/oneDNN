@@ -383,7 +383,7 @@ struct jit_avx512_common_1x1_convolution_bwd_data_t : public primitive_t {
                     VERBOSE_BAD_ALGORITHM);
             VDISPATCH_CONV(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
             VDISPATCH_CONV(
-                    attr()->has_default_values(), VERBOSE_UNSUPPORTED_ATTR);
+                    is_supported_post_ops(), VERBOSE_UNSUPPORTED_ATTR);
             VDISPATCH_CONV(set_default_formats(), VERBOSE_UNSUPPORTED_TAG);
 
             const convolution_desc_t *conv_d = desc();
@@ -437,6 +437,23 @@ struct jit_avx512_common_1x1_convolution_bwd_data_t : public primitive_t {
 
             return set_default_formats_common(dat_tag, wei_tag, dat_tag);
         }
+
+        bool is_supported_post_ops() const {
+            const auto &p = this->attr()->post_ops_;
+            if (p.len() > 1)
+                return false;
+
+            auto all_post_ops_supported = [&]() {
+                bool ok = true;
+
+                for (int i = 0; i < p.len(); i++) {
+                    ok = ok && utils::one_of(p.entry_[i].kind, primitive_kind::depthwise);
+                }
+                return ok;
+            };
+
+            return all_post_ops_supported();
+        }
     };
 
     template <cpu_isa_t isa, typename conv_t>
@@ -452,7 +469,7 @@ struct jit_avx512_common_1x1_convolution_bwd_data_t : public primitive_t {
     status_t init(engine_t *engine) override {
         CHECK(safe_ptr_assign(kernel_,
                 new jit_avx512_common_1x1_conv_kernel_t(
-                        pd()->jcp_, *pd()->attr(), *pd()->dst_md(0))));
+                        pd()->jcp_, *pd()->attr(), *pd()->diff_src_md())));
         CHECK(kernel_->create_kernel());
         CHECK(init_rtus_driver<avx512_core>(this));
         return status::success;

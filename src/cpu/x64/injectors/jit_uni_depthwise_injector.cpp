@@ -183,9 +183,11 @@ void jit_uni_depthwise_injector_f32<isa>::compute_body(size_t start_idx, size_t 
     for (size_t idx = start_idx; idx < end_idx; idx++) {
         switch (depthwise_alg) {
             case alg_kind::depthwise_scale_shift:
-                scale_shift_compute_vector(Vmm(idx), p_weights, p_bias, is_broadcast); break;
+                scale_shift_compute_vector(Vmm(idx), p_weights, p_bias,
+                        is_broadcast, 0, channels_ > 0); break;
             case alg_kind::depthwise_prelu:
-                prelu_compute_vector(Vmm(idx), p_weights, p_bias, is_broadcast); break;
+                prelu_compute_vector(Vmm(idx), p_weights, p_bias,
+                        is_broadcast, 0, channels_ > 0); break;
             default: assert(!"unsupported depthwise algorithm");
         }
     }

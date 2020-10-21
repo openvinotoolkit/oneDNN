@@ -754,6 +754,8 @@ void jit_avx512_common_convolution_bwd_data_t<diff_dst_type, wei_type,
                         = utils::this_block_size(icb * jcp.ic_block, jcp.ic,
                                 jcp.nb_ic_blocking * jcp.ic_block);
                 dim_t reduce_work = ocb_step * jcp.oc_block;
+                const int ic_off = static_cast<int>(ic_off_idx
+                        * (is_dsrc_layout_nxc ? 1 : jcp.ic_block) * sizeof(float));
                 for (dim_t ocb = ocb_l2; ocb < ocb_end; ocb += ocb_step) {
                     dim_t curr_nb_oc
                             = nstl::min<dim_t>(ocb_step, ocb_end - ocb);
@@ -761,12 +763,14 @@ void jit_avx512_common_convolution_bwd_data_t<diff_dst_type, wei_type,
                         reduce_work = utils::this_block_size(ocb * jcp.oc_block,
                                 jcp.oc, ocb_step * jcp.oc_block);
                     }
+                    par_conv.flags = ocb + curr_nb_oc >= jcp.nb_oc
+                            ? FLAG_OC_LAST : 0;
 
                     jit_conv_ker_pipeline_iw_thr(jit_ker, par_conv, diff_src_w,
                             diff_dst_w, wht_w, nullptr, static_cast<int>(ocb),
                             1, static_cast<int>(iwb),
                             static_cast<int>(reduce_work),
-                            static_cast<int>(load_work), 0);
+                            static_cast<int>(load_work), ic_off);
                     diff_dst_w += diff_dst_c_stride;
                     wht_w += wht_oc_stride;
                 }
@@ -886,6 +890,8 @@ void jit_avx512_common_convolution_bwd_data_t<diff_dst_type, wei_type,
                         reduce_work = utils::this_block_size(ocb * jcp.oc_block,
                                 jcp.oc, ocb_step * jcp.oc_block);
                     }
+                    par_conv.flags = ocb + curr_nb_oc >= jcp.nb_oc
+                            ? FLAG_OC_LAST : 0;
                     for (dim_t ij = ih_s; ij < ih_e; ++ij) {
                         dim_t oj, k_len, k_lo;
                         if (is_fast_path) { // dilate == 0 && stride == 1
@@ -932,6 +938,8 @@ void jit_avx512_common_convolution_bwd_data_t<diff_dst_type, wei_type,
                             oj = (ij + jcp.t_pad - k_lo) / jcp.stride_h;
                         }
 
+                        int ic_off = ic_off_idx * (is_dsrc_layout_nxc ? 1 : jcp.ic_block) * sizeof(float);
+
                         jit_conv_ker_pipeline_iw_thr(jit_ker, par_conv,
                                 diff_src_w + ij * diff_src_h_stride,
                                 diff_dst_w + oj * diff_dst_h_stride,
@@ -939,7 +947,7 @@ void jit_avx512_common_convolution_bwd_data_t<diff_dst_type, wei_type,
                                 static_cast<int>(ocb), static_cast<int>(k_len),
                                 static_cast<int>(iwb),
                                 static_cast<int>(reduce_work),
-                                static_cast<int>(load_work), 0);
+                                static_cast<int>(load_work), ic_off);
                     }
                     diff_dst_w += diff_dst_c_stride;
                     wht_w += wht_oc_stride;
@@ -1105,6 +1113,8 @@ void jit_avx512_common_convolution_bwd_data_t<diff_dst_type, wei_type,
                         reduce_work = utils::this_block_size(ocb * jcp.oc_block,
                                 jcp.oc, ocb_step * jcp.oc_block);
                     }
+                    par_conv.flags = ocb + curr_nb_oc >= jcp.nb_oc
+                            ? FLAG_OC_LAST : 0;
                     for (dim_t ij = ih_s; ij < ih_e; ++ij) {
                         dim_t oj, k_lo;
                         dim_t k_len;
@@ -1153,6 +1163,8 @@ void jit_avx512_common_convolution_bwd_data_t<diff_dst_type, wei_type,
                         }
                         assert(k_len >= 0);
 
+                        int ic_off = ic_off_idx * (is_dsrc_layout_nxc ? 1 : jcp.ic_block) * sizeof(float);
+
                         jit_conv_3d_ker_pipeline(jit_ker, par_conv,
                                 diff_src_w + ij * diff_src_h_stride,
                                 diff_dst_w + oj * diff_dst_h_stride,
@@ -1160,7 +1172,7 @@ void jit_avx512_common_convolution_bwd_data_t<diff_dst_type, wei_type,
                                 static_cast<int>(ocb), static_cast<int>(k_len),
                                 static_cast<int>(d_len),
                                 static_cast<int>(reduce_work),
-                                static_cast<int>(load_work), 0);
+                                static_cast<int>(load_work), ic_off);
                     }
                     diff_dst_w += diff_dst_c_stride;
                     wht_w += wht_oc_stride;

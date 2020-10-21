@@ -1036,7 +1036,7 @@ void jit_avx2_conv_bwd_data_kernel_f32_t::compute_loop(
 
     auto load_store_dsrc = [&](bool is_tail) {
         mov(reg_channel, ptr[param1 + GET_OFF(channel)]);
-        Label no_update_label;
+        Label no_update_label, skip_post_ops;
         cmp(reg_channel, 0);
         je(no_update_label, T_NEAR);
 
@@ -1053,6 +1053,33 @@ void jit_avx2_conv_bwd_data_kernel_f32_t::compute_loop(
             }
 
         L(no_update_label);
+        test(dword[param1 + GET_OFF(flags)], FLAG_OC_LAST);
+        je(skip_post_ops, T_NEAR);
+
+        const auto &p = jcp.post_ops;
+        int depthwise_inj_idx = 0;
+        for (int i = 0; i < p.len(); i++) {
+            auto& post_op = p.entry_[i];
+            if (post_op.is_depthwise()) {
+                push(reg_d_weights);
+                mov(reg_d_weights, reinterpret_cast<size_t>(post_op.depthwise.weights_data));
+                mov(reg_d_bias, reinterpret_cast<size_t>(post_op.depthwise.biases_data));
+
+                add(reg_d_weights, ptr[this->param1 + GET_OFF(ic_off)]);
+                add(reg_d_bias, ptr[this->param1 + GET_OFF(ic_off)]);
+
+                for (int ii = 0; ii < nb_ic_block; ii++) {
+                    depthwise_injectors[depthwise_inj_idx]->compute_vector_range(
+                            ur_w * ii, ur_w * ii + ur_w, reg_d_weights, reg_d_bias);
+
+                    add(reg_d_weights, jcp.ic_block * sizeof(float));
+                    add(reg_d_bias, jcp.ic_block * sizeof(float));
+                }
+                pop(reg_d_weights);
+            }
+            depthwise_inj_idx++;
+        }
+        L(skip_post_ops);
 
         for (int ii = 0; ii < nb_ic_block; ii++)
             for (int jj = 0; jj < ur_w; jj++) {
@@ -1085,6 +1112,16 @@ void jit_avx2_conv_bwd_data_kernel_f32_t::compute_loop(
 }
 
 void jit_avx2_conv_bwd_data_kernel_f32_t::generate() {
+    const auto &p = jcp.post_ops;
+    for (int i = 0; i < p.len(); i++) {
+        auto &post_op = p.entry_[i];
+        if (post_op.is_depthwise()) {
+            depthwise_injectors.push_back(new jit_uni_depthwise_injector_f32<avx2>(
+                    this, post_op, jcp.ic_without_padding * jcp.ngroups
+            ));
+        }
+    }
+
     preamble();
 
     mov(reg_dsrc, ptr[this->param1 + GET_OFF(src)]);
@@ -1151,6 +1188,23 @@ void jit_avx2_conv_bwd_data_kernel_f32_t::generate() {
     this->postamble();
 }
 
+bool jit_avx2_conv_bwd_data_kernel_f32_t::post_ops_ok(const jit_conv_conf_t& jcp) {
+    const auto &p = jcp.post_ops;
+    if (p.len() > 1)
+        return false;
+
+    auto all_post_ops_supported = [&]() {
+        bool ok = true;
+
+        for (int i = 0; i < p.len(); i++) {
+            ok = ok && utils::one_of(p.entry_[i].kind, primitive_kind::depthwise);
+        }
+        return ok;
+    };
+
+    return all_post_ops_supported();
+}
+
 status_t jit_avx2_conv_bwd_data_kernel_f32_t::init_conf(jit_conv_conf_t &jcp,
         const convolution_desc_t &cd, const memory_desc_wrapper &diff_src_d,
         const memory_desc_wrapper &weights_d,
@@ -1176,6 +1230,7 @@ status_t jit_avx2_conv_bwd_data_kernel_f32_t::init_conf(jit_conv_conf_t &jcp,
     jcp.oc = diff_dst_d.dims()[1] / jcp.ngroups;
     jcp.oc_without_padding = jcp.oc;
     jcp.ic = diff_src_d.dims()[1] / jcp.ngroups;
+    jcp.ic_without_padding = jcp.ic;
 
     jcp.id = (ndims == 5) ? diff_src_d.dims()[2] : 1;
     jcp.ih = (ndims == 3) ? 1 : diff_src_d.dims()[ndims - 2];
@@ -1207,6 +1262,19 @@ status_t jit_avx2_conv_bwd_data_kernel_f32_t::init_conf(jit_conv_conf_t &jcp,
             "unsupported shape with 'stride > 1' when 'dilate > 0'");
 
     const int simd_w = 8;
+
+    if (!post_ops_ok(jcp))
+        return status::unimplemented;
+
+    const auto &p = jcp.post_ops;
+    if (!mayiuse(avx2)) {
+        for (int i = 0; i < p.len(); i++) {
+            auto &post_op = p.entry_[i];
+            if (post_op.is_depthwise()) {
+                return status::unimplemented;
+            }
+        }
+    }
 
     /* derivatives */
     jcp.idp = jcp.id + 2 * jcp.f_pad;

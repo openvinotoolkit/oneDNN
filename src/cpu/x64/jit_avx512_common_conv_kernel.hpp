@@ -18,6 +18,7 @@
 #define CPU_X64_JIT_AVX512_COMMON_CONV_KERNEL_HPP
 
 #include <memory>
+#include <vector>
 #include "common/c_types_map.hpp"
 #include "common/memory_tracking.hpp"
 
@@ -236,6 +237,12 @@ struct jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t
 
     DECLARE_CPU_JIT_AUX_FUNCTIONS(
             jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t)
+    ~jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t() {
+        for (auto inj : depthwise_injectors)
+            delete inj;
+        depthwise_injectors.clear();
+    }
+
     jit_conv_conf_t jcp;
 
 private:
@@ -289,6 +296,11 @@ private:
     }
 
     Vmm vmm_wei = Vmm(31);
+
+    reg64_t reg_d_weights = aux_reg_ker;
+    reg64_t reg_d_bias = reg_kj;
+
+    std::vector<jit_uni_depthwise_injector_f32<avx512_core>*> depthwise_injectors;
 
     inline void prepare_output(int ur_w);
     inline void store_output(int ur_w);
@@ -378,6 +390,7 @@ struct jit_avx512_common_conv_bwd_data_kernel_f32_t {
 
     enum { typesize = sizeof(float) };
 
+    static bool post_ops_ok(const jit_conv_conf_t &jcp);
     static status_t init_conf(jit_conv_conf_t &jcp,
             const convolution_desc_t &cd, memory_desc_t &diff_src_d,
             memory_desc_t &weights_d, memory_desc_t &diff_dst_d, int nthreads);
