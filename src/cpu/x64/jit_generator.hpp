@@ -869,6 +869,11 @@ public:
         }
     }
 
+    void uni_vhsubps(const Xbyak::Xmm &x, const Xbyak::Xmm &x2,
+                     const Xbyak::Operand &op) {
+        vhsubps(x, x2, op);
+    }
+
     void uni_vpsignd(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
             const Xbyak::Operand &op) {
         if (is_valid_isa(avx2))
@@ -967,6 +972,11 @@ public:
     void uni_vsubps(const Xbyak::Ymm &x, const Xbyak::Operand &op1,
             const Xbyak::Operand &op2, const Xbyak::Ymm &buf) {
         vsubps(x, op1, op2);
+    }
+
+    void uni_vaddsubps(const Xbyak::Xmm &x, const Xbyak::Operand &op1,
+                       const Xbyak::Operand &op2) {
+        vaddsubps(x, op1, op2);
     }
 
     void uni_vpmulld(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
@@ -1627,6 +1637,11 @@ public:
         vcmpps(x1, x2, op, static_cast<uint8_t>(cmp_predicate));
     }
 
+    void uni_cmpneqps(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
+            const Xbyak::Operand &op) {
+        vcmpneqps(x1, x2, op);
+    }
+
     void uni_vtestps(const Xbyak::Xmm &x1, const Xbyak::Operand &op) {
         if (is_valid_isa(avx2))
             vtestps(x1, op);
@@ -1745,6 +1760,14 @@ public:
             vcvtps2phx(x1, x2);
         else if (is_valid_isa(avx2))
             vcvtps2ph(x1, x2, _op_mxcsr);
+    }
+
+    void uni_vcvttps2dq(const Xbyak::Xmm &x, const Xbyak::Operand &op) {
+        vcvttps2dq(x, op);
+    }
+
+    void uni_vcvttps2dq(const Xbyak::Ymm &x, const Xbyak::Operand &op) {
+        vcvttps2dq(x, op);
     }
 
     void uni_vmovmskps(const Xbyak::Reg &x1, const Xbyak::Xmm &x2) {
@@ -2105,6 +2128,10 @@ public:
         }
     }
 
+    void uni_vpminsd(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2, const Xbyak::Operand &op) {
+        vpminsd(x1, x2, op);
+    }
+
     void uni_movshdup(const Xbyak::Xmm &x, const Xbyak::Operand &op) {
         if (is_valid_isa(avx2))
             vmovshdup(x, op);
@@ -2130,6 +2157,16 @@ public:
     }
 
     // End of custom instructions section.
+
+    void uni_vcmpgtps(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
+                      const Xbyak::Operand &op) {
+        vcmpgtps(x1, x2, op);
+    }
+
+    void uni_vcmpgtps(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
+                      const Xbyak::Operand &op) {
+        vcmpgtps(x1, x2, op);
+    }
 
     void mul_by_const(
             const Xbyak::Reg &out, const Xbyak::Reg64 &tmp, int value) {
