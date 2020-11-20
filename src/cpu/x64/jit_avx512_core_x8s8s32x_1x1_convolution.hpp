@@ -75,7 +75,9 @@ struct jit_avx512_core_x8s8s32x_1x1_convolution_fwd_t : public primitive_t {
             VDISPATCH_CONV(
                     attr()->has_default_values(smask_t::scales
                                     | smask_t::zero_points | smask_t::post_ops
-                                    | smask_t::sum_dt,
+                                    | smask_t::sum_dt
+                                    | smask_t::input_zero_points
+                                    | smask_t::output_compensations,
                             dst_md(0)->data_type),
                     VERBOSE_UNSUPPORTED_ATTR);
 
@@ -95,8 +97,8 @@ struct jit_avx512_core_x8s8s32x_1x1_convolution_fwd_t : public primitive_t {
                     {DNNL_ARG_ATTR_POST_OP_DW | DNNL_ARG_WEIGHTS, {0, 1}},
                     {DNNL_ARG_ATTR_POST_OP_DW | DNNL_ARG_DST, {0}}}));
             CHECK(attr_zero_points_ok());
-            VDISPATCH_CONV(!this->attr()->has_asymmetric_quantization(),
-                    VERBOSE_UNSUPPORTED_ATTR);
+            // VDISPATCH_CONV(!this->attr()->has_asymmetric_quantization(),
+            //         VERBOSE_UNSUPPORTED_ATTR);
 
             const convolution_desc_t *conv_d = desc();
             const memory_desc_t *src_d = src_md();
