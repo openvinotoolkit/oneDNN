@@ -264,6 +264,9 @@ struct jit_conv_conf_t {
     int max_width;
 
     bool transform_to_vnni;
+
+    bool with_input_zp;
+    bool with_weights_zp;
 };
 
 // calculates filter size taking into account dilation
@@ -417,6 +420,8 @@ struct jit_conv_args_t {
     size_t oc_off;
     size_t ic_off;
     size_t oc_off_prf;
+
+    const void *input_zp;
 };
 
 struct jit_deconv_args_t {
@@ -536,6 +541,9 @@ struct jit_1x1_conv_conf_t {
 
     cpu_isa_t isa;
     bool uses_permw_transposition;
+
+    bool with_input_zp;
+    bool with_weights_zp;
 };
 
 struct jit_1x1_conv_args_t {
@@ -1059,8 +1067,8 @@ struct jit_softmax_conf_t {
 };
 
 struct jit_softmax_call_s {
-    const uint8_t* src;
-    uint8_t* dst;
+    const uint8_t *src;
+    uint8_t *dst;
 
     size_t channels;
     size_t work;
