@@ -65,9 +65,6 @@ struct jit_uni_dw_convolution_fwd_t : public primitive_t {
                             utils::one_of(this->desc()->bias_desc.data_type,
                                     f32, bf16, f16)),
                     VERBOSE_UNSUPPORTED_BIAS_CFG);
-            VDISPATCH_CONV(
-                    !this->attr()->has_asymmetric_quantization(),
-                    VERBOSE_UNSUPPORTED_ATTR);
 
             // TODO: make `init_conf` assign initialized object to `jcp_`
             CHECK(jit_uni_dw_conv_fwd_kernel_t::init_conf(jcp_, *desc(),

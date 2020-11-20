@@ -57,9 +57,6 @@ struct jit_avx2_convolution_fwd_t : public primitive_t {
             VDISPATCH_CONV(
                     attr_.set_default_formats(dst_md(0)) == status::success,
                     VERBOSE_UNSUPPORTED_POSTOP);
-            VDISPATCH_CONV(
-                    !this->attr()->has_asymmetric_quantization(), 
-                    VERBOSE_UNSUPPORTED_ATTR);
 
             // TODO: make `init_conf` assign initialized object to `jcp_`
             CHECK(jit_avx2_conv_fwd_kernel_f32::init_conf(
