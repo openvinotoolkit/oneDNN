@@ -45,7 +45,7 @@ void pick_loop_order(jit_conv_conf_t &jcp) {
     jcp.loop_order = loop_cwgn;
     if (jcp.ngroups > 1) {
         jcp.loop_order = loop_ngcw;
-        if (jcp.mb < jcp.nthr)
+        if (jcp.mb < jcp.nthr && jcp.ndims != 5)
             jcp.loop_order = jcp.ndims == 3 ? loop_nwcg : loop_nhwcg;
     } else if (jcp.mb >= jcp.nthr && jcp.ic_without_padding <= 8) {
         jcp.loop_order = loop_ngcw;
@@ -418,7 +418,7 @@ void _jit_uni_x8s8s32x_fwd_kernel<isa, Vmm>::compute_ker_dw(int ur_w, int pad_l,
     };
 
     auto kernel_offset = [this](int ci, int ki) {
-        return jcp.typesize_in * ((ci * jcp.kh * jcp.kw + ki) * jcp.ch_block);
+        return jcp.typesize_in * ((ci * jcp.kd * jcp.kh * jcp.kw + ki) * jcp.ch_block);
     };
 
     auto compute = [this](Vmm vreg_acc, Vmm vreg_wei, Vmm vreg_src) {
@@ -1361,9 +1361,6 @@ status_t jit_uni_x8s8s32x_fwd_kernel<isa>::init_conf(jit_conv_conf_t &jcp,
             VERBOSE_UNSUPPORTED_FEATURE,
             "fused depthwise convolution does not support zero-point");
 
-    VDISPATCH_CONV_IC(!(is_3d && jcp.is_depthwise), VERBOSE_UNSUPPORTED_FEATURE,
-            "unsupported depthwise implementation for 3D convolution");
-
     jcp.with_input_zp = !attr.input_zero_points_.has_default_values();
     jcp.with_weights_zp = !attr.weights_zero_points_.has_default_values();
 
@@ -1434,7 +1431,8 @@ status_t jit_uni_x8s8s32x_fwd_kernel<isa>::init_conf(jit_conv_conf_t &jcp,
                 wei_tag = with_groups ? jcp.is_depthwise ? Goihw8g : gOIhw2i8o4i
                                       : OIhw2i8o4i;
             } else {
-                wei_tag = with_groups ? gOIdhw2i8o4i : OIdhw2i8o4i;
+                wei_tag = with_groups ? jcp.is_depthwise ? Goidhw8g : gOIdhw2i8o4i
+                                      : OIdhw2i8o4i;
             }
         } else {
             if (is_avx2) {
@@ -1449,7 +1447,9 @@ status_t jit_uni_x8s8s32x_fwd_kernel<isa>::init_conf(jit_conv_conf_t &jcp,
                             ? jcp.is_depthwise ? Goihw4g : gOIhw4o4i
                             : OIhw4o4i;
                 } else {
-                    wei_tag = with_groups ? gOIdhw4o4i : OIdhw4o4i;
+                    wei_tag = with_groups
+                            ? jcp.is_depthwise ? Goidhw4g : gOIdhw4o4i
+                            : OIdhw4o4i;
                 }
             }
         }
