@@ -728,6 +728,159 @@ status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_3d(
     return status::success;
 }
 
+template <cpu_isa_t isa>
+status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_3d_dw(
+        const exec_ctx_t &ctx) const {
+    auto src = CTX_IN_MEM(const char *, DNNL_ARG_SRC);
+    auto weights = CTX_IN_MEM(const char *, DNNL_ARG_WEIGHTS);
+    auto bias = CTX_IN_MEM(const char *, DNNL_ARG_BIAS);
+    auto dst = CTX_OUT_MEM(char *, DNNL_ARG_DST);
+
+    const memory_desc_wrapper src_d(pd()->src_md());
+    const memory_desc_wrapper dst_d(pd()->dst_md());
+    const memory_desc_wrapper weights_d(pd()->weights_md(0));
+    const memory_desc_wrapper bias_d(pd()->weights_md(1));
+
+    const size_t bia_dt_size
+            = pd()->with_bias() ? types::data_type_size(bias_d.data_type()) : 0;
+    const size_t dst_dt_size = types::data_type_size(dst_d.data_type());
+    const auto post_ops_binary_rhs_arg_vec
+            = binary_injector::prepare_binary_args(pd()->jcp_.post_ops, ctx);
+    const int32_t *src_zero_points = CTX_IN_MEM(
+            const int32_t *, DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_SRC);
+    const int32_t *dst_zero_points = CTX_IN_MEM(
+            const int32_t *, DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_DST);
+
+    const auto &jcp = pd()->jcp_;
+    assert(jcp.ic_block == 1);
+    assert(jcp.oc_block == 1);
+    assert(jcp.nb_ic == 1);
+    assert(jcp.nb_oc == 1);
+    assert(jcp.nb_oc_blocking == 1);
+    assert(jcp.nb_ch % jcp.nb_ch_blocking == 0);
+
+    const void *src_scales
+            = CTX_IN_MEM(const void *, DNNL_ARG_ATTR_SCALES | DNNL_ARG_SRC);
+    const void *wei_scales
+            = CTX_IN_MEM(const void *, DNNL_ARG_ATTR_SCALES | DNNL_ARG_WEIGHTS);
+    const void *dst_scales
+            = CTX_IN_MEM(const void *, DNNL_ARG_ATTR_SCALES | DNNL_ARG_DST);
+
+    size_t offset = weights_d.size() - weights_d.additional_buffer_size();
+    auto w = const_cast<char *>(weights);
+    int32_t *compensation = (jcp.signed_input)
+            ? reinterpret_cast<int32_t *>(&w[offset])
+            : (jcp.with_input_zp) ? pd()->attr()->output_compensations_.shifts_
+                                  : 0;
+    int32_t *zp_compensation = jcp.src_zero_point
+            ? reinterpret_cast<int32_t *>(&w[offset])
+                    + (jcp.signed_input ? jcp.nb_ch * jcp.ch_block : 0)
+            : nullptr;
+    const uint8_t *input_zp = pd()->attr()->input_zero_points_.shifts_;
+    const dim_t nb_groups = jcp.nb_ch / jcp.nb_ch_blocking;
+    int group_block = jcp.ch_block;
+
+    parallel_nd(jcp.mb, jcp.od, jcp.oh, jcp.nb_ow, nb_groups,
+            [&](dim_t n, dim_t od_s, dim_t oh_s, dim_t owb, dim_t gg) {
+        auto p = jit_conv_args_t();
+
+        size_t src_d_stride = src_d.blk_off(0, 0, 1);
+        size_t wht_d_stride = wht_blk_off(weights_d, 0, 0, 0, 1);
+
+        size_t src_h_stride = src_d.blk_off(0, 0, 0, 1);
+        size_t wht_h_stride = wht_blk_off(weights_d, 0, 0, 0, 0, 1);
+
+        int gb = static_cast<int>(gg * jcp.nb_ch_blocking);
+        int g = gb * group_block;
+
+        int id_s = static_cast<int>(-jcp.f_pad + od_s * jcp.stride_d);
+
+        int ih_s = static_cast<int>(-jcp.t_pad + oh_s * jcp.stride_h);
+        int ow_s = static_cast<int>(owb * jcp.ow_block);
+        int iw_s = ow_s * jcp.stride_w;
+
+        auto bias_w = bias ? bias + (bias_d.blk_off(g) * bia_dt_size) : 0;
+        int32_t *compensation_w = (jcp.signed_input || jcp.with_input_zp)
+                ? compensation + g
+                : 0;
+
+        auto dst_w = dst + dst_dt_size * dst_d.blk_off(n, g, od_s, oh_s, ow_s);
+        auto src_w = src + src_d.blk_off(n, g, id_s, ih_s, iw_s);
+        auto wht_w = weights + wht_blk_off(weights_d, gb, 0);
+
+        float *dst_scales_inv_ptr = nullptr;
+        if (jcp.with_dst_scales) {
+            const float *dst_scales_ptr
+                    = static_cast<const float *>(dst_scales);
+            dst_scales_inv_ptr
+                    = ctx.get_scratchpad_grantor().template get<float>(
+                              key_conv_dst_scales)
+                    + g;
+            dst_scales_inv_ptr[0] = 1.f / dst_scales_ptr[0];
+        }
+
+        const float *wei_scales_ptr = jcp.with_wei_scales
+                ? static_cast<const float *>(wei_scales) + jcp.is_oc_scale * g
+                : nullptr;
+
+        int dilate_d = jcp.dilate_d + 1;
+        int i_f_overflow = static_cast<int>(nstl::min<dim_t>(
+                jcp.kd, div_up(nstl::max<dim_t>(0, -id_s), dilate_d)));
+        int i_back_overflow = static_cast<int>(nstl::min<dim_t>(jcp.kd,
+                div_up(nstl::max<dim_t>(
+                               0, id_s - jcp.id + (jcp.kd - 1) * dilate_d + 1),
+                        dilate_d)));
+        int kd_padding = static_cast<int>(
+                nstl::max<dim_t>(0, jcp.kd - i_f_overflow - i_back_overflow));
+
+        size_t wei_d_stride = (jcp.signed_input || jcp.with_input_zp)
+                ? 0
+                : i_f_overflow * wht_d_stride;
+
+        int dilate_h = jcp.dilate_h + 1;
+        int i_t_overflow = static_cast<int>(nstl::min<dim_t>(
+                jcp.kh, div_up(nstl::max<dim_t>(0, -ih_s), dilate_h)));
+        int i_b_overflow = static_cast<int>(nstl::min<dim_t>(jcp.kh,
+                div_up(nstl::max<dim_t>(
+                               0, ih_s - jcp.ih + (jcp.kh - 1) * dilate_h + 1),
+                        dilate_h)));
+        int kh_padding = static_cast<int>(
+                nstl::max<dim_t>(0, jcp.kh - i_t_overflow - i_b_overflow));
+
+        size_t wei_h_stride = (jcp.signed_input || jcp.with_input_zp)
+                ? 0
+                : i_t_overflow * wht_h_stride;
+        p.src = src_w + i_t_overflow * dilate_h * src_h_stride
+                + i_f_overflow * dilate_d * src_d_stride;
+        p.dst = dst_w;
+        p.filt = wht_w + wei_d_stride + wei_h_stride;
+        p.bias = bias_w;
+        p.compensation = compensation_w;
+        p.zp_compensation = jcp.src_zero_point ? zp_compensation + g : nullptr;
+        p.oc_blocks = gb;
+        p.kd_padding = kd_padding;
+        p.kh_padding = kh_padding;
+        p.src_zero_point = src_zero_points;
+        p.dst_zero_point = dst_zero_points;
+        p.src_scales = src_scales;
+        p.wei_scales = wei_scales_ptr;
+        p.dst_scales = dst_scales_inv_ptr;
+        p.f_overflow = i_f_overflow;
+        p.back_overflow = i_back_overflow;
+        p.t_overflow = i_t_overflow;
+        p.b_overflow = i_b_overflow;
+        p.owb = owb;
+
+        p.post_ops_binary_rhs_arg_vec = post_ops_binary_rhs_arg_vec.data();
+        p.dst_orig = dst;
+        p.oc_off = g * sizeof(float);
+        if (jcp.with_input_zp) p.input_zp = input_zp + g;
+
+        (*kernel_)(&p);
+    });
+    return status::success;
+}
+
 template struct jit_uni_x8s8s32x_convolution_fwd_t<sse41>;
 template struct jit_uni_x8s8s32x_convolution_fwd_t<avx2>;
 
