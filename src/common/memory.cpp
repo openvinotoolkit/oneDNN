@@ -161,7 +161,8 @@ status_t dnnl_memory_create(memory_t **memory, const memory_desc_t *md,
             : memory_flags_t::use_runtime_ptr;
     void *handle_ptr = (handle == DNNL_MEMORY_ALLOCATE) ? nullptr : handle;
     auto _memory = new memory_t(engine, md, flags, handle_ptr);
-    if (_memory == nullptr) return out_of_memory;
+    if (_memory == nullptr)
+        return out_of_memory;
     if (_memory->memory_storage() == nullptr) {
         _memory->release();
         return out_of_memory;
