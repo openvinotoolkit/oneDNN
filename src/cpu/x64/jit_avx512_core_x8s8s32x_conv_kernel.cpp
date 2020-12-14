@@ -45,7 +45,7 @@ void pick_loop_order(jit_conv_conf_t &jcp, int nthr) {
     jcp.loop_order = loop_cwgn;
     if (jcp.ngroups > 1) {
         jcp.loop_order = loop_ngcw;
-        if (jcp.mb < nthr)
+        if (jcp.mb < nthr && jcp.ndims != 5)
             jcp.loop_order = jcp.ndims == 3 ? loop_nwcg : loop_nhwcg;
     } else if (jcp.mb >= nthr && jcp.ic_without_padding <= 16) {
         jcp.loop_order = loop_ngcw;
@@ -512,7 +512,7 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Zmm>::compute_ker_dw(int ur_w,
     };
 
     auto kernel_offset = [this](int ci, int ki) {
-        return jcp.typesize_in * ((ci * jcp.kh * jcp.kw + ki) * jcp.ch_block);
+        return jcp.typesize_in * ((ci * jcp.kd * jcp.kh * jcp.kw + ki) * jcp.ch_block);
     };
 
     auto compute = [this](Zmm vreg_acc, Zmm vreg_wei, Zmm vreg_src) {
@@ -1524,8 +1524,8 @@ status_t jit_avx512_core_x8s8s32x_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
     }
 
     // NOTE: 3D depthwise is not currently supported here.
-    VDISPATCH_CONV_IC(!(jcp.is_depthwise && is_3d), VERBOSE_UNSUPPORTED_FEATURE,
-            "does not support depthwise convolution");
+    // VDISPATCH_CONV_IC(!(jcp.is_depthwise && is_3d), VERBOSE_UNSUPPORTED_FEATURE,
+    //         "does not support depthwise convolution");
 
     jcp.with_input_zp = !attr.input_zero_points_.has_default_values();
     jcp.with_weights_zp = !attr.weights_zero_points_.has_default_values();
@@ -1626,7 +1626,8 @@ status_t jit_avx512_core_x8s8s32x_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
         format_tag_t wei_tag;
         if (jcp.ic_block == 16 || jcp.ch_block == 16) {
             if (is_3d) {
-                wei_tag = with_groups ? gOIdhw4i16o4i : OIdhw4i16o4i;
+                wei_tag = with_groups ? jcp.is_depthwise ? Goidhw16g : gOIdhw4i16o4i
+                                      : OIdhw4i16o4i;
             } else if (is_1d) {
                 wei_tag = with_groups ? jcp.is_depthwise ? Goiw16g : gOIw4i16o4i
                                       : OIw4i16o4i;
