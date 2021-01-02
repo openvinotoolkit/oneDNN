@@ -56,6 +56,7 @@
 #include "cpu/x64/jit_uni_ncsp_convolution.hpp"
 #include "cpu/x64/jit_uni_x8s8s32x_1x1_convolution.hpp"
 #include "cpu/x64/jit_uni_x8s8s32x_convolution.hpp"
+#include "cpu/x64/jit_uni_planar_convolution.hpp"
 using namespace dnnl::impl::cpu::x64;
 #elif DNNL_AARCH64
 #include "cpu/aarch64/jit_brdgmm_dw_conv.hpp"
@@ -126,12 +127,14 @@ const std::map<pk_dt_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map()
             CPU_INSTANCE_X64(ip_convolution_fwd_t)
             CPU_INSTANCE_AMX(brgemm_1x1_convolution_fwd_t<avx512_core_amx>)
             CPU_INSTANCE_AMX(brgemm_convolution_fwd_t<avx512_core_amx>)
+            CPU_INSTANCE_AVX512(jit_avx512_common_planar_convolution_fwd_t)
             CPU_INSTANCE_AVX512(brgemm_1x1_convolution_fwd_t<avx512_core>)
             CPU_INSTANCE_AVX512(brgemm_convolution_fwd_t<avx512_core>)
             CPU_INSTANCE_AVX512(jit_avx512_common_dw_convolution_fwd_t)
             CPU_INSTANCE_AVX512(jit_avx512_common_fork_dw_convolution_fwd_t)
             CPU_INSTANCE_AVX512(jit_avx512_common_1x1_convolution_fwd_f32_t)
             CPU_INSTANCE_AVX512(jit_avx512_common_convolution_fwd_t<f32>)
+            CPU_INSTANCE_AVX2(jit_avx2_planar_convolution_fwd_t)
             CPU_INSTANCE_AVX2(jit_avx2_dw_convolution_fwd_t)
             CPU_INSTANCE_AVX2(brgemm_1x1_convolution_fwd_t<avx2>)
             CPU_INSTANCE_AVX2(brgemm_convolution_fwd_t<avx2>)
