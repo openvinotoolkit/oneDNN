@@ -735,30 +735,12 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_3d_dw(const
     assert(jcp.nb_oc_blocking == 1);
     assert(jcp.nb_ch % jcp.nb_ch_blocking == 0);
 
-    DEFINE_ARG_SCALES_BUFFER(src_scales, DNNL_ARG_SRC);
-    DEFINE_ARG_SCALES_BUFFER(wei_scales, DNNL_ARG_WEIGHTS);
-
-    auto adjust_oscales = [&](const memory_tracking::grantor_t &scratchpad, const float *src_scales,
-                        const float *wei_scales) {
-        auto loc_scales = scratchpad.template get<float>(key_conv_adjusted_scales);
-        const bool has_wei_scales
-                = !pd()->attr()->scales_.has_default_values(DNNL_ARG_WEIGHTS);
-        const int wei_mask = pd()->attr()->scales_.get_mask(DNNL_ARG_WEIGHTS);
-        float factor = (pd()->jcp_.signed_input && (!pd()->jcp_.has_vnni))
-                ? 1.f / pd()->jcp_.wei_adj_scale
-                : 1.f;
-        if (has_wei_scales && wei_mask > 0) {
-            for (dim_t c = 0; c < pd()->OC(); c++)
-                loc_scales[c] = src_scales[0] * wei_scales[c] * factor;
-        } else {
-            utils::array_set(loc_scales, src_scales[0] * wei_scales[0] * factor,
-                    pd()->jcp_.simd_w);
-        }
-        return loc_scales;
-    };
-
-    const float *oscales = adjust_oscales(
-            ctx.get_scratchpad_grantor(), src_scales, wei_scales);
+    const void *src_scales
+            = CTX_IN_MEM(const void *, DNNL_ARG_ATTR_SCALES | DNNL_ARG_SRC);
+    const void *wei_scales
+            = CTX_IN_MEM(const void *, DNNL_ARG_ATTR_SCALES | DNNL_ARG_WEIGHTS);
+    const void *dst_scales
+            = CTX_IN_MEM(const void *, DNNL_ARG_ATTR_SCALES | DNNL_ARG_DST);
 
     size_t offset = weights_d.size() - weights_d.additional_buffer_size();
     auto w = const_cast<char *>(weights);
@@ -793,7 +775,20 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_3d_dw(const
         auto src_w = src + src_d.blk_off(n, g, id_s, ih_s, iw_s);
         auto wht_w = weights + wht_blk_off(weights_d, gb, 0);
 
-        auto scales = &oscales[jcp.is_oc_scale * g];
+        float *dst_scales_inv_ptr = nullptr;
+        if (jcp.with_dst_scales) {
+            const float *dst_scales_ptr
+                    = static_cast<const float *>(dst_scales);
+            dst_scales_inv_ptr
+                    = ctx.get_scratchpad_grantor().template get<float>(
+                              key_conv_dst_scales)
+                    + g;
+            dst_scales_inv_ptr[0] = 1.f / dst_scales_ptr[0];
+        }
+
+        const float *wei_scales_ptr = jcp.with_wei_scales
+                ? static_cast<const float *>(wei_scales) + jcp.is_oc_scale * g
+                : nullptr;
 
         int dilate_d = jcp.dilate_d + 1;
         int i_f_overflow = nstl::min(jcp.kd, div_up(max(0, -id_s), dilate_d));
@@ -821,7 +816,9 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_3d_dw(const
         p.oc_blocks = gb;
         p.kd_padding = kd_padding;
         p.kh_padding = kh_padding;
-        p.scales = scales;
+        p.src_scales = src_scales;
+        p.wei_scales = wei_scales_ptr;
+        p.dst_scales = dst_scales_inv_ptr;
         p.f_overflow = i_f_overflow;
         p.back_overflow = i_back_overflow;
         p.t_overflow = i_t_overflow;
