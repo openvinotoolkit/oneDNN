@@ -263,6 +263,10 @@ struct jit_conv_conf_t {
 
     bool with_input_zp;
     bool with_weights_zp;
+
+    int oh_block;
+    int oh_block_step;
+    int nb_ow_blocking;
 };
 
 // calculates filter size taking into account dilation
@@ -416,6 +420,7 @@ struct jit_conv_args_t {
     size_t oc_off;
     size_t ic_off;
     size_t oc_off_prf;
+    size_t oh_blocks;
 
     const void *input_zp;
 };
