@@ -79,6 +79,7 @@ enum cpu_isa_bit_t : unsigned {
     amx_int8_bit = 1u << 15,
     amx_bf16_bit = 1u << 16,
     amx_fp16_bit = 1u << 17,
+    avx512_vpopcnt_bit = 1u << 18,
 
     // Fill in hints from most significant bit to least significant bit
     prefer_ymm_bit = 1u << (cpu_isa_total_bits - 1),
@@ -136,6 +137,7 @@ enum cpu_isa_t : unsigned {
     avx512_core_amx = avx10_1_512_amx,
     avx10_1_512_amx_fp16 = avx10_1_512_amx | amx_fp16,
     avx512_core_amx_fp16 = avx10_1_512_amx_fp16,
+    avx512_vpopcnt = avx512_vpopcnt_bit,
     // NOTES: 1. isa_all by default has no isa specific hints
     isa_all = ~0u & ~cpu_isa_hints_utils::hints_mask,
 };
@@ -336,6 +338,13 @@ struct cpu_isa_traits_t<avx10_1_512_amx_fp16> {
     static constexpr const char *user_option_env = "avx10_1_512_amx_fp16";
 };
 
+template <>
+struct cpu_isa_traits_t<avx512_vpopcnt> {
+    static constexpr dnnl_cpu_isa_t user_option_val
+            = dnnl_cpu_isa_avx512_vpopcnt;
+    static constexpr const char *user_option_env = "AVX512_VPOPCNT";
+};
+
 inline const Xbyak::util::Cpu &cpu() {
     const static Xbyak::util::Cpu cpu_;
     return cpu_;
@@ -414,6 +423,8 @@ inline bool mayiuse(const cpu_isa_t cpu_isa, bool soft = false) {
         case avx512_core_amx_fp16:
             REG_AMX_ISA(return mayiuse(avx512_core_amx, soft)
                     && mayiuse(amx_fp16, soft));
+        case avx512_vpopcnt:
+            REG_AVX512_ISA(return cpu().has(Cpu::tAVX512_VPOPCNTDQ));
         case isa_all: return false;
         case isa_undef: return true;
     }

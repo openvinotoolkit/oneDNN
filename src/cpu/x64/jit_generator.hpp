@@ -1969,6 +1969,11 @@ public:
         }
     }
 
+    void uni_vpand(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
+                    const Xbyak::Operand &op = Xbyak::Operand()) {
+        vpand(x1, x2, op);
+    }
+
     void uni_vpslldq(
             const Xbyak::Xmm &x, const Xbyak::Operand &op, const int imm) {
         if (is_valid_isa(avx))
@@ -1978,6 +1983,7 @@ public:
             pslldq(x, imm);
         }
     }
+
     void uni_vpslldq(
             const Xbyak::Ymm &x, const Xbyak::Operand &op, const int imm) {
         vpslldq(x, op, imm);

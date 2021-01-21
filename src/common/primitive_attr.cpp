@@ -330,6 +330,23 @@ status_t post_ops_t::append_quantization(alg_kind_t alg,
     return success;
 }
 
+status_t post_ops_t::append_binarization(alg_kind_t alg, const float* weights_data, const float* output_mask_data) {
+    using namespace dnnl::impl::alg_kind;
+    if (len() == post_ops_limit) return out_of_memory;
+    bool known_alg = one_of(alg, binarization_depthwise);
+    if (!known_alg)
+        return invalid_arguments;
+
+    entry_.emplace_back();
+    auto &e = entry_.back();
+    e.kind = primitive_kind::binarization;
+    e.binarization.alg = alg;
+    e.binarization.weights_data = weights_data;
+    e.binarization.output_mask_data = output_mask_data;
+
+    return success;
+}
+
 status_t post_ops_t::set_default_formats(const memory_desc_t *dst_md) {
     for (int idx = 0; idx < len(); ++idx) {
         if (!contain(primitive_kind::binary, idx)) continue;
@@ -881,6 +898,14 @@ status_t dnnl_post_ops_append_quantization(post_ops_t *post_ops, alg_kind_t kind
         return invalid_arguments;
 
     return post_ops->append_quantization(kind, crop_low, crop_high, input_scale, input_shift, output_scale, output_shift);
+}
+
+status_t dnnl_post_ops_append_binarization(post_ops_t *post_ops, alg_kind_t kind, const float* weights_data,
+                                           const float* output_mask_data) {
+    if (post_ops == nullptr)
+        return invalid_arguments;
+
+    return post_ops->append_binarization(kind, weights_data, output_mask_data);
 }
 
 status_t dnnl_primitive_attr_set_rnn_data_qparams(

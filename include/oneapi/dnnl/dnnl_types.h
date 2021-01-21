@@ -287,6 +287,7 @@ typedef enum {
     dnnl_ABcd8a16b2a,
     dnnl_ABcd2b8a4b,
     dnnl_ABcd8a8b,
+    dnnl_ABcd8a32b,
     dnnl_ABcd8a4b,
     /// 4D tensor blocked by 2nd dimension with block size 8
     dnnl_aBcd8b,
@@ -1407,6 +1408,8 @@ typedef enum {
     dnnl_OIhw2i8o4i = dnnl_ABcd2b8a4b,
     dnnl_IOhw8o16i2o = dnnl_BAcd8a16b2a,
     dnnl_OIhw8o8i = dnnl_ABcd8a8b,
+    dnnl_OIhw8o32i = dnnl_ABcd8a32b,
+    dnnl_OIhw16o32i = dnnl_ABcd16a32b,
     dnnl_OIhw8o4i = dnnl_ABcd8a4b,
     dnnl_Owhi16o = dnnl_Adcb16a,
     dnnl_OIhw8i32o = dnnl_ABcd8b32a,
@@ -2020,6 +2023,8 @@ typedef enum {
     dnnl_depthwise,
     /// A quantization primitive.
     dnnl_quantization,
+    /// A binatization primitive.
+    dnnl_binarization,
     /// An LRN primitive.
     dnnl_lrn,
     /// A batch normalization primitive.
@@ -2218,6 +2223,7 @@ typedef enum {
 
     dnnl_quantization_quantize_dequantize = 0x4fff0,
     dnnl_quantization_quantize = 0x4fff1,
+    dnnl_binarization_depthwise = 0x4fff2,
 } dnnl_alg_kind_t;
 
 /// Flags for normalization primitives.
@@ -2944,6 +2950,7 @@ typedef enum {
     dnnl_cpu_isa_avx10_1_512_amx_fp16 = 0x1fef,
     /// @copydoc dnnl_cpu_isa_avx10_1_512_amx_fp16
     dnnl_cpu_isa_avx512_core_amx_fp16 = dnnl_cpu_isa_avx10_1_512_amx_fp16,
+    dnnl_cpu_isa_avx512_vpopcnt = 0x3fef,
 } dnnl_cpu_isa_t;
 
 /// CPU ISA hints flags

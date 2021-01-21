@@ -387,6 +387,12 @@ struct dnnl_post_ops : public dnnl::impl::c_compatible {
             const dnnl::impl::shifts_t<float>* output_shift_data;
         };
 
+        struct binarization_t {
+            dnnl::impl::alg_kind_t alg;
+            const float* weights_data;
+            const float* output_mask_data;
+        } ;
+
         dnnl::impl::primitive_kind_t kind
                 = dnnl::impl::primitive_kind::undefined;
         union {
@@ -397,6 +403,7 @@ struct dnnl_post_ops : public dnnl::impl::c_compatible {
             prelu_t prelu;
             depthwise_t depthwise;
             quantization_t quantization;
+            binarization_t binarization;
         };
 
         bool is_eltwise(bool require_scale_one = false) const {
@@ -443,6 +450,11 @@ struct dnnl_post_ops : public dnnl::impl::c_compatible {
         bool is_quantization() const {
             using namespace dnnl::impl;
             return kind == primitive_kind::quantization;
+        }
+
+        bool is_binarization() const {
+            using namespace dnnl::impl;
+            return kind == primitive_kind::binarization;
         }
 
         dnnl::impl::status_t validate_binary_with_dst_consistency(
@@ -501,6 +513,11 @@ struct dnnl_post_ops : public dnnl::impl::c_compatible {
                           && quantization.output_scale_data == rhs.quantization.output_scale_data
                           && quantization.output_shift_data == rhs.quantization.output_shift_data;
                     break;
+                case primitive_kind::binarization:
+                    ret = depthwise.alg == rhs.depthwise.alg
+                          && binarization.weights_data == rhs.binarization.weights_data
+                          && binarization.output_mask_data == rhs.binarization.output_mask_data;
+                    break;
                 default: assert(!"unsupported post_op");
             }
             return ret;
@@ -531,6 +548,8 @@ struct dnnl_post_ops : public dnnl::impl::c_compatible {
             const void* crop_low, const void* crop_high,
             const void* input_scale, const void* input_shift,
             const void* output_scale, const void* output_shift);
+    dnnl::impl::status_t append_binarization(dnnl::impl::alg_kind_t alg, const float* weights_data,
+            const float* output_mask_data);
 
     dnnl::impl::status_t prepend_binary(dnnl::impl::alg_kind_t alg,
             const dnnl::impl::memory_desc_t *user_src1_desc);
