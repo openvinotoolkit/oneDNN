@@ -292,6 +292,7 @@ static status_t zero_pad(const memory_t *memory, const exec_ctx_t &ctx) {
         case s4: return typed_zero_pad<s8>(memory, ctx);
         case u4: return typed_zero_pad<u8>(memory, ctx);
         case f64: return typed_zero_pad<f64>(memory, ctx);
+        case bin: return typed_zero_pad<u8>(memory, ctx);
         default: assert(!"memory is undefined"); return unimplemented;
     }
     return unimplemented;
