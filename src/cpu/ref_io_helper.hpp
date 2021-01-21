@@ -116,6 +116,8 @@ ALWAYS_INLINE float load_float_value(
         CASE(s8);
         CASE(u8);
         CASE(e8m0);
+        case bin:
+            return (static_cast<const uint8_t *>(ptr)[idx / 8] >> (idx % 8)) & 1;
         case s4: {
             const nibble2_t nibble_pair(
                     static_cast<const uint8_t *>(ptr)[idx / 2]);
@@ -174,6 +176,12 @@ ALWAYS_INLINE void store_float_value(
         CASE(s8);
         CASE(u8);
         CASE(e8m0);
+        case bin: {
+            auto *data = static_cast<uint8_t *>(ptr);
+            const uint8_t mask = static_cast<uint8_t>(1u << (idx % 8));
+            data[idx / 8] = (data[idx / 8] & ~mask) | (val > 0 ? mask : 0);
+            break;
+        }
         case f4_e2m1: store_subbyte<f4_e2m1>(val, ptr, idx); break;
         case s4: store_subbyte<s4>(val, ptr, idx); break;
         case u4: store_subbyte<u4>(val, ptr, idx); break;

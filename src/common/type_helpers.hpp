@@ -113,6 +113,7 @@ inline size_t data_type_size(data_type_t data_type) {
         case u2: return sizeof(prec_traits_t<u2>::type);
         case u3: return sizeof(prec_traits_t<u3>::type);
         case boolean: return sizeof(prec_traits_t<boolean>::type);
+        case bin: return sizeof(prec_traits_t<u8>::type);
         case data_type::undef:
         default: assert(!"unknown data_type");
     }
@@ -140,7 +141,8 @@ inline int data_type_bits(data_type_t data_type) {
         case u4: return 4;
         case u3: return 3;
         case u2: return 2;
-        case boolean: return 1;
+        case boolean:
+        case bin: return 1;
         default: assert(!"unsupported data type"); return 0;
     }
 }
@@ -153,7 +155,8 @@ inline size_t elements_to_bytes(data_type_t data_type, size_t count) {
         case s4:
         case u4:
         case u2:
-        case u3: {
+        case u3:
+        case bin: {
             constexpr size_t byte = 8;
             const size_t dt_bits = data_type_bits(data_type);
 
@@ -179,6 +182,7 @@ inline size_t bytes_to_elements(data_type_t data_type, size_t bytes) {
         case u4:
         case u2:
         case u3:
+        case bin:
             assert(bytes * 8 % data_type_bits(data_type) == 0);
             return bytes * 8 / data_type_bits(data_type);
         default: return utils::div_up(bytes, data_type_size(data_type));

@@ -367,6 +367,7 @@ static status_t zero_pad(const memory_t *memory, const exec_ctx_t &ctx) {
         case u4:
         case u3:
         case u2:
+        case bin:
             return typed_zero_pad_sub_byte_entry(
                     memory, ctx, types::data_type_bits(dt));
         case f16:

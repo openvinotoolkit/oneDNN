@@ -89,6 +89,7 @@ enum cpu_isa_bit_t : unsigned {
     amx_fp16_bit = 1u << 17,
     amx_2_bit = 1u << 18,
     ace_bit = 1u << 19,
+    avx512_vpopcnt_bit = 1u << 20,
 
     // Fill in hints from most significant bit to least significant bit
     prefer_ymm_bit = 1u << (cpu_isa_total_bits - 1),
@@ -155,6 +156,7 @@ enum cpu_isa_t : unsigned {
     // avx10_2_amx_2: the TMUL and ACE palettes are independent, so that would
     // claim TMUL compute support an ACE-only part does not have.
     avx10_2_ace = avx10_2 | amx_tile | ace_bit,
+    avx512_vpopcnt = avx512_vpopcnt_bit,
     // NOTES: 1. isa_all by default has no isa specific hints
     //        2. avx10_2_ace is under preview support and turned off by
     //           default. It is enabled only when the max CPU ISA is explicitly
@@ -371,6 +373,13 @@ struct cpu_isa_traits_t<avx10_2_ace> : public cpu_isa_traits_t<avx10_2> {
     static constexpr const char *user_option_env = "avx10_2_ace";
 };
 
+template <>
+struct cpu_isa_traits_t<avx512_vpopcnt> {
+    static constexpr dnnl_cpu_isa_t user_option_val
+            = dnnl_cpu_isa_avx512_vpopcnt;
+    static constexpr const char *user_option_env = "AVX512_VPOPCNT";
+};
+
 inline const Xbyak::util::Cpu &cpu() {
     const static Xbyak::util::Cpu cpu_;
     return cpu_;
@@ -505,6 +514,8 @@ inline bool mayiuse(const cpu_isa_t cpu_isa, bool soft = false) {
                     && cpu().getMaxPalette() >= amx_palette_ace
                     && cpu().has(Cpu::tAVX10_V2_AUX)
                     && x64::ace::is_available());
+        case avx512_vpopcnt:
+            REG_AVX512_ISA(return cpu().has(Cpu::tAVX512_VPOPCNTDQ));
         case isa_all: return false;
         case isa_undef: return true;
     }

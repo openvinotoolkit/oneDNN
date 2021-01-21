@@ -868,6 +868,9 @@ static std::ostream &print_attr(std::ostream &ss, const primitive_attr_t *attr,
                     const post_ops_t::entry_t::quantization_t &qt = e.quantization;
                     ss << delim << qt.alg;
                 } break;
+                case primitive_kind::binarization: {
+                    ss << delim << e.binarization.alg;
+                } break;
                 default: assert(!"unsupported post op primitive kind!"); break;
             }
             delim = attr_delim;

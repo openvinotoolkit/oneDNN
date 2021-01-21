@@ -116,6 +116,8 @@ typedef enum {
     dnnl_u2 = 17,
     /// 3-bit unsigned integer.
     dnnl_u3 = 18,
+    /// 1-bit integer.
+    dnnl_bin = 19,
 
     // Max value to prevent UB for internal-use-only values.
     dnnl_data_type_max = 0x7fff,

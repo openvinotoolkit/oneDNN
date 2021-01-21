@@ -335,6 +335,14 @@ size_t get_attr_hash(const primitive_attr_t &attr) {
                 seed = hash_combine(seed, reinterpret_cast<size_t>(entry.quantization.output_scale_data));
                 seed = hash_combine(seed, reinterpret_cast<size_t>(entry.quantization.output_shift_data));
                 break;
+                case primitive_kind::binarization:
+                seed = hash_combine(
+                    seed, static_cast<size_t>(entry.binarization.alg));
+                seed = hash_combine(seed,
+                    reinterpret_cast<size_t>(entry.binarization.weights_data));
+                seed = hash_combine(seed,
+                    reinterpret_cast<size_t>(entry.binarization.output_mask_data));
+                break;
             default: assert(!"unknown post_op");
         }
     }
