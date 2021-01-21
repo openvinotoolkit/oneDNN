@@ -111,6 +111,7 @@ inline size_t data_type_size(data_type_t data_type) {
         case s4: return sizeof(prec_traits_t<s4>::type);
         case u4: return sizeof(prec_traits_t<u4>::type);
         case boolean: return sizeof(prec_traits_t<boolean>::type);
+        case bin: return sizeof(prec_traits_t<u8>::type);
         case data_type::undef:
         default: assert(!"unknown data_type");
     }
@@ -1273,6 +1274,7 @@ format_tag_t memory_desc_matches_one_of_tag(
     }
     return format_tag::undef;
 }
+
 template <typename... Args>
 inline bool any_memory_desc_host_scalar(const memory_desc_t *md, Args... mds) {
     if (md != nullptr && md->format_kind == format_kind::host_scalar)
