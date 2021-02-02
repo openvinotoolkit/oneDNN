@@ -887,12 +887,13 @@ typename utils::enable_if<fmt_i == nhwc && fmt_o == nChw8c>::type>
 
 template <SIMPLE_REORDER_TEMPL_DECL>
 struct simple_reorder_impl<SIMPLE_REORDER_TEMPL_CALL,
-typename utils::enable_if<fmt_i == nhwc && fmt_o == nhwc && type_o != mkldnn_bin>::type>
+typename utils::enable_if<fmt_i == nhwc && fmt_o == nhwc && type_i != mkldnn_bin && type_o != mkldnn_bin>::type>
 {
     static bool is_applicable(const memory_desc_wrapper &input_d,
         const memory_desc_wrapper &output_d, const primitive_attr_t *attr) {
         int smask = attr ? attr->output_scales_.mask_ : 0;
-        return (smask == 2) && order_keep && input_d._md->format == nhwc && output_d._md->format == nhwc;
+        return (smask == 2) && order_keep && input_d._md->format == nhwc && output_d._md->format == nhwc && input_d.data_type() != bin
+                && output_d.data_type() != bin;
     }
 
     GET_SCRATCHPAD_SIZE_ZERO();
@@ -984,12 +985,13 @@ typename utils::enable_if<fmt_i == nchw && fmt_o == nhwc && type_i != mkldnn_bin
 
 template <SIMPLE_REORDER_TEMPL_DECL>
 struct simple_reorder_impl<SIMPLE_REORDER_TEMPL_CALL,
-typename utils::enable_if<(fmt_i == nchw || fmt_i == nhwc) && fmt_o == nhwc && (type_i == mkldnn_bin || type_o == mkldnn_bin)>::type>
+typename utils::enable_if<(fmt_i == nchw || fmt_i == nhwc) && fmt_o == nhwc && type_i != mkldnn_bin && type_o == mkldnn_bin>::type>
 {
     static bool is_applicable(const memory_desc_wrapper &input_d,
         const memory_desc_wrapper &output_d, const primitive_attr_t *attr) {
         int smask = attr ? attr->output_scales_.mask_ : 0;
-        return smask == 0 && order_keep && (input_d._md->format == nchw || input_d._md->format == nhwc) && output_d._md->format == nhwc;
+        return smask == 0 && order_keep && (input_d._md->format == nchw || input_d._md->format == nhwc) && output_d._md->format == nhwc
+               && input_d.data_type() != bin  && output_d.data_type() == bin;
     }
 
     GET_SCRATCHPAD_SIZE_ZERO();
@@ -1092,12 +1094,12 @@ typename utils::enable_if<fmt_i == nhwc && fmt_o == nchw && (type_i != mkldnn_bi
 
 template <SIMPLE_REORDER_TEMPL_DECL>
 struct simple_reorder_impl<SIMPLE_REORDER_TEMPL_CALL,
-typename utils::enable_if<fmt_i == nhwc && fmt_o == nchw && type_i == mkldnn_bin && type_o == mkldnn_f32>::type>
+typename utils::enable_if<fmt_i == nhwc && (fmt_o == nchw || fmt_o == nhwc) && type_i == mkldnn_bin && type_o != mkldnn_bin>::type>
 {
     static bool is_applicable(const memory_desc_wrapper &input_d, const memory_desc_wrapper &output_d, const primitive_attr_t *attr) {
         int smask = attr ? attr->output_scales_.mask_ : 0;
-        return smask == 0 && order_keep && input_d._md->format == nhwc && output_d._md->format == nchw && input_d.data_type() == bin
-               && output_d.data_type() == f32;
+        return smask == 0 && order_keep && input_d._md->format == nhwc && (output_d._md->format == nchw || output_d._md->format == nhwc) && input_d.data_type() == bin
+               && output_d.data_type() != bin;
     }
 
     GET_SCRATCHPAD_SIZE_ZERO();

@@ -93,6 +93,7 @@ static const rpd_create_f cpu_reorder_impl_list[] = {
     REG_SR_BIDIR(f32, nchw, bin, nhwc),
     REG_SR_BIDIR(f32, nhwc, bin, nhwc),
     REG_SR_BIDIR(bin, nhwc, f32, nchw),
+    REG_SR_BIDIR(bin, nhwc, u8, nhwc),
     REG_SR_DIRECT_COPY(bin, bin),
 
     REG_SR_BIDIR(f32, any, f32, nCw8c),
