@@ -43,7 +43,7 @@ struct jit_uni_fork_softmax_fwd_t : public primitive_t {
                 JIT_IMPL_NAME_HELPER("jit:", isa, ""),
                 jit_uni_fork_softmax_fwd_t<isa>);
 
-        status_t init(engine_t *engine) {
+        status_t init(const engine_t *engine) {
             const memory_desc_wrapper src_d(src_md());
             const memory_desc_wrapper dst_d(dst_md());
             auto data_type = src_d.data_type();

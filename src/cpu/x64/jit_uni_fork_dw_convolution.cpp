@@ -27,6 +27,12 @@ namespace impl {
 namespace cpu {
 namespace x64 {
 
+template <cpu_isa_t isa, data_type_t src_type, data_type_t dst_type>
+DEFINE_PD_CREATE(jit_uni_fork_dw_convolution_fwd_t<isa, src_type, dst_type>::pd_t)
+template <cpu_isa_t isa, data_type_t diff_dst_type, data_type_t diff_src_type>
+DEFINE_PD_CREATE(jit_uni_fork_dw_convolution_bwd_data_t<isa, diff_dst_type,
+    diff_src_type>::pd_t)
+
 using namespace dnnl::impl::status;
 using namespace dnnl::impl::memory_tracking::names;
 using namespace dnnl::impl::utils;

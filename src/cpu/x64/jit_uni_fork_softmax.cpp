@@ -22,6 +22,9 @@ namespace impl {
 namespace cpu {
 namespace x64 {
 
+template <cpu_isa_t isa>
+DEFINE_PD_CREATE(jit_uni_fork_softmax_fwd_t<isa>::pd_t)
+
 using namespace utils;
 
 template <cpu_isa_t isa>

@@ -25,6 +25,9 @@ namespace impl {
 namespace cpu {
 namespace x64 {
 
+template <cpu_isa_t isa>
+DEFINE_PD_CREATE(_jit_uni_planar_convolution_fwd_t<isa>::pd_t)
+
 using namespace dnnl::impl::status;
 using namespace dnnl::impl::utils;
 

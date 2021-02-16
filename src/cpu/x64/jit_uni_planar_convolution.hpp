@@ -42,7 +42,7 @@ struct _jit_uni_planar_convolution_fwd_t: public primitive_t {
                 JIT_IMPL_NAME_HELPER("jit_planar:", isa, ""),
                 _jit_uni_planar_convolution_fwd_t<isa>);
 
-        status_t init(engine_t *engine) {
+        status_t init(const engine_t *engine) {
             bool ok = true
                 && is_fwd()
                 && set_default_alg_kind(alg_kind::convolution_direct)
