@@ -158,11 +158,11 @@ status_t conv_desc_init(convolution_desc_t *conv_desc, prop_kind_t prop_kind,
         VCHECK_CONV(pad_l >= 0,
                 "%s: left padding value (%d) must be non-negative",
                 VERBOSE_INCONSISTENT_PRB, static_cast<int>(pad_l));
-        VCHECK_CONV(pad_r + str > 0,
-                "%s: right padding (%d) and stride (%d) must sum up to a "
-                "positive value",
-                VERBOSE_INCONSISTENT_PRB, static_cast<int>(pad_r),
-                static_cast<int>(str));
+        // VCHECK_CONV(pad_r + str > 0,
+        //         "%s: right padding (%d) and stride (%d) must sum up to a "
+        //         "positive value",
+        //         VERBOSE_INCONSISTENT_PRB, static_cast<int>(pad_r),
+        //         static_cast<int>(str));
         VCHECK_CONV((src - ker_range + pad_l + pad_r) / str + 1 == dst,
                 "%s: mismatch between actual and computed dst dims, dst (%d) "
                 "!= (src(%d) - ker(%d) + pad_l(%d) + pad_r(%d))/ str(%d) + 1",
