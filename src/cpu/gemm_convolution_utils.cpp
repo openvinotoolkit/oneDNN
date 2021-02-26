@@ -2207,8 +2207,8 @@ status_t init_conf(conv_gemm_conf_t &jcp,
         if (size) scratchpad.book<int32_t>(key_conv_gemm_zp_src_comp, size);
     }
 
-    VDISPATCH_CONV_IC(
-            scratchpad.size() <= scratchpad_limit, VERBOSE_SCRATCHPAD_LIMIT);
+    // VDISPATCH_CONV_IC(
+    //         scratchpad.size() <= scratchpad_limit, VERBOSE_SCRATCHPAD_LIMIT);
 
     return status::success;
 }
