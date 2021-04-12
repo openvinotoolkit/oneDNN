@@ -918,7 +918,7 @@ void jit_uni_eltwise_injector_t<isa, Wmm>::soft_relu_compute_vector_fwd(
 
     // get vmm_mask_ = src > max logf
     // y = (x < max log f) ? soft_relu(x) : x
-    compute_cmp_mask(vmm_aux(2), table_val(exp_ln_flt_max_f), _cmp_gt_os);
+    compute_cmp_mask(vmm_aux(2), table_val(soft_relu_twenty), _cmp_gt_os);
     blend_with_mask(vmm_src, vmm_aux(2));
     if (alpha_ == 1.f) { // standard soft_relu case
         // Skip an instruction.
@@ -2509,6 +2509,7 @@ void jit_uni_eltwise_injector_t<isa, Wmm>::register_table_entries() {
     static const table_t soft_relu_consts {
             {soft_relu_one_twenty_six, {0x42fc0000, true}},
             {soft_relu_mantissa_sign_mask, {0x807fffff, true}},
+            {soft_relu_twenty, {0x41a00000, true}},
     };
 
     // soft_relu ln(1 + x) polynomial approximation
