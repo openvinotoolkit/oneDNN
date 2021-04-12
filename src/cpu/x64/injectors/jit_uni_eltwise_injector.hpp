@@ -310,6 +310,7 @@ private:
         tanh_pol_table, // table of polynomial coefficients
         soft_relu_one_twenty_six, // 126.f
         soft_relu_mantissa_sign_mask, // mask for mantissa bits and sign
+        soft_relu_twenty, // 20.f
         soft_relu_pol, // see correspondent table for float values
         // arg below which ln(1 + exp(x)) == exp(x) to f32 precision (-16.f)
         soft_relu_tail_bound,
