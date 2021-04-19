@@ -61,6 +61,8 @@ void jit_avx512_core_bf16_convolution_fwd_t::execute_forward_1d(
     const auto post_ops_binary_rhs_arg_vec
             = binary_injector::prepare_binary_args(jcp.post_ops, ctx);
 
+    auto MB = CTX_IN_BATCH(DNNL_ARG_SRC);
+
     prepare_padded_bias(bias, ctx.get_scratchpad_grantor());
 
     const size_t bia_dt_size = pd()->jcp_.typesize_bia;
@@ -75,7 +77,7 @@ void jit_avx512_core_bf16_convolution_fwd_t::execute_forward_1d(
     // TODO: experiment with g_blocking for perf fine tuning
     int g_blocking = 1;
     int nb_groups = jcp.ngroups / g_blocking;
-    dim_t work_amount = jcp.mb * nb_groups * oc_chunks * jcp.nb_ow;
+    dim_t work_amount = MB * nb_groups * oc_chunks * jcp.nb_ow;
 
     int nthr = jcp.aligned_threads ? jcp.aligned_threads : jcp.nthr;
     parallel(nthr, [&](const int ithr, const int nthr) {
@@ -88,13 +90,13 @@ void jit_avx512_core_bf16_convolution_fwd_t::execute_forward_1d(
         if (jcp.loop_order == loop_cwgn) {
             int dummy {0};
             nd_iterator_init(start, occ, oc_chunks, owb, jcp.nb_ow, gg,
-                    nb_groups, n, jcp.mb, dummy, 1);
+                    nb_groups, n, MB, dummy, 1);
         } else if (jcp.loop_order == loop_gncw) {
             int dummy {0};
-            nd_iterator_init(start, gg, nb_groups, n, jcp.mb, occ, oc_chunks,
+            nd_iterator_init(start, gg, nb_groups, n, MB, occ, oc_chunks,
                     owb, jcp.nb_ow, dummy, 1);
         } else if (jcp.loop_order == loop_nhwcg) {
-            nd_iterator_init(start, n, jcp.mb, owb, jcp.nb_ow, occ, oc_chunks,
+            nd_iterator_init(start, n, MB, owb, jcp.nb_ow, occ, oc_chunks,
                     gg, nb_groups);
         } else
             assert(!"unsupported loop order");
@@ -132,19 +134,21 @@ void jit_avx512_core_bf16_convolution_fwd_t::execute_forward_1d(
             par_conv.dst_orig = dst;
             par_conv.post_ops_binary_rhs_arg_vec
                     = post_ops_binary_rhs_arg_vec.data();
+            par_conv.oc_off = oc_idx * (is_dst_layout_nxc ? 1 : jcp.oc_block) * sizeof(float);
+
             (*kernel_)(&par_conv);
 
             if (jcp.loop_order == loop_cwgn) {
                 int dummy {0};
                 nd_iterator_jump(start, end, occ, oc_chunks, owb, jcp.nb_ow, gg,
-                        nb_groups, n, jcp.mb, dummy, 1);
+                        nb_groups, n, MB, dummy, 1);
             } else if (jcp.loop_order == loop_gncw) {
                 int dummy {0};
-                nd_iterator_jump(start, end, gg, nb_groups, n, jcp.mb, occ,
+                nd_iterator_jump(start, end, gg, nb_groups, n, MB, occ,
                         oc_chunks, owb, jcp.nb_ow, dummy, 1);
             } else if (jcp.loop_order == loop_nhwcg) {
                 ++start;
-                nd_iterator_step(n, jcp.mb, owb, jcp.nb_ow, occ, oc_chunks, gg,
+                nd_iterator_step(n, MB, owb, jcp.nb_ow, occ, oc_chunks, gg,
                         nb_groups);
             } else
                 assert(!"unsupported loop order");
@@ -162,6 +166,8 @@ void jit_avx512_core_bf16_convolution_fwd_t::execute_forward_2d(
     const auto post_ops_binary_rhs_arg_vec
             = binary_injector::prepare_binary_args(jcp.post_ops, ctx);
 
+    auto MB = CTX_IN_BATCH(DNNL_ARG_SRC);
+
     prepare_padded_bias(bias, ctx.get_scratchpad_grantor());
 
     const size_t bia_dt_size = pd()->jcp_.typesize_bia;
@@ -176,7 +182,7 @@ void jit_avx512_core_bf16_convolution_fwd_t::execute_forward_2d(
     // TODO: experiment with g_blocking for perf fine tuning
     int g_blocking = 1;
     int nb_groups = jcp.ngroups / g_blocking;
-    dim_t work_amount = jcp.mb * nb_groups * oc_chunks * jcp.oh * jcp.nb_ow;
+    dim_t work_amount = MB * nb_groups * oc_chunks * jcp.oh * jcp.nb_ow;
 
     int nthr = jcp.aligned_threads ? jcp.aligned_threads : jcp.nthr;
     parallel(nthr, [&](const int ithr, const int nthr) {
@@ -184,20 +190,20 @@ void jit_avx512_core_bf16_convolution_fwd_t::execute_forward_2d(
         balance211(work_amount, nthr, ithr, start, end);
         auto par_conv = jit_conv_call_s();
 
-        size_t src_h_stride = src_d.blk_off(0, 0, 1);
-        size_t dst_h_stride = dst_d.blk_off(0, 0, 1);
+        size_t src_h_stride = src_d.blk_off(0, 0, 1) - src_d.off_l(0);
+        size_t dst_h_stride = dst_d.blk_off(0, 0, 1) - dst_d.off_l(0);
         size_t wht_h_stride = wht_blk_off(weights_d, 0, 0, 0, 1);
 
         int n {0}, gg {0}, occ {0}, oh_s {0}, owb {0};
 
         if (jcp.loop_order == loop_cwgn)
             nd_iterator_init(start, occ, oc_chunks, owb, jcp.nb_ow, gg,
-                    nb_groups, n, jcp.mb, oh_s, jcp.oh);
+                    nb_groups, n, MB, oh_s, jcp.oh);
         else if (jcp.loop_order == loop_gncw)
-            nd_iterator_init(start, gg, nb_groups, n, jcp.mb, occ, oc_chunks,
+            nd_iterator_init(start, gg, nb_groups, n, MB, occ, oc_chunks,
                     owb, jcp.nb_ow, oh_s, jcp.oh);
         else if (jcp.loop_order == loop_nhwcg)
-            nd_iterator_init(start, n, jcp.mb, oh_s, jcp.oh, owb, jcp.nb_ow,
+            nd_iterator_init(start, n, MB, oh_s, jcp.oh, owb, jcp.nb_ow,
                     occ, oc_chunks, gg, nb_groups);
         else
             assert(!"unsupported loop order");
@@ -256,6 +262,8 @@ void jit_avx512_core_bf16_convolution_fwd_t::execute_forward_2d(
                 par_conv.dst_orig = dst;
                 par_conv.post_ops_binary_rhs_arg_vec
                         = post_ops_binary_rhs_arg_vec.data();
+                par_conv.oc_off = oc_idx * (is_dst_layout_nxc ? 1 : jcp.oc_block) * sizeof(float);
+
                 (*kernel_)(&par_conv);
 
                 src_w += src_h_stride * jcp.stride_h;
@@ -263,13 +271,13 @@ void jit_avx512_core_bf16_convolution_fwd_t::execute_forward_2d(
             }
             if (jcp.loop_order == loop_cwgn)
                 nd_iterator_jump(start, end, occ, oc_chunks, owb, jcp.nb_ow, gg,
-                        nb_groups, n, jcp.mb, oh_s, jcp.oh);
+                        nb_groups, n, MB, oh_s, jcp.oh);
             else if (jcp.loop_order == loop_gncw)
-                nd_iterator_jump(start, end, gg, nb_groups, n, jcp.mb, occ,
+                nd_iterator_jump(start, end, gg, nb_groups, n, MB, occ,
                         oc_chunks, owb, jcp.nb_ow, oh_s, jcp.oh);
             else if (jcp.loop_order == loop_nhwcg) {
                 ++start;
-                nd_iterator_step(n, jcp.mb, oh_s, jcp.oh, owb, jcp.nb_ow, occ,
+                nd_iterator_step(n, MB, oh_s, jcp.oh, owb, jcp.nb_ow, occ,
                         oc_chunks, gg, nb_groups);
             } else
                 assert(!"unsupported loop order");
@@ -287,6 +295,8 @@ void jit_avx512_core_bf16_convolution_fwd_t::execute_forward_3d(
     const auto post_ops_binary_rhs_arg_vec
             = binary_injector::prepare_binary_args(jcp.post_ops, ctx);
 
+    auto MB = CTX_IN_BATCH(DNNL_ARG_SRC);
+
     prepare_padded_bias(bias, ctx.get_scratchpad_grantor());
 
     const size_t bia_dt_size = pd()->jcp_.typesize_bia;
@@ -302,7 +312,7 @@ void jit_avx512_core_bf16_convolution_fwd_t::execute_forward_3d(
     int g_blocking = 1;
     int nb_groups = jcp.ngroups / g_blocking;
     dim_t work_amount
-            = jcp.mb * nb_groups * oc_chunks * jcp.od * jcp.oh * jcp.nb_ow;
+            = MB * nb_groups * oc_chunks * jcp.od * jcp.oh * jcp.nb_ow;
 
     int nthr = jcp.aligned_threads ? jcp.aligned_threads : jcp.nthr;
     parallel(nthr, [&](const int ithr, const int nthr) {
@@ -310,9 +320,9 @@ void jit_avx512_core_bf16_convolution_fwd_t::execute_forward_3d(
         balance211(work_amount, nthr, ithr, start, end);
         auto par_conv = jit_conv_call_s();
 
-        size_t src_d_stride = src_d.blk_off(0, 0, 1);
-        size_t src_h_stride = src_d.blk_off(0, 0, 0, 1);
-        size_t dst_h_stride = dst_d.blk_off(0, 0, 0, 1);
+        size_t src_d_stride = src_d.blk_off(0, 0, 1) - src_d.off_l(0);
+        size_t src_h_stride = src_d.blk_off(0, 0, 0, 1) - src_d.off_l(0);
+        size_t dst_h_stride = dst_d.blk_off(0, 0, 0, 1) - dst_d.off_l(0);
         size_t wht_d_stride = wht_blk_off(weights_d, 0, 0, 0, 1);
         size_t wht_h_stride = wht_blk_off(weights_d, 0, 0, 0, 0, 1);
 
@@ -320,12 +330,12 @@ void jit_avx512_core_bf16_convolution_fwd_t::execute_forward_3d(
 
         if (jcp.loop_order == loop_cwgn)
             nd_iterator_init(start, occ, oc_chunks, owb, jcp.nb_ow, gg,
-                    nb_groups, n, jcp.mb, od_s, jcp.od, oh_s, jcp.oh);
+                    nb_groups, n, MB, od_s, jcp.od, oh_s, jcp.oh);
         else if (jcp.loop_order == loop_gncw)
-            nd_iterator_init(start, gg, nb_groups, n, jcp.mb, occ, oc_chunks,
+            nd_iterator_init(start, gg, nb_groups, n, MB, occ, oc_chunks,
                     owb, jcp.nb_ow, od_s, jcp.od, oh_s, jcp.oh);
         else if (jcp.loop_order == loop_nhwcg)
-            nd_iterator_init(start, n, jcp.mb, od_s, jcp.od, oh_s, jcp.oh, owb,
+            nd_iterator_init(start, n, MB, od_s, jcp.od, oh_s, jcp.oh, owb,
                     jcp.nb_ow, occ, oc_chunks, gg, nb_groups);
         else
             assert(!"unsupported loop order");
@@ -395,6 +405,8 @@ void jit_avx512_core_bf16_convolution_fwd_t::execute_forward_3d(
                 par_conv.dst_orig = dst;
                 par_conv.post_ops_binary_rhs_arg_vec
                         = post_ops_binary_rhs_arg_vec.data();
+                par_conv.oc_off = oc_idx * (is_dst_layout_nxc ? 1 : jcp.oc_block) * sizeof(float);
+
                 (*kernel_)(&par_conv);
 
                 src_w += src_h_stride * jcp.stride_h;
@@ -402,13 +414,13 @@ void jit_avx512_core_bf16_convolution_fwd_t::execute_forward_3d(
             }
             if (jcp.loop_order == loop_cwgn)
                 nd_iterator_jump(start, end, occ, oc_chunks, owb, jcp.nb_ow, gg,
-                        nb_groups, n, jcp.mb, od_s, jcp.od, oh_s, jcp.oh);
+                        nb_groups, n, MB, od_s, jcp.od, oh_s, jcp.oh);
             else if (jcp.loop_order == loop_gncw)
-                nd_iterator_jump(start, end, gg, nb_groups, n, jcp.mb, occ,
+                nd_iterator_jump(start, end, gg, nb_groups, n, MB, occ,
                         oc_chunks, owb, jcp.nb_ow, od_s, jcp.od, oh_s, jcp.oh);
             else if (jcp.loop_order == loop_nhwcg) {
                 ++start;
-                nd_iterator_step(n, jcp.mb, od_s, jcp.od, oh_s, jcp.oh, owb,
+                nd_iterator_step(n, MB, od_s, jcp.od, oh_s, jcp.oh, owb,
                         jcp.nb_ow, occ, oc_chunks, gg, nb_groups);
             } else
                 assert(!"unsupported loop order");
@@ -422,6 +434,8 @@ void jit_avx512_core_bf16_convolution_bwd_data_t ::execute_backward_data_3d(
     auto weights = CTX_IN_MEM(const wei_data_t *, DNNL_ARG_WEIGHTS);
     auto diff_src = CTX_OUT_MEM(char *, DNNL_ARG_DIFF_SRC);
 
+    auto MB = CTX_IN_BATCH(DNNL_ARG_DIFF_DST);
+
     const memory_desc_wrapper diff_dst_d(pd()->diff_dst_md());
     const memory_desc_wrapper diff_src_d(pd()->diff_src_md());
     const memory_desc_wrapper weights_d(pd()->weights_md(0));
@@ -434,7 +448,7 @@ void jit_avx512_core_bf16_convolution_bwd_data_t ::execute_backward_data_3d(
         // TODO: experiment with g_blocking for perf fine tuning
         int g_blocking = 1;
         int nb_groups = jcp.ngroups / g_blocking;
-        int work_amount = nb_groups * jcp.mb * ic_chunks * jcp.id * jcp.ih;
+        int work_amount = nb_groups * MB * ic_chunks * jcp.id * jcp.ih;
         balance211(work_amount, nthr, ithr, start, end);
 
         auto par_conv = jit_conv_call_s();
@@ -448,13 +462,13 @@ void jit_avx512_core_bf16_convolution_bwd_data_t ::execute_backward_data_3d(
 
         int n {0}, gg {0}, icc {0}, id_s {0}, ih_s {0};
         if (jcp.loop_order == loop_cgn)
-            nd_iterator_init(start, icc, ic_chunks, gg, nb_groups, n, jcp.mb,
+            nd_iterator_init(start, icc, ic_chunks, gg, nb_groups, n, MB,
                     id_s, jcp.id, ih_s, jcp.ih);
         else if (jcp.loop_order == loop_gnc)
-            nd_iterator_init(start, gg, nb_groups, n, jcp.mb, icc, ic_chunks,
+            nd_iterator_init(start, gg, nb_groups, n, MB, icc, ic_chunks,
                     id_s, jcp.id, ih_s, jcp.ih);
         else if (jcp.loop_order == loop_nhwcg)
-            nd_iterator_init(start, n, jcp.mb, id_s, jcp.id, ih_s, jcp.ih, icc,
+            nd_iterator_init(start, n, MB, id_s, jcp.id, ih_s, jcp.ih, icc,
                     ic_chunks, gg, nb_groups);
         else
             assert(!"unsupported loop order");
@@ -562,19 +576,20 @@ void jit_avx512_core_bf16_convolution_bwd_data_t ::execute_backward_data_3d(
                 par_conv.filt = wht_w + kh_lo * wht_h_stride;
                 par_conv.kh_padding = kh_len;
                 par_conv.kd_padding = kd_len;
+                par_conv.oc_off = ic_idx * (is_dsrc_layout_nxc ? 1 : jcp.ic_block) * sizeof(float);
 
                 (*kernel_)(&par_conv);
             }
 
             if (jcp.loop_order == loop_cgn)
                 nd_iterator_jump(start, end, icc, ic_chunks, gg, nb_groups, n,
-                        jcp.mb, id_s, jcp.id, ih_s, jcp.ih);
+                        MB, id_s, jcp.id, ih_s, jcp.ih);
             else if (jcp.loop_order == loop_gnc)
-                nd_iterator_jump(start, end, gg, nb_groups, n, jcp.mb, icc,
+                nd_iterator_jump(start, end, gg, nb_groups, n, MB, icc,
                         ic_chunks, id_s, jcp.id, ih_s, jcp.ih);
             else if (jcp.loop_order == loop_nhwcg) {
                 ++start;
-                nd_iterator_step(n, jcp.mb, id_s, jcp.id, ih_s, jcp.ih, icc,
+                nd_iterator_step(n, MB, id_s, jcp.id, ih_s, jcp.ih, icc,
                         ic_chunks, gg, nb_groups);
             } else
                 assert(!"unsupported loop order");
@@ -588,6 +603,8 @@ void jit_avx512_core_bf16_convolution_bwd_data_t ::execute_backward_data(
     auto weights = CTX_IN_MEM(const wei_data_t *, DNNL_ARG_WEIGHTS);
     auto diff_src = CTX_OUT_MEM(char *, DNNL_ARG_DIFF_SRC);
 
+    auto MB = CTX_IN_BATCH(DNNL_ARG_DIFF_DST);
+
     const memory_desc_wrapper diff_dst_d(pd()->diff_dst_md());
     const memory_desc_wrapper diff_src_d(pd()->diff_src_md());
     const memory_desc_wrapper weights_d(pd()->weights_md(0));
@@ -600,12 +617,12 @@ void jit_avx512_core_bf16_convolution_bwd_data_t ::execute_backward_data(
         // TODO: experiment with g_blocking for perf fine tuning
         int g_blocking = 1;
         int nb_groups = jcp.ngroups / g_blocking;
-        int work_amount = nb_groups * jcp.mb * ic_chunks * jcp.ih * jcp.nb_iw;
+        int work_amount = nb_groups * MB * ic_chunks * jcp.ih * jcp.nb_iw;
         balance211(work_amount, nthr, ithr, start, end);
 
         auto par_conv = jit_conv_call_s();
-        size_t diff_src_h_stride = diff_src_d.blk_off(0, 0, 1);
-        size_t diff_dst_h_stride = diff_dst_d.blk_off(0, 0, 1);
+        size_t diff_src_h_stride = diff_src_d.blk_off(0, 0, 1) - diff_src_d.off_l(0);
+        size_t diff_dst_h_stride = diff_dst_d.blk_off(0, 0, 1) - diff_dst_d.off_l(0);
         size_t wht_h_stride = wht_blk_off(weights_d, 0, 0, 0, 1);
 
         bool is_fast_path = jcp.dilate_h == 0 && jcp.stride_h == 1;
@@ -613,12 +630,12 @@ void jit_avx512_core_bf16_convolution_bwd_data_t ::execute_backward_data(
         int n {0}, gg {0}, icc {0}, ih_s {0}, iwb {0};
         if (jcp.loop_order == loop_cwgn)
             nd_iterator_init(start, icc, ic_chunks, iwb, jcp.nb_iw, gg,
-                    nb_groups, n, jcp.mb, ih_s, jcp.ih);
+                    nb_groups, n, MB, ih_s, jcp.ih);
         else if (jcp.loop_order == loop_gncw)
-            nd_iterator_init(start, gg, nb_groups, n, jcp.mb, icc, ic_chunks,
+            nd_iterator_init(start, gg, nb_groups, n, MB, icc, ic_chunks,
                     iwb, jcp.nb_iw, ih_s, jcp.ih);
         else if (jcp.loop_order == loop_nhwcg)
-            nd_iterator_init(start, n, jcp.mb, ih_s, jcp.ih, iwb, jcp.nb_iw,
+            nd_iterator_init(start, n, MB, ih_s, jcp.ih, iwb, jcp.nb_iw,
                     icc, ic_chunks, gg, nb_groups);
         else
             assert(!"unsupported loop order");
@@ -699,19 +716,20 @@ void jit_avx512_core_bf16_convolution_bwd_data_t ::execute_backward_data(
                 par_conv.filt = wht_w + k_lo * wht_h_stride;
                 par_conv.kh_padding = k_len;
                 par_conv.iwb = iwb;
+                par_conv.oc_off =  ic_idx * (is_dsrc_layout_nxc ? 1 : jcp.ic_block) * sizeof(float);
 
                 (*kernel_)(&par_conv);
             }
 
             if (jcp.loop_order == loop_cwgn)
                 nd_iterator_jump(start, end, icc, ic_chunks, iwb, jcp.nb_iw, gg,
-                        nb_groups, n, jcp.mb, ih_s, jcp.ih);
+                        nb_groups, n, MB, ih_s, jcp.ih);
             else if (jcp.loop_order == loop_gncw)
-                nd_iterator_jump(start, end, gg, nb_groups, n, jcp.mb, icc,
+                nd_iterator_jump(start, end, gg, nb_groups, n, MB, icc,
                         ic_chunks, iwb, jcp.nb_iw, ih_s, jcp.ih);
             else if (jcp.loop_order == loop_nhwcg) {
                 ++start;
-                nd_iterator_step(n, jcp.mb, ih_s, jcp.ih, iwb, jcp.nb_iw, icc,
+                nd_iterator_step(n, MB, ih_s, jcp.ih, iwb, jcp.nb_iw, icc,
                         ic_chunks, gg, nb_groups);
             } else
                 assert(!"unsupported loop order");

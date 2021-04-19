@@ -80,6 +80,8 @@ void jit_avx512_core_bf16_1x1_convolution_fwd_t<dst_type>::execute_forward(
                     pd()->jcp_.post_ops.entry_.size() + 1)
             : std::vector<const void *> {};
 
+    auto MB = CTX_IN_BATCH(DNNL_ARG_SRC);
+
     auto scratchpad = ctx.get_scratchpad_grantor();
 
     const auto &jcp = kernel_->jcp;
@@ -115,7 +117,7 @@ void jit_avx512_core_bf16_1x1_convolution_fwd_t<dst_type>::execute_forward(
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
         execute_forward_thr(ithr, nthr, src, weights, bias, weights_dw, bias_dw,
                 dst, scratchpad, post_ops_binary_rhs_arg_vec.data(),
-                post_ops_binary_rhs_arg_vec_dw.data());
+                post_ops_binary_rhs_arg_vec_dw.data(), MB);
     });
 
     if (pd()->wants_zero_pad_dst()) ctx.zero_pad_output(DNNL_ARG_DST);
@@ -128,7 +130,7 @@ void jit_avx512_core_bf16_1x1_convolution_fwd_t<dst_type>::execute_forward_thr(
         const dw_wei_data_t *weights_dw, const float *bias_dw, const char *dst,
         const memory_tracking::grantor_t &scratchpad,
         const void *post_ops_binary_rhs_arg_vec,
-        const void *post_ops_binary_rhs_arg_vec_dw) const {
+        const void *post_ops_binary_rhs_arg_vec_dw, int MB) const {
     const memory_desc_wrapper src_d(pd()->src_md());
     const memory_desc_wrapper dst_d(pd()->dst_md());
     const memory_desc_wrapper weights_d(pd()->weights_md(0));
@@ -174,6 +176,8 @@ void jit_avx512_core_bf16_1x1_convolution_fwd_t<dst_type>::execute_forward_thr(
     const int nb_buffer = jcp.nb_load_blocking;
     std::vector<decltype(pbuf)> addrs;
 
+    auto start_off = dst_d.off_l(0);
+
     auto step = [](int default_step, int remaining, int tail_step) {
         assert(default_step <= tail_step);
         return remaining < tail_step ? remaining : default_step;
@@ -183,7 +187,7 @@ void jit_avx512_core_bf16_1x1_convolution_fwd_t<dst_type>::execute_forward_thr(
                               int &bcast_step, int &od, int &oh, int &ow,
                               int &id, int &ih, int &iw) {
         int osb {0};
-        nd_iterator_init(iwork, n, jcp.mb, g, jcp.ngroups, osb, nb_bcast);
+        nd_iterator_init(iwork, n, MB, g, jcp.ngroups, osb, nb_bcast);
         bcast_step = step(
                 nb_bcast_blocking, nb_bcast - osb, nb_bcast_blocking_max);
         bcast_step = nstl::min(bcast_step, bcast_end - iwork);
@@ -266,12 +270,13 @@ void jit_avx512_core_bf16_1x1_convolution_fwd_t<dst_type>::execute_forward_thr(
                 : rnd_up((jcp.load_dim / grp_count), jcp.load_block);
         const size_t str_size = jcp.bcast_dim * max_load_per_thread;
         p.store_buffer = store_buffer + ithr * str_size
-                + data_blk_off(dst_d, 0, 0, od, oh, ow);
+                + data_blk_off(dst_d, 0, 0, od, oh, ow) - start_off;
 
         p.dst_l_off = dst_off;
         p.oc_l_off = oc_off_idx * (is_dst_layout_nxc ? 1 : jcp.oc_block);
         p.post_ops_binary_rhs_arg_vec = post_ops_binary_rhs_arg_vec;
         p.dst_orig = dst;
+        p.oc_off = oc_off_idx * (is_dst_layout_nxc ? 1 : jcp.oc_block) * sizeof(float);
 
         (*kernel_)(&p);
     };
@@ -376,6 +381,8 @@ void jit_avx512_core_bf16_1x1_convolution_fwd_t<dst_type>::execute_forward_thr(
                     = post_ops_binary_rhs_arg_vec_dw;
             par_conv_dw.dst_orig = dst;
 
+            par_conv_dw.oc_off = ch * jcp_dw->ch_block * sizeof(float);
+
             (*kernel_dw_)(&par_conv_dw);
 
             for (int i = 0; i < jcp_dw->kh; ++i)
@@ -397,7 +404,7 @@ void jit_avx512_core_bf16_1x1_convolution_fwd_t<dst_type>::execute_forward_thr(
         addrs.resize(jcp_dw->kh);
 
         int bcast_start {0}, bcast_end {0}, ocb_start, ocb_end;
-        balance2D(nthr, ithr, jcp.mb * jcp.ngroups * jcp_dw->oh, bcast_start,
+        balance2D(nthr, ithr, MB * jcp.ngroups * jcp_dw->oh, bcast_start,
                 bcast_end, nb_oc, ocb_start, ocb_end, jcp.load_grp_count);
 
         while (ocb_start < ocb_end) {
@@ -408,7 +415,7 @@ void jit_avx512_core_bf16_1x1_convolution_fwd_t<dst_type>::execute_forward_thr(
             auto bcast_iter = bcast_start;
             while (bcast_iter < bcast_end) {
                 int n {0}, g {0}, oh_dw {0};
-                nd_iterator_init(bcast_iter, n, jcp.mb, g, jcp.ngroups, oh_dw,
+                nd_iterator_init(bcast_iter, n, MB, g, jcp.ngroups, oh_dw,
                         jcp_dw->oh);
                 if (oh_dw == 0) oh_1x1 = 0; // Reset over mb boundary
                 const int oh_1x1_range
@@ -438,7 +445,7 @@ void jit_avx512_core_bf16_1x1_convolution_fwd_t<dst_type>::execute_forward_thr(
     if (jcp.with_dw_conv) {
         conv_dw();
     } else {
-        const int work_amount = jcp.mb * jcp.ngroups * jcp.nb_bcast;
+        const int work_amount = MB * jcp.ngroups * jcp.nb_bcast;
         int bcast_start {0}, bcast_end {0}, ocb_start {0}, ocb_end {0};
         balance2D(nthr, ithr, work_amount, bcast_start, bcast_end, jcp.nb_load,
                 ocb_start, ocb_end, jcp.load_grp_count);
@@ -456,12 +463,15 @@ void jit_avx512_core_bf16_1x1_convolution_bwd_data_t<
     auto diff_dst = CTX_IN_MEM(const diff_dst_data_t *, DNNL_ARG_DIFF_DST);
     auto weights = CTX_IN_MEM(const wei_data_t *, DNNL_ARG_WEIGHTS);
     auto diff_src = CTX_OUT_MEM(diff_src_data_t *, DNNL_ARG_DIFF_SRC);
+
+    auto MB = CTX_IN_BATCH(DNNL_ARG_DIFF_DST);
+
     auto scratchpad = ctx.get_scratchpad_grantor();
     const auto &jcp = kernel_->jcp;
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
         assert(nthr == jcp.nthr);
         execute_backward_data_thr(
-                ithr, nthr, diff_dst, weights, diff_src, scratchpad);
+                ithr, nthr, diff_dst, weights, diff_src, scratchpad, MB);
     });
 }
 
@@ -470,7 +480,7 @@ void jit_avx512_core_bf16_1x1_convolution_bwd_data_t<
         diff_src_type>::execute_backward_data_thr(const int ithr,
         const int nthr, const diff_dst_data_t *diff_dst,
         const wei_data_t *weights, diff_src_data_t *diff_src,
-        const memory_tracking::grantor_t &scratchpad) const {
+        const memory_tracking::grantor_t &scratchpad, int MB) const {
 
     const memory_desc_wrapper diff_dst_d(pd()->diff_dst_md());
     const memory_desc_wrapper weights_d(pd()->weights_md(0));
@@ -487,7 +497,7 @@ void jit_avx512_core_bf16_1x1_convolution_bwd_data_t<
     const int stride_h = (ndims == 3) ? 1 : pd()->desc()->strides[ndims - 4];
     const int stride_w = pd()->desc()->strides[ndims - 3];
 
-    const int work_amount = jcp.mb * jcp.ngroups * jcp.nb_bcast;
+    const int work_amount = MB * jcp.ngroups * jcp.nb_bcast;
 
     auto step = [](int default_step, int remaining, int tail_step) {
         assert(default_step <= tail_step);
@@ -509,7 +519,7 @@ void jit_avx512_core_bf16_1x1_convolution_bwd_data_t<
     auto init_bcast = [&](int iwork, int &n, int &g, int &bcast_step, int &od,
                               int &oh, int &ow, int &id, int &ih, int &iw) {
         int osb {0};
-        nd_iterator_init(iwork, n, jcp.mb, g, jcp.ngroups, osb, jcp.nb_bcast);
+        nd_iterator_init(iwork, n, MB, g, jcp.ngroups, osb, jcp.nb_bcast);
         bcast_step = step(jcp.nb_bcast_blocking, jcp.nb_bcast - osb,
                 jcp.nb_bcast_blocking_max);
         bcast_step = nstl::min(bcast_step, bcast_end - iwork);
@@ -583,6 +593,9 @@ void jit_avx512_core_bf16_1x1_convolution_bwd_data_t<
         const size_t str_size = jcp.bcast_dim * max_load_per_thread;
         p.store_buffer = store_buffer + ithr * str_size
                 + data_blk_off(diff_src_d, 0, 0, id, ih, iw);
+
+        p.oc_off = ic_off_idx * (is_dsrc_layout_nxc ? 1 : jcp.ic_block) * sizeof(float);
+
         (*kernel_)(&p);
         if (pd()->rtus_.reduce_src_) (*rtus_driver_)(&rp);
     };

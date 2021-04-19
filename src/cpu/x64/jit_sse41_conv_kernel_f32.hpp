@@ -17,6 +17,7 @@
 #ifndef CPU_X64_JIT_SSE41_CONV_KERNEL_F32_HPP
 #define CPU_X64_JIT_SSE41_CONV_KERNEL_F32_HPP
 
+#include "common/memory_tracking.hpp"
 #include "common/c_types_map.hpp"
 #include "common/memory.hpp"
 
@@ -38,6 +39,9 @@ struct jit_sse41_conv_fwd_kernel_f32 : public jit_generator {
             const memory_desc_wrapper &weights_d,
             const memory_desc_wrapper &dst_d, const primitive_attr_t &attr,
             int nthreads);
+
+    static void init_scratchpad(memory_tracking::registrar_t &scratchpad,
+                                const jit_conv_conf_t &jcp);
 
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_sse41_conv_fwd_kernel_f32)
     jit_conv_conf_t jcp;
@@ -64,6 +68,13 @@ private:
 
     std::unique_ptr<injector::jit_uni_postops_injector_t<sse41>>
             postops_injector_;
+
+    reg64_t reg_d_weights = imm_addr64;
+    reg64_t reg_d_bias = ki_iter;
+    reg64_t reg_oc_off = abi_param1;
+
+    Xbyak::Xmm xmm_d_weights = Xbyak::Xmm(14);
+    Xbyak::Xmm xmm_d_bias = Xbyak::Xmm(15);
 
     inline void oh_step_unroll_kw(
             int ur_w, int pad_l, int pad_r, int oc_blocks);

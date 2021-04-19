@@ -41,7 +41,8 @@ status_t gemm_x8s8s32x_inner_product_fwd_t<src_type, dst_type>::execute_forward(
             = binary_injector_utils::prepare_binary_args(
                     this->pd()->attr()->post_ops_, ctx);
 
-    const dim_t MB = pd()->MB();
+    auto MB = CTX_IN_BATCH(DNNL_ARG_SRC);
+
     const dim_t OC = pd()->OC();
 
     const auto &wmd = *pd()->weights_md();

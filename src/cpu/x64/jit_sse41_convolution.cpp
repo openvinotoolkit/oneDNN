@@ -27,6 +27,7 @@ namespace x64 {
 
 using namespace dnnl::impl::status;
 using namespace dnnl::impl::utils;
+using namespace dnnl::impl::memory_tracking::names;
 
 #define src_blk_off(f, n, c, h, w) \
     (pd()->ndims() == 3) ? (f).blk_off(n, c, w) : (f).blk_off(n, c, h, w)
@@ -47,18 +48,29 @@ void jit_sse41_convolution_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
     const auto post_ops_binary_rhs_arg_vec
             = binary_injector::prepare_binary_args(jcp.post_ops, ctx);
 
+    auto MB = CTX_IN_BATCH(DNNL_ARG_SRC);
+
     const memory_desc_wrapper src_d(pd()->src_md());
     const memory_desc_wrapper dst_d(pd()->dst_md());
     const memory_desc_wrapper weights_d(pd()->weights_md(0));
     const memory_desc_wrapper bias_d(pd()->weights_md(1));
 
     int ocb_work = div_up(jcp.nb_oc, jcp.nb_oc_blocking);
-    const size_t work_amount = jcp.mb * jcp.ngroups * ocb_work * jcp.oh;
+    const size_t work_amount = MB * jcp.ngroups * ocb_work * jcp.oh;
 
     const bool is_src_layout_nxc
             = one_of(jcp.src_tag, format_tag::nwc, format_tag::nhwc);
     const bool is_dst_layout_nxc
             = one_of(jcp.dst_tag, format_tag::nwc, format_tag::nhwc);
+
+    auto scratchpad = ctx.get_scratchpad_grantor();
+    if (pd()->wants_padded_bias()) {
+        auto padded_bias = scratchpad.get<data_t>(key_conv_padded_bias);
+        utils::array_copy(padded_bias, bias, kernel_->jcp.oc_without_padding);
+        utils::array_set(padded_bias + kernel_->jcp.oc_without_padding, 0.f,
+                         kernel_->jcp.oc - kernel_->jcp.oc_without_padding);
+        bias = padded_bias;
+    }
 
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
         assert(nthr == jcp.nthr);
@@ -73,7 +85,7 @@ void jit_sse41_convolution_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
             if (icb_step_rem < jcp.nb_ic_blocking_max) icb_step = icb_step_rem;
 
             size_t n {0}, g {0}, ocbb {0}, oh {0};
-            nd_iterator_init(start, n, jcp.mb, g, jcp.ngroups, ocbb, ocb_work,
+            nd_iterator_init(start, n, MB, g, jcp.ngroups, ocbb, ocb_work,
                     oh, jcp.oh);
             for (size_t iwork = start; iwork < end; ++iwork) {
                 int ocb = ocbb * jcp.nb_oc_blocking;
@@ -116,7 +128,7 @@ void jit_sse41_convolution_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
                         par_conv.flags |= FLAG_IC_FIRST;
                     }
 
-                    if ((jcp.with_eltwise || jcp.with_binary)
+                    if ((jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise || jcp.with_quantization)
                             && icb + 1 == jcp.nb_ic) {
                         par_conv.flags |= FLAG_IC_LAST;
                     }
@@ -134,11 +146,12 @@ void jit_sse41_convolution_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
                     par_conv.post_ops_binary_rhs_arg_vec
                             = post_ops_binary_rhs_arg_vec.data();
                     par_conv.dst_orig = dst;
+                    par_conv.oc_off = _oc * (is_dst_layout_nxc ? 1 : jcp.oc_block) * sizeof(float);
 
                     (*kernel_)(&par_conv);
                 }
                 nd_iterator_step(
-                        n, jcp.mb, g, jcp.ngroups, ocbb, ocb_work, oh, jcp.oh);
+                        n, MB, g, jcp.ngroups, ocbb, ocb_work, oh, jcp.oh);
             }
             icbb += icb_step;
         }

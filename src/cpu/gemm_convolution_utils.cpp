@@ -275,7 +275,7 @@ template void transpose_dt(const conv_gemm_conf_t &jcp,
 template <typename orig_im_dt, typename orig_col_dt>
 void im2col_dt_3d(const conv_gemm_conf_t &jcp,
         const orig_im_dt *__restrict _imtr, orig_col_dt *__restrict _col,
-        int od) {
+        int od, const uint8_t *__restrict input_zp) {
     // For performance reasons, use uint16_t as a proxy for bfloat16_t
     using im_dt = typename utils::conditional<data_traits<orig_im_dt>::data_type
                     == bf16,
@@ -305,6 +305,8 @@ void im2col_dt_3d(const conv_gemm_conf_t &jcp,
     const int IHW = jcp.ih * jcp.iw;
     const int OHW = jcp.oh * jcp.ow;
 
+    bool with_input_zp = input_zp != nullptr;
+
     if (sd == 1 && sh == 1 && sw == 1 && dd == 1 && dh == 1 && dw == 1)
         parallel_nd(jcp.kd, jcp.kh, jcp.kw, jcp.ic,
                 [&](int kd, int kh, int kw, int ic) {
@@ -312,8 +314,9 @@ void im2col_dt_3d(const conv_gemm_conf_t &jcp,
                             + kh * col_kh_s + kw * col_kw_s + ic * col_ic_s;
                     const int id = od - fp + kd;
                     if (id < 0 || id >= jcp.id) {
+                        col_dt izp = with_input_zp ? (col_dt)input_zp[ic] : shift;
                         for (ptrdiff_t i = 0; i < OHW; i++)
-                            col_loc[i] = shift;
+                            col_loc[i] = izp;
                         return;
                     }
                     const im_dt *__restrict imtr_loc
@@ -339,8 +342,9 @@ void im2col_dt_3d(const conv_gemm_conf_t &jcp,
                             + kh * col_kh_s + kw * col_kw_s + ic * col_ic_s;
                     const int id = od * 2 - fp + kd;
                     if (id < 0 || id >= jcp.id) {
+                        col_dt izp = with_input_zp ? (col_dt)input_zp[ic] : shift;
                         for (ptrdiff_t i = 0; i < OHW; i++)
-                            col_loc[i] = shift;
+                            col_loc[i] = izp;
                         return;
                     }
                     const im_dt *__restrict imtr_loc
@@ -370,8 +374,9 @@ void im2col_dt_3d(const conv_gemm_conf_t &jcp,
                             + kh * col_kh_s + kw * col_kw_s + ic * col_ic_s;
                     const int id = od * sd - fp + kd * dd;
                     if (id < 0 || id >= jcp.id) {
+                        col_dt izp = with_input_zp ? (col_dt)input_zp[ic] : shift;
                         for (ptrdiff_t i = 0; i < OHW; i++)
-                            col_loc[i] = shift;
+                            col_loc[i] = izp;
                         return;
                     }
                     const im_dt *__restrict imtr_loc
@@ -398,13 +403,13 @@ void im2col_dt_3d(const conv_gemm_conf_t &jcp,
 }
 
 template void im2col_dt_3d<int8_t, uint8_t>(const conv_gemm_conf_t &jcp,
-        const int8_t *__restrict im, uint8_t *__restrict col, int od);
+        const int8_t *__restrict im, uint8_t *__restrict col, int od, const uint8_t *__restrict input_zp);
 template void im2col_dt_3d<uint8_t, uint8_t>(const conv_gemm_conf_t &jcp,
-        const uint8_t *__restrict im, uint8_t *__restrict col, int od);
+        const uint8_t *__restrict im, uint8_t *__restrict col, int od, const uint8_t *__restrict input_zp);
 template void im2col_dt_3d<float, float>(const conv_gemm_conf_t &jcp,
-        const float *__restrict im, float *__restrict col, int od);
+        const float *__restrict im, float *__restrict col, int od, const uint8_t *__restrict input_zp);
 template void im2col_dt_3d<bfloat16_t, bfloat16_t>(const conv_gemm_conf_t &jcp,
-        const bfloat16_t *__restrict im, bfloat16_t *__restrict col, int od);
+        const bfloat16_t *__restrict im, bfloat16_t *__restrict col, int od, const uint8_t *__restrict input_zp);
 
 /* col[ic][kh][kw][oh][ow] <-- im2col(im[ic][ih][iw]) */
 template <typename data_type_t>
@@ -577,7 +582,7 @@ template void im2col(const conv_gemm_conf_t &jcp,
 template <typename orig_im_dt, typename orig_col_dt>
 void im2col_dt(const conv_gemm_conf_t &jcp, const orig_im_dt *__restrict _im,
         orig_im_dt *__restrict _imtr, orig_col_dt *__restrict _col, int hs,
-        int hb, int ws, int wb) {
+        int hb, int ws, int wb, const uint8_t *__restrict input_zp) {
     // For performance reasons, use uint16_t as a proxy for bfloat16_t
     using im_dt = typename utils::conditional<data_traits<orig_im_dt>::data_type
                     == bf16,
@@ -599,6 +604,8 @@ void im2col_dt(const conv_gemm_conf_t &jcp, const orig_im_dt *__restrict _im,
     const int im_ih_stride = jcp.iw * im_iw_stride;
     const int tp = jcp.t_pad;
     const int lp = jcp.l_pad;
+
+    bool with_input_zp = input_zp != nullptr;
 
     if (jcp.outer_threading && sh == 1 && sw == 1 && dh == 1 && dw == 1) {
         /* im[ih][iw][ic] --> imtr[ic][ih][iw] --> col[kh][kw][ic][oh][ow] */
@@ -643,28 +650,49 @@ void im2col_dt(const conv_gemm_conf_t &jcp, const orig_im_dt *__restrict _im,
                 const int ow_start = saturate(0, wb, ow_kw);
                 const int ow_end = saturate(0, wb, ow_kw + iwb);
                 for (int ic = 0; ic < jcp.ic; ic++) {
+                    uint8_t izp = with_input_zp ? input_zp[ic] : (uint8_t) 0;
                     const ptrdiff_t col_idx_ic = col_idx_kw + ic * col_ic_str;
                     const int imtr_idx_ic = ic * imtr_ic_stride - imtr_shift;
                     for (int oh = 0; oh < oh_start; oh++) {
                         const ptrdiff_t col_idx_oh = col_idx_ic + oh * wb;
-                        for (int ow = 0; ow < wb; ++ow)
-                            col[col_idx_oh + ow] = shift;
+                        if (with_input_zp) {
+                            for (int ow = 0; ow < wb; ++ow)
+                                col[col_idx_oh + ow] = izp;
+                        } else {
+                            for (int ow = 0; ow < wb; ++ow)
+                                col[col_idx_oh + ow] = shift;
+                        }
                     }
                     for (int oh = oh_start; oh < oh_end; oh++) {
                         const ptrdiff_t col_idx_oh = col_idx_ic + oh * wb;
                         const ptrdiff_t imtr_idx_oh = imtr_idx_ic + oh * iwb;
-                        for (int ow = 0; ow < ow_start; ++ow)
-                            col[col_idx_oh + ow] = shift;
-                        for (int ow = ow_start; ow < ow_end; ++ow)
-                            col[col_idx_oh + ow]
-                                    = imtr[imtr_idx_oh + ow] + shift;
-                        for (int ow = ow_end; ow < wb; ++ow)
-                            col[col_idx_oh + ow] = shift;
+                        if (with_input_zp) {
+                            for (int ow = 0; ow < ow_start; ++ow)
+                                col[col_idx_oh + ow] = izp;
+                            for (int ow = ow_start; ow < ow_end; ++ow)
+                                col[col_idx_oh + ow]
+                                        = imtr[imtr_idx_oh + ow];
+                            for (int ow = ow_end; ow < wb; ++ow)
+                                col[col_idx_oh + ow] = izp;
+                        } else {
+                            for (int ow = 0; ow < ow_start; ++ow)
+                                col[col_idx_oh + ow] = shift;
+                            for (int ow = ow_start; ow < ow_end; ++ow)
+                                col[col_idx_oh + ow]
+                                        = imtr[imtr_idx_oh + ow] + shift;
+                            for (int ow = ow_end; ow < wb; ++ow)
+                                col[col_idx_oh + ow] = shift;
+                        }
                     }
                     for (int oh = oh_end; oh < hb; oh++) {
                         const ptrdiff_t col_idx_oh = col_idx_ic + oh * wb;
-                        for (int ow = 0; ow < wb; ++ow)
-                            col[col_idx_oh + ow] = shift;
+                        if (with_input_zp) {
+                            for (int ow = 0; ow < wb; ++ow)
+                                col[col_idx_oh + ow] = izp;
+                        } else {
+                            for (int ow = 0; ow < wb; ++ow)
+                                col[col_idx_oh + ow] = shift;
+                        }
                     }
                 }
             }
@@ -677,27 +705,48 @@ void im2col_dt(const conv_gemm_conf_t &jcp, const orig_im_dt *__restrict _im,
                     const ptrdiff_t col_idx_base
                             = (((kh * jcp.kw + kw) * jcp.ic + ic) * hb + oh)
                             * wb;
+                    uint8_t izp = with_input_zp ? input_zp[ic] : (uint8_t) 0;
                     if (ih < 0 || ih >= jcp.ih)
-                        for (int ow = 0; ow < wb; ow++)
-                            col[col_idx_base + ow] = shift;
+                        if (with_input_zp) {
+                            for (int ow = 0; ow < wb; ow++)
+                                col[col_idx_base + ow] = izp;
+                        } else {
+                            for (int ow = 0; ow < wb; ow++)
+                                col[col_idx_base + ow] = shift;
+                        }
                     else {
                         const int wp = lp - kw * dw;
                         const int ow_start
                                 = saturate(0, wb, div_up(wp, sw) - ws);
                         const int ow_end
                                 = saturate(0, wb, div_up(jcp.iw + wp, sw) - ws);
-                        for (int ow = 0; ow < ow_start; ow++)
-                            col[col_idx_base + ow] = shift;
-                        const int iw_base = ws * sw - wp;
-                        const ptrdiff_t im_idx_base = ih * im_ih_stride + ic;
-                        for (int ow = ow_start; ow < ow_end; ow++) {
-                            const int iw = iw_base + ow * sw;
-                            const ptrdiff_t im_idx
-                                    = im_idx_base + iw * im_iw_stride;
-                            col[col_idx_base + ow] = im[im_idx] + shift;
+                        if (with_input_zp) {
+                            for (int ow = 0; ow < ow_start; ow++)
+                                col[col_idx_base + ow] = izp;
+                            const int iw_base = ws * sw - wp;
+                            const ptrdiff_t im_idx_base = ih * im_ih_stride + ic;
+                            for (int ow = ow_start; ow < ow_end; ow++) {
+                                const int iw = iw_base + ow * sw;
+                                const ptrdiff_t im_idx
+                                        = im_idx_base + iw * im_iw_stride;
+                                col[col_idx_base + ow] = im[im_idx];
+                            }
+                            for (int ow = ow_end; ow < wb; ow++)
+                                col[col_idx_base + ow] = izp;
+                        } else {
+                            for (int ow = 0; ow < ow_start; ow++)
+                                col[col_idx_base + ow] = shift;
+                            const int iw_base = ws * sw - wp;
+                            const ptrdiff_t im_idx_base = ih * im_ih_stride + ic;
+                            for (int ow = ow_start; ow < ow_end; ow++) {
+                                const int iw = iw_base + ow * sw;
+                                const ptrdiff_t im_idx
+                                        = im_idx_base + iw * im_iw_stride;
+                                col[col_idx_base + ow] = im[im_idx] + shift;
+                            }
+                            for (int ow = ow_end; ow < wb; ow++)
+                                col[col_idx_base + ow] = shift;
                         }
-                        for (int ow = ow_end; ow < wb; ow++)
-                            col[col_idx_base + ow] = shift;
                     }
                 });
     }
@@ -705,17 +754,17 @@ void im2col_dt(const conv_gemm_conf_t &jcp, const orig_im_dt *__restrict _im,
 
 template void im2col_dt<int8_t, uint8_t>(const conv_gemm_conf_t &jcp,
         const int8_t *__restrict im, int8_t *__restrict imtr,
-        uint8_t *__restrict col, int hs, int hb, int ws, int wb);
+        uint8_t *__restrict col, int hs, int hb, int ws, int wb, const uint8_t *__restrict input_zp);
 template void im2col_dt<uint8_t, uint8_t>(const conv_gemm_conf_t &jcp,
         const uint8_t *__restrict im, uint8_t *__restrict imtr,
-        uint8_t *__restrict col, int hs, int hb, int ws, int wb);
+        uint8_t *__restrict col, int hs, int hb, int ws, int wb, const uint8_t *__restrict input_zp);
 template void im2col_dt<float, float>(const conv_gemm_conf_t &jcp,
         const float *__restrict im, float *__restrict imtr,
-        float *__restrict col, int hs, int hb, int ws, int wb);
+        float *__restrict col, int hs, int hb, int ws, int wb, const uint8_t *__restrict input_zp);
 
 template void im2col_dt<bfloat16_t, bfloat16_t>(const conv_gemm_conf_t &jcp,
         const bfloat16_t *__restrict im, bfloat16_t *__restrict imtr,
-        bfloat16_t *__restrict col, int hs, int hb, int ws, int wb);
+        bfloat16_t *__restrict col, int hs, int hb, int ws, int wb, const uint8_t *__restrict input_zp);
 
 /* im[id][ih][iw][ic] <-- col2im_dt_3d(col[od][oh][ow][kd][kh][kw][ic]) */
 template <typename orig_T>
@@ -1095,16 +1144,14 @@ status_t init_conf(conv_gemm_conf_t &jcp,
             CHECK(memory_desc_init_by_tag(src_md, desired_src_tag));
             src_tag = desired_src_tag;
         } else {
-            src_tag = memory_desc_matches_one_of_tag(
-                    src_md, nwc, nhwc, ndhwc, ncw, nchw, ncdhw);
+            src_tag = src_d.mb_stride_relaxed_match(nwc, nhwc, ndhwc, ncw, nchw, ncdhw);
         }
 
         if (dst_d.format_kind() == format_kind::any) {
             CHECK(memory_desc_init_by_tag(dst_md, desired_dst_tag));
             dst_tag = desired_dst_tag;
         } else {
-            dst_tag = memory_desc_matches_one_of_tag(
-                    dst_md, nwc, nhwc, ndhwc, ncw, nchw, ncdhw);
+            dst_tag = dst_d.mb_stride_relaxed_match(nwc, nhwc, ndhwc, ncw, nchw, ncdhw);
         }
 
         if (src_tag == format_tag::undef || dst_tag == format_tag::undef)
@@ -1148,6 +1195,21 @@ status_t init_conf(conv_gemm_conf_t &jcp,
     const bool is_bwd_d = jcp.prop_kind == backward_data;
     const bool is_bwd_w = jcp.prop_kind == backward_weights;
     const bool is_fwd = !is_bwd_d && !is_bwd_w;
+
+    jcp.with_input_zp = !attr.input_zero_points_.has_default_values();
+    if (jcp.with_input_zp) {
+        if (attr.input_zero_points_.count_ != 1 && attr.input_zero_points_.count_ != jcp.ic * jcp.ngroups)
+            return status::unimplemented;
+
+        if (attr.output_compensations_.count_ != jcp.oc * jcp.ngroups)
+            return status::unimplemented;
+    }
+
+    jcp.with_weights_zp = !attr.weights_zero_points_.has_default_values();
+    if (jcp.with_weights_zp) {
+        if (attr.weights_zero_points_.count_ != 1 && attr.weights_zero_points_.count_ != jcp.oc * jcp.ngroups)
+            return status::unimplemented;
+    }
 
     bool is_int8_conv = (is_fwd ? utils::one_of(src_d.data_type(), s8, u8)
                                 : utils::one_of(dst_d.data_type(), s8, u8))
@@ -2115,7 +2177,8 @@ status_t init_conf(conv_gemm_conf_t &jcp,
         if (size) scratchpad.book<int32_t>(key_conv_gemm_zp_src_comp, size);
     }
 
-    if (scratchpad.size() > scratchpad_limit) return status::unimplemented;
+    // [WA] Disabled condition to prevent fallback on ref convolution implementation
+//    if (scratchpad.size() > scratchpad_limit) return status::unimplemented;
     return status::success;
 }
 

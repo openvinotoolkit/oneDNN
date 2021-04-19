@@ -32,6 +32,7 @@ namespace x64 {
 
 using namespace dnnl::impl::status;
 using namespace dnnl::impl::utils;
+using namespace dnnl::impl::memory_tracking::names;
 
 void jit_sse41_1x1_convolution_fwd_t::execute_forward(
         const exec_ctx_t &ctx) const {
@@ -51,11 +52,22 @@ void jit_sse41_1x1_convolution_fwd_t::execute_forward(
                     pd()->jcp_.post_ops.entry_.size() + 1)
             : std::vector<const void *> {};
 
+    auto MB = CTX_IN_BATCH(DNNL_ARG_SRC);
+
     auto scratchpad = ctx.get_scratchpad_grantor();
+
+    if (pd()->wants_padded_bias()) {
+        auto padded_bias = scratchpad.get<data_t>(key_conv_padded_bias);
+        utils::array_copy(padded_bias, bias, kernel_->jcp.oc_without_padding);
+        utils::array_set(padded_bias + kernel_->jcp.oc_without_padding, 0.f,
+                         kernel_->jcp.oc - kernel_->jcp.oc_without_padding);
+        bias = padded_bias;
+    }
+
     parallel(kernel_->jcp.nthr, [&](const int ithr, const int nthr) {
         execute_forward_thr(ithr, nthr, src, weights, bias, weights_dw, bias_dw,
                 dst, scratchpad, post_ops_binary_rhs_arg_vec.data(),
-                post_ops_binary_rhs_arg_vec_dw.data());
+                post_ops_binary_rhs_arg_vec_dw.data(), MB);
     });
 
     if (pd()->wants_zero_pad_dst()) ctx.zero_pad_output(DNNL_ARG_DST);
@@ -66,7 +78,7 @@ void jit_sse41_1x1_convolution_fwd_t::execute_forward_thr(const int ithr,
         const data_t *bias, const data_t *weights_dw, const data_t *bias_dw,
         data_t *dst, const memory_tracking::grantor_t &scratchpad,
         const void *post_ops_binary_rhs_arg_vec,
-        const void *post_ops_binary_rhs_arg_vec_dw) const {
+        const void *post_ops_binary_rhs_arg_vec_dw, int MB) const {
 
     const memory_desc_wrapper src_d(pd()->src_md());
     const memory_desc_wrapper dst_d(pd()->dst_md());
@@ -115,7 +127,7 @@ void jit_sse41_1x1_convolution_fwd_t::execute_forward_thr(const int ithr,
                               int bcast_end, int &oh, int &ow, int &ih,
                               int &iw) {
         int osb {0};
-        nd_iterator_init(iwork, n, jcp.mb, g, jcp.ngroups, osb, nb_bcast);
+        nd_iterator_init(iwork, n, MB, g, jcp.ngroups, osb, nb_bcast);
 
         bcast_step = step(
                 nb_bcast_blocking, nb_bcast - osb, nb_bcast_blocking_max);
@@ -172,6 +184,7 @@ void jit_sse41_1x1_convolution_fwd_t::execute_forward_thr(const int ithr,
         par_conv.oc_l_off = _ocb * jcp.oc_block;
         par_conv.post_ops_binary_rhs_arg_vec = post_ops_binary_rhs_arg_vec;
         par_conv.dst_orig = dst;
+        par_conv.oc_off = _ocb * jcp.oc_block * sizeof(float);
 
         (*kernel_)(&par_conv);
     };
@@ -248,6 +261,8 @@ void jit_sse41_1x1_convolution_fwd_t::execute_forward_thr(const int ithr,
                     = post_ops_binary_rhs_arg_vec_dw;
             par_conv_dw.dst_orig = dst;
 
+            par_conv_dw.oc_off = ch * jcp_dw.ch_block * sizeof(float);
+
             (*kernel_dw_)(&par_conv_dw);
 
             for (int i = 0; i < jcp_dw.kh; ++i)
@@ -270,7 +285,7 @@ void jit_sse41_1x1_convolution_fwd_t::execute_forward_thr(const int ithr,
         addrs.resize(jcp_dw.kh);
 
         int bcast_start {0}, bcast_end {0}, ocb_start, ocb_end;
-        balance2D(nthr, ithr, jcp.mb * jcp.ngroups * jcp_dw.oh, bcast_start,
+        balance2D(nthr, ithr, MB * jcp.ngroups * jcp_dw.oh, bcast_start,
                 bcast_end, nb_oc, ocb_start, ocb_end, 1);
 
         while (ocb_start < ocb_end) {
@@ -281,7 +296,7 @@ void jit_sse41_1x1_convolution_fwd_t::execute_forward_thr(const int ithr,
             auto bcast_iter = bcast_start;
             while (bcast_iter < bcast_end) {
                 int n, g, oh_dw;
-                nd_iterator_init(bcast_iter, n, jcp.mb, g, jcp.ngroups, oh_dw,
+                nd_iterator_init(bcast_iter, n, MB, g, jcp.ngroups, oh_dw,
                         jcp_dw.oh);
                 if (oh_dw == 0) oh_1x1 = 0; // Reset over mb boundary
                 const int oh_1x1_range = oh_dw * jcp_dw.stride_h - jcp_dw.t_pad;
@@ -310,7 +325,7 @@ void jit_sse41_1x1_convolution_fwd_t::execute_forward_thr(const int ithr,
     if (jcp.with_dw_conv) {
         conv_dw();
     } else {
-        const int work_amount = jcp.mb * jcp.ngroups * jcp.nb_bcast;
+        const int work_amount = MB * jcp.ngroups * jcp.nb_bcast;
         int start {0}, end {0};
         balance211(work_amount, nthr, ithr, start, end);
         conv_1x1(start, end, 0, jcp.nb_load);

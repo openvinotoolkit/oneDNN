@@ -63,7 +63,8 @@ status_t dnnl_reorder_primitive_desc_create(
     auto s_mdw = memory_desc_wrapper(*src_md);
     auto d_mdw = memory_desc_wrapper(*dst_md);
 
-    if (!s_mdw.consistent_with(d_mdw)) return invalid_arguments;
+    if (!s_mdw.consistent_with(d_mdw))
+        return invalid_arguments;
 
     if (attr == nullptr) attr = &default_attr();
 

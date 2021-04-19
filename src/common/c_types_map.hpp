@@ -91,6 +91,9 @@ const alg_kind_t eltwise_pow = dnnl_eltwise_pow;
 const alg_kind_t eltwise_gelu_tanh = dnnl_eltwise_gelu_tanh;
 const alg_kind_t eltwise_gelu_erf = dnnl_eltwise_gelu_erf;
 const alg_kind_t eltwise_hardswish = dnnl_eltwise_hardswish;
+const alg_kind_t eltwise_hsigmoid = dnnl_eltwise_hsigmoid;
+const alg_kind_t eltwise_round_half_to_even = dnnl_eltwise_round_half_to_even;
+const alg_kind_t eltwise_round_half_away_from_zero = dnnl_eltwise_round_half_away_from_zero;
 const alg_kind_t eltwise_relu_use_dst_for_bwd
         = dnnl_eltwise_relu_use_dst_for_bwd;
 const alg_kind_t eltwise_tanh_use_dst_for_bwd
@@ -139,6 +142,11 @@ const alg_kind_t reduction_norm_lp_power_p_max
         = dnnl_reduction_norm_lp_power_p_max;
 const alg_kind_t reduction_norm_lp_power_p_sum
         = dnnl_reduction_norm_lp_power_p_sum;
+const alg_kind_t depthwise_scale_shift = dnnl_depthwise_scale_shift;
+const alg_kind_t depthwise_prelu = dnnl_depthwise_prelu;
+const alg_kind_t quantization_quantize_dequantize = dnnl_quantization_quantize_dequantize;
+const alg_kind_t quantization_quantize = dnnl_quantization_quantize;
+const alg_kind_t binarization_depthwise = dnnl_binarization_depthwise;
 } // namespace alg_kind
 
 using data_type_t = dnnl_data_type_t;
@@ -150,6 +158,7 @@ const data_type_t f32 = dnnl_f32;
 const data_type_t s32 = dnnl_s32;
 const data_type_t s8 = dnnl_s8;
 const data_type_t u8 = dnnl_u8;
+const data_type_t bin = dnnl_bin;
 } // namespace data_type
 
 using scratchpad_mode_t = dnnl_scratchpad_mode_t;
@@ -309,6 +318,8 @@ const format_tag_t aBCd4b4c = dnnl_aBCd4b4c;
 const format_tag_t ABcd8a16b2a = dnnl_ABcd8a16b2a;
 const format_tag_t BAcd8a16b2a = dnnl_BAcd8a16b2a;
 const format_tag_t ABcd8a8b = dnnl_ABcd8a8b;
+const format_tag_t ABcd8a32b = dnnl_ABcd8a32b;
+const format_tag_t ABcd16a32b = dnnl_ABcd16a32b;
 const format_tag_t ABcd8a4b = dnnl_ABcd8a4b;
 const format_tag_t aBcd8b = dnnl_aBcd8b;
 const format_tag_t ABcd8b16a2b = dnnl_ABcd8b16a2b;
@@ -441,6 +452,8 @@ const format_tag_t ABcd32a32b = dnnl_ABcd32a32b;
 const format_tag_t ABcde32a32b = dnnl_ABcde32a32b;
 const format_tag_t BAcde16b16a = dnnl_BAcde16b16a;
 const format_tag_t aBdec32b = dnnl_aBdec32b;
+const format_tag_t Abcdef4a = dnnl_Abcdef4a;
+const format_tag_t Abcdef8a = dnnl_Abcdef8a;
 const format_tag_t Abcdef16a = dnnl_Abcdef16a;
 const format_tag_t Abcdef32a = dnnl_Abcdef32a;
 const format_tag_t Acdb32a = dnnl_Acdb32a;
@@ -628,6 +641,8 @@ const format_tag_t IOhw16i16o = dnnl_IOhw16i16o;
 const format_tag_t Ohwi32o = dnnl_Ohwi32o;
 const format_tag_t gIOhw16i16o = dnnl_gIOhw16i16o;
 const format_tag_t gOhwi32o = dnnl_gOhwi32o;
+const format_tag_t Goidhw4g = dnnl_Goidhw4g;
+const format_tag_t Goidhw8g = dnnl_Goidhw8g;
 const format_tag_t Goidhw16g = dnnl_Goidhw16g;
 const format_tag_t IOw16o16i = dnnl_IOw16o16i;
 const format_tag_t IOw16i16o = dnnl_IOw16i16o;
@@ -701,6 +716,8 @@ const format_tag_t OIhw8i8o = dnnl_OIhw8i8o;
 const format_tag_t OIhw8o16i2o = dnnl_OIhw8o16i2o;
 const format_tag_t IOhw8o16i2o = dnnl_IOhw8o16i2o;
 const format_tag_t OIhw8o8i = dnnl_OIhw8o8i;
+const format_tag_t OIhw8o32i = dnnl_OIhw8o32i;
+const format_tag_t OIhw16o32i = dnnl_OIhw16o32i;
 const format_tag_t OIhw8o4i = dnnl_OIhw8o4i;
 const format_tag_t Owhi16o = dnnl_Owhi16o;
 const format_tag_t Odhwi16o = dnnl_Odhwi16o;
@@ -940,6 +957,7 @@ enum runtime_kind_t {
     dnnl_runtime_seq,
     dnnl_runtime_omp,
     dnnl_runtime_tbb,
+    dnnl_runtime_tbb_auto,
     dnnl_runtime_threadpool,
     dnnl_runtime_ocl,
     dnnl_runtime_sycl,
@@ -950,6 +968,7 @@ const runtime_kind_t none = dnnl_runtime_none;
 const runtime_kind_t seq = dnnl_runtime_seq;
 const runtime_kind_t omp = dnnl_runtime_omp;
 const runtime_kind_t tbb = dnnl_runtime_tbb;
+const runtime_kind_t tbb_auto = dnnl_runtime_tbb_auto;
 const runtime_kind_t threadpool = dnnl_runtime_threadpool;
 const runtime_kind_t ocl = dnnl_runtime_ocl;
 const runtime_kind_t sycl = dnnl_runtime_sycl;
@@ -980,6 +999,9 @@ const primitive_kind_t logsoftmax = dnnl_logsoftmax;
 const primitive_kind_t matmul = dnnl_matmul;
 const primitive_kind_t resampling = dnnl_resampling;
 const primitive_kind_t reduction = dnnl_reduction;
+const primitive_kind_t depthwise = dnnl_depthwise;
+const primitive_kind_t quantization = dnnl_quantization;
+const primitive_kind_t binarization = dnnl_binarization;
 
 // Internal only primitive kinds.
 const primitive_kind_t internal_only_start = (primitive_kind_t)(1 << 12);

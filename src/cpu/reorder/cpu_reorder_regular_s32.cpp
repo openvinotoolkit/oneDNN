@@ -30,18 +30,22 @@ const impl_list_map_t regular_s32_impl_list_map {
         REG_FAST_DIRECT_COPY_COMMA(s32, s8)
         REG_FAST_DIRECT_COPY_COMMA(s32, u8)
 
-        DNNL_X64_ONLY(x64::jit_uni_reorder_create,)
+        DNNL_X64_ONLY(REG_REORDER_FN(uni_reorder_t))
         DNNL_AARCH64_ONLY(aarch64::jit_uni_reorder_create,)
 
-        REG_SR_BIDIR(s32, any, f32, nChw16c),
-        REG_SR_BIDIR(s32, any, s32, nChw16c),
-        REG_SR_BIDIR(s32, any, s8, nChw16c),
-        REG_SR_BIDIR(s32, any, u8, nChw16c),
+        REG_SR_BIDIR(s32, any, f32, nChw16c)
+        REG_SR_BIDIR(s32, any, s32, nChw16c)
+        REG_SR_BIDIR(s32, any, s8, nChw16c)
+        REG_SR_BIDIR(s32, any, u8, nChw16c)
+        REG_SR_BIDIR(s32, any, f32, nChw8c)
+        REG_SR_BIDIR(s32, any, s32, nChw8c)
+        REG_SR_BIDIR(s32, any, s8, nChw8c)
+        REG_SR_BIDIR(s32, any, u8, nChw8c)
 
-        REG_SR(s32, any, f32, any, fmt_order::any, spec::reference),
-        REG_SR(s32, any, s32, any, fmt_order::any, spec::reference),
-        REG_SR(s32, any, s8, any, fmt_order::any, spec::reference),
-        REG_SR(s32, any, u8, any, fmt_order::any, spec::reference),
+        REG_SR(s32, any, f32, any, fmt_order::any, spec::reference)
+        REG_SR(s32, any, s32, any, fmt_order::any, spec::reference)
+        REG_SR(s32, any, s8, any, fmt_order::any, spec::reference)
+        REG_SR(s32, any, u8, any, fmt_order::any, spec::reference)
 
         nullptr,
     }},

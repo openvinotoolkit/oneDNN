@@ -62,7 +62,9 @@ struct _gemm_x8s8s32x_convolution_fwd_t : public primitive_t {
                             primitive_attr_t::skip_mask_t::oscale
                                     | primitive_attr_t::skip_mask_t::
                                             zero_points_runtime
-                                    | primitive_attr_t::skip_mask_t::post_ops,
+                                    | primitive_attr_t::skip_mask_t::post_ops
+                                    | primitive_attr_t::skip_mask_t::input_zero_points
+                                    | primitive_attr_t::skip_mask_t::output_compensations,
                             dst_type)
                     && output_scales_mask_ok() && zero_points_valid(attr());
 
@@ -115,7 +117,7 @@ private:
             const zero_point_call_params_t &zp,
             const memory_tracking::grantor_t &scratchpad,
             const void *post_ops_binary_rhs_arg_vec,
-            const exec_ctx_t &ctx) const;
+            const exec_ctx_t &ctx, int MB) const;
 
     int nthr_ = 0;
 
@@ -182,7 +184,7 @@ private:
     status_t execute_backward_data_thr(const int ithr, const int nthr,
             const diff_dst_data_t *diff_dst_base, const wei_data_t *wei_base,
             const char *bia_base, diff_src_data_t *diff_src_base,
-            const memory_tracking::grantor_t &scratchpad) const;
+            const memory_tracking::grantor_t &scratchpad, int MB) const;
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 };
 

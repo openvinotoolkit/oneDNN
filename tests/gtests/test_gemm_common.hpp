@@ -61,14 +61,6 @@
     CPU_INST_TEST_CASE_( \
             CONCAT_WITH_UNDERSCORE(str, TEST_CASE_NAME_PREFIX), __VA_ARGS__)
 
-// Declare bfloat16 GEMM interfaces for testing
-extern "C" {
-dnnl_status_t dnnl_gemm_bf16bf16f32(char transa, char transb, dnnl_dim_t M,
-        dnnl_dim_t N, dnnl_dim_t K, float alpha, const bfloat16_t *A,
-        dnnl_dim_t lda, const bfloat16_t *B, dnnl_dim_t ldb, float beta,
-        float *C, dnnl_dim_t ldc);
-}
-
 // Declare packed GEMM interfaces for testing
 #include "src/cpu/gemm/gemm_pack.hpp"
 
@@ -919,8 +911,8 @@ struct dnnl_gemm<bfloat16_t, bfloat16_t, float> {
         if (p.pack_params.pack_a || p.pack_params.pack_b)
             return call_packed(p, a_mem, b_mem, c_mem);
 
-        auto A = map_memory<bfloat16_t>(a_mem);
-        auto B = map_memory<bfloat16_t>(b_mem);
+        auto A = map_memory<uint16_t >(a_mem);
+        auto B = map_memory<uint16_t >(b_mem);
         auto C = map_memory<float>(c_mem);
         return dnnl_gemm_bf16bf16f32(p.transA, p.transB, p.M, p.N, p.K, p.alpha,
                 A, p.lda, B, p.ldb, p.beta, C, p.ldc);

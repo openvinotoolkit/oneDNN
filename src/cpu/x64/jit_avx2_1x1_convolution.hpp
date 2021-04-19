@@ -76,6 +76,8 @@ struct jit_avx2_1x1_convolution_fwd_t : public primitive_t {
             if (status != status::success) return status;
 
             if (jcp_.with_dw_conv) {
+                // todo: [antonvor] enable when new behavior of dw convolution fusing from oneDNN 1.6 will be supported
+                return status::unimplemented;
                 status = depthwise_po_init(engine);
                 if (status != status::success) return status;
             }
@@ -283,12 +285,12 @@ struct jit_avx2_1x1_convolution_fwd_t : public primitive_t {
             if (isa == avx2) {
                 CHECK(safe_ptr_assign(kernel_dw_avx2,
                         new dw_conv_kernel_t<avx2>(
-                                *(pd()->jcp_dw_), *pd()->dst_md(0))));
+                                *(pd()->jcp_dw_), *pd()->dst_md(0), *pd()->dw_conv_pd_->attr())));
                 CHECK(kernel_dw_avx2->create_kernel());
             } else {
                 CHECK(safe_ptr_assign(kernel_dw_sse41,
                         new dw_conv_kernel_t<sse41>(
-                                *(pd()->jcp_dw_), *pd()->dst_md(0))));
+                                *(pd()->jcp_dw_), *pd()->dst_md(0), *pd()->dw_conv_pd_->attr())));
                 CHECK(kernel_dw_sse41->create_kernel());
             }
         }
@@ -310,7 +312,7 @@ private:
             const data_t *bias_dw, data_t *dst,
             const memory_tracking::grantor_t &scratchpad,
             const void *post_ops_binary_rhs_arg_vec,
-            const void *post_ops_binary_rhs_arg_vec_dw) const;
+            const void *post_ops_binary_rhs_arg_vec_dw, int MB) const;
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 
     std::unique_ptr<jit_avx2_1x1_conv_kernel_f32> kernel_;
@@ -339,7 +341,7 @@ struct jit_avx2_1x1_convolution_bwd_data_t : public primitive_t {
                     && set_default_alg_kind(alg_kind::convolution_direct)
                     && expect_data_types(data_type::f32, data_type::f32,
                             data_type::undef, data_type::f32, data_type::f32)
-                    && attr()->has_default_values() && !has_zero_dim_memory()
+                    && is_supported_post_ops() && !has_zero_dim_memory()
                     && set_default_formats();
             if (!ok) return status::unimplemented;
 
@@ -373,6 +375,23 @@ struct jit_avx2_1x1_convolution_bwd_data_t : public primitive_t {
                     : utils::pick(ndims() - 3, OIw8o8i, OIhw8o8i, OIdhw8o8i);
 
             return set_default_formats_common(dat_tag, wei_tag, dat_tag);
+        }
+
+        virtual bool is_supported_post_ops() const {
+            const auto &p = this->attr()->post_ops_;
+            if (p.len() > 1)
+                return false;
+
+            auto all_post_ops_supported = [&]() {
+                bool ok = true;
+
+                for (int i = 0; i < p.len(); i++) {
+                    ok = ok && utils::one_of(p.entry_[i].kind, primitive_kind::depthwise);
+                }
+                return ok;
+            };
+
+            return all_post_ops_supported();
         }
     };
 

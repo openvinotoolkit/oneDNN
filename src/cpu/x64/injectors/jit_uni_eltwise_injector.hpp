@@ -68,7 +68,9 @@ constexpr bool is_alg_supported(alg_kind_t alg) {
             eltwise_square, eltwise_abs, eltwise_sqrt, eltwise_linear,
             eltwise_bounded_relu, eltwise_soft_relu, eltwise_logistic,
             eltwise_logsigmoid, eltwise_mish, eltwise_exp, eltwise_gelu_tanh,
-            eltwise_hardswish, eltwise_swish, eltwise_log, eltwise_clip,
+            eltwise_hardswish, eltwise_swish, eltwise_hsigmoid,
+            eltwise_round_half_away_from_zero, eltwise_round_half_to_even,
+            eltwise_log, eltwise_clip,
             eltwise_clip_v2, eltwise_pow, eltwise_gelu_erf, eltwise_round,
             eltwise_relu_use_dst_for_bwd, eltwise_tanh_use_dst_for_bwd,
             eltwise_elu_use_dst_for_bwd, eltwise_sqrt_use_dst_for_bwd,
@@ -160,7 +162,8 @@ private:
         _cmp_ge_os = jit_generator::_cmp_nlt_us,
         _cmp_gt_os = jit_generator::_cmp_nle_us,
         _op_floor = jit_generator::_op_floor,
-        _op_mxcsr = jit_generator::_op_mxcsr
+        _op_mxcsr = jit_generator::_op_mxcsr,
+        _op_near = jit_generator::_op_near
     };
 
     static constexpr bool has_avx512() {
@@ -226,6 +229,9 @@ private:
     void gelu_erf_compute_vector_fwd(const Vmm &vmm_src);
     void round_compute_vector_fwd(const Vmm &vmm_src);
     void hardswish_compute_vector_fwd(const Vmm &vmm_src);
+    void hsigmoid_compute_vector_fwd(const Vmm &vmm_src);
+    void round_half_to_even_compute_vector_fwd(const Vmm &vmm_src);
+    void round_half_away_from_zero_compute_vector_fwd(const Vmm &vmm_src);
 
     void exp_compute_vector_bwd(const Vmm &vmm_src);
     void relu_compute_vector_bwd(const Vmm &vmm_src);
@@ -296,6 +302,7 @@ private:
         log_five_bit_offset, // 5 bits off (31 = 2^5 - 1)
         log_pol, // see correspondent table for float values
         log_predefined_vals, // see correspondent table for float values
+        hsigmoid, // hsigmoid
         undef_key,
     };
 

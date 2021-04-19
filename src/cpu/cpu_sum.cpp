@@ -18,6 +18,7 @@
 
 #include "cpu/ref_sum.hpp"
 #include "cpu/simple_sum.hpp"
+#include "common/dnnl_sel_build.hpp"
 
 #if DNNL_X64
 #include "cpu/x64/jit_avx512_core_bf16_sum.hpp"
@@ -29,20 +30,44 @@ namespace impl {
 namespace cpu {
 
 using spd_create_f = dnnl::impl::engine_t::sum_primitive_desc_create_f;
+using namespace dnnl::impl::data_type;
 
 namespace {
 // clang-format off
-#define INSTANCE(...) __VA_ARGS__::pd_t::create,
+#if defined(SELECTIVE_BUILD_ANALYZER)
+
+DNNL_DEF_PD_BUILDER(spd_builder,
+            spd_create_f,
+            dnnl::impl::sum_pd_t **,
+            dnnl::impl::engine_t *,
+            const dnnl::impl::primitive_attr_t *,
+            const dnnl::impl::memory_desc_t *,
+            int,
+            const float *,
+            const dnnl::impl::memory_desc_t *);
+
+# define SPD_INSTANCE(...) REG_DNNL_FN(spd_builder, __VA_ARGS__)
+
+#else   // SELECTIVE_BUILD == ON || SELECTIVE_BUILD == OFF
+
+# define SPD_INSTANCE REG_DNNL_FN
+
+#endif
+
+#define INSTANCE SPD_INSTANCE
 #define INSTANCE_X64(...) DNNL_X64_ONLY(INSTANCE(__VA_ARGS__))
 const spd_create_f cpu_sum_impl_list[] = {
-        INSTANCE_X64(jit_bf16_sum_t<data_type::bf16, data_type::bf16>)
-        INSTANCE_X64(jit_bf16_sum_t<data_type::bf16, data_type::f32>)
-        INSTANCE(simple_sum_t<data_type::bf16>)
-        INSTANCE(simple_sum_t<data_type::bf16, data_type::f32>)
-        INSTANCE(simple_sum_t<data_type::f32>)
+#ifdef ENABLE_UNUSED_PRIM
+        INSTANCE_X64(jit_bf16_sum_t, bf16, bf16)
+        INSTANCE_X64(jit_bf16_sum_t, bf16, f32)
+        INSTANCE(simple_sum_t, bf16)
+        INSTANCE(simple_sum_t, bf16, f32)
+        INSTANCE(simple_sum_t, f32)
         INSTANCE(ref_sum_t)
+#endif
         nullptr,
 };
+#undef SPD_INSTANCE
 #undef INSTANCE_X64
 #undef INSTANCE
 // clang-format on

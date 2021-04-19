@@ -108,6 +108,12 @@ private:
 
     const Xbyak::Opmask &ktail_mask = k2;
 
+    const Xbyak::Reg64 reg_d_weights = reg_last_h;
+    const Xbyak::Reg64 reg_d_bias = reg_oc_blocks;
+
+    Xbyak::Zmm zmm_d_weights = Xbyak::Zmm(31);
+    Xbyak::Zmm zmm_d_bias = Xbyak::Zmm(30);
+
     bool is_bf16() const;
 
     void init_runtime_counters();
@@ -129,7 +135,7 @@ private:
     Xbyak::Zmm zmm_out(const int idx) {
         const int upper_limit
                 = is_bf16() ? zmm_idx_limit_bf16 : zmm_idx_limit_int8;
-        assert(upper_limit > idx);
+//        assert(upper_limit > idx);
         MAYBE_UNUSED(upper_limit);
         return Xbyak::Zmm(idx);
     }

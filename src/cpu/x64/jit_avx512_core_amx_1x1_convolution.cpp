@@ -75,6 +75,8 @@ status_t jit_avx512_core_amx_1x1_convolution_fwd_t<src_type, wei_type,
     DEFINE_ZERO_POINTS_BUFFER(src_zero_point, DNNL_ARG_SRC);
     DEFINE_ZERO_POINTS_BUFFER(dst_zero_point, DNNL_ARG_DST);
 
+    auto MB = CTX_IN_BATCH(DNNL_ARG_SRC);
+
     const memory_desc_wrapper src_d(pd()->src_md());
     const memory_desc_wrapper dst_d(pd()->dst_md());
     const memory_desc_wrapper weights_d(pd()->weights_md(0));
@@ -123,7 +125,7 @@ status_t jit_avx512_core_amx_1x1_convolution_fwd_t<src_type, wei_type,
     int oc_chunks = jcp.nb_oc / jcp.nb_oc_blocking;
 
     const size_t work_amount
-            = (size_t)jcp.mb * jcp.ngroups * os_chunks * oc_chunks;
+            = (size_t)MB * jcp.ngroups * os_chunks * oc_chunks;
     kernel_->tile_configure(tcfg);
 
     parallel(0, [&](const int ithr, const int nthr) {
@@ -137,7 +139,7 @@ status_t jit_avx512_core_amx_1x1_convolution_fwd_t<src_type, wei_type,
         amx_tile_configure(tcfg);
 
         int mb {0}, g {0}, _osb {0}, _ocb {0};
-        nd_iterator_init(start, mb, jcp.mb, g, jcp.ngroups, _osb, os_chunks,
+        nd_iterator_init(start, mb, MB, g, jcp.ngroups, _osb, os_chunks,
                 _ocb, oc_chunks);
 
         while (start < end) {
@@ -163,6 +165,7 @@ status_t jit_avx512_core_amx_1x1_convolution_fwd_t<src_type, wei_type,
             p.dst_zero_point = jcp.dst_zero_point ? dst_zero_point : nullptr;
 
             p.oc_l_off = oc;
+            p.oc_off = oc * sizeof(float);
             p.post_ops_binary_rhs_arg_vec = post_ops_binary_rhs_arg_vec.data();
             p.dst_orig = dst;
 
@@ -210,7 +213,7 @@ status_t jit_avx512_core_amx_1x1_convolution_fwd_t<src_type, wei_type,
                 (*kernel_)(&p);
             }
             ++start;
-            nd_iterator_step(mb, jcp.mb, g, jcp.ngroups, _osb, os_chunks, _ocb,
+            nd_iterator_step(mb, MB, g, jcp.ngroups, _osb, os_chunks, _ocb,
                     oc_chunks);
         }
     });

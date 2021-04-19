@@ -34,6 +34,7 @@ namespace x64 {
 using namespace dnnl::impl::format_tag;
 using namespace dnnl::impl::prop_kind;
 using namespace dnnl::impl::utils;
+using namespace dnnl::impl::memory_tracking::names;
 
 using namespace Xbyak;
 
@@ -41,7 +42,7 @@ jit_sse41_conv_fwd_kernel_f32::jit_sse41_conv_fwd_kernel_f32(
         const jit_conv_conf_t &ajcp, const primitive_attr_t &attr,
         const memory_desc_t &dst_md)
     : jit_generator(nullptr, MAX_CODE_SIZE, sse41), jcp(ajcp), attr_(attr) {
-    if (jcp.with_eltwise || jcp.with_binary) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise || jcp.with_quantization) {
         static constexpr bool preserve_gpr = true;
         static constexpr bool preserve_vmm = false;
         static constexpr size_t helper_vmm_idx = 15;
@@ -55,10 +56,12 @@ jit_sse41_conv_fwd_kernel_f32::jit_sse41_conv_fwd_kernel_f32(
                 use_exact_tail_scalar_bcast};
         const binary_injector::static_params_t static_params {
                 this->param1, rhs_arg_static_params};
+        quantization_injector::static_params_t quantization_static_params
+                {xmm_d_weights.getIdx(), xmm_d_bias.getIdx(), reg_d_weights, reg_d_bias};
 
         postops_injector_ = utils::make_unique<
                 injector::jit_uni_postops_injector_t<sse41>>(
-                this, jcp.post_ops, static_params);
+                this, jcp.post_ops, static_params, quantization_static_params);
     }
 }
 
@@ -156,6 +159,14 @@ static void iterate(const int oc_blocks, const int ur_w, const F &f) {
 }
 void jit_sse41_conv_fwd_kernel_f32::apply_postops(
         const int oc_blocks, const int ur_w) {
+    std::map<size_t, int> vmm_idx_off;
+    iterate(oc_blocks, ur_w, [&](const bool, const int i, const int j) {
+        vmm_idx_off.insert({get_xmm_idx(ur_w, i, j), i * jcp.oc_block * sizeof(float)});
+    });
+    depthwise_injector::dynamic_params_t ddp {xmm_d_weights.getIdx(), xmm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
+                                              reg_oc_off, vmm_idx_off};
+    quantization_injector::dynamic_params_t qdp {reg_oc_off, vmm_idx_off};
+
     injector_utils::vmm_index_set_t vmm_idxs;
     if (jcp.with_binary) {
         binary_injector::rhs_arg_dynamic_params_t rhs_arg_params;
@@ -180,12 +191,12 @@ void jit_sse41_conv_fwd_kernel_f32::apply_postops(
         const injector_utils::register_preserve_guard_t register_guard(
                 this, {temp_offset_reg});
         imul(temp_offset_reg, simd_iter, simd_w_);
-        postops_injector_->compute_vector_range(vmm_idxs, rhs_arg_params);
+        postops_injector_->compute_vector_range(vmm_idxs, rhs_arg_params, ddp, qdp);
     } else {
         iterate(oc_blocks, ur_w, [&](const bool, const int i, const int j) {
             vmm_idxs.emplace(get_xmm_idx(ur_w, i, j));
         });
-        postops_injector_->compute_vector_range(vmm_idxs);
+        postops_injector_->compute_vector_range(vmm_idxs, binary_injector::rhs_arg_dynamic_params_t(), ddp, qdp);
     }
 }
 
@@ -271,7 +282,7 @@ void jit_sse41_conv_fwd_kernel_f32::width_blk_step(
 
     L(skip_kh_loop);
 
-    if (jcp.with_eltwise || jcp.with_binary) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise || jcp.with_quantization) {
         Label regular_store;
         test(reg_ci_flag, FLAG_IC_LAST);
         je(regular_store, T_NEAR);
@@ -293,12 +304,15 @@ void jit_sse41_conv_fwd_kernel_f32::width_blk_step(
     add(aux_reg_kernel, sizeof(float) * 4);
     add(reg_output, sizeof(float) * 4);
     add(reg_bias, sizeof(float) * 4);
+    add(reg_oc_off, sizeof(float) * 4);
+
     inc(simd_iter);
     cmp(simd_iter, 2);
     jl(init_simd_iter_loop, T_NEAR);
 
     sub(reg_output, sizeof(float) * 8);
     sub(reg_bias, sizeof(float) * 8);
+    sub(reg_oc_off, sizeof(float) * 8);
 }
 
 inline void jit_sse41_conv_fwd_kernel_f32::solve_common(int oc_blocks) {
@@ -360,6 +374,7 @@ void jit_sse41_conv_fwd_kernel_f32::generate() {
     mov(reg_kh, ptr[this->param1 + GET_OFF(kh_padding)]);
     mov(reg_ci_flag, ptr[this->param1 + GET_OFF(flags)]);
     mov(reg_oc_blocks, ptr[this->param1 + GET_OFF(oc_blocks)]);
+    mov(reg_oc_off, ptr[param1 + GET_OFF(oc_off)]);
 
     int nb_oc_tail = jcp.nb_oc % jcp.nb_oc_blocking;
     Label tail, exit;
@@ -402,6 +417,7 @@ status_t jit_sse41_conv_fwd_kernel_f32::init_conf(jit_conv_conf_t &jcp,
     jcp.mb = src_d.dims()[0];
 
     jcp.oc = dst_d.dims()[1] / jcp.ngroups;
+    jcp.oc_without_padding = jcp.oc;
     jcp.ic = src_d.dims()[1] / jcp.ngroups;
 
     jcp.ih = (ndims == 3) ? 1 : src_d.dims()[2];
@@ -427,10 +443,10 @@ status_t jit_sse41_conv_fwd_kernel_f32::init_conf(jit_conv_conf_t &jcp,
             jcp.l_pad, jcp.ow, jcp.iw, jcp.stride_w, ext_kw);
     jcp.b_pad = calculate_end_padding(
             jcp.t_pad, jcp.oh, jcp.ih, jcp.stride_h, ext_kh);
-    bool kernel_outside_src = false || ext_kw <= jcp.l_pad
-            || ext_kw <= jcp.r_pad || ext_kh <= jcp.t_pad
-            || ext_kh <= jcp.b_pad;
-    if (kernel_outside_src) return status::unimplemented;
+//    bool kernel_outside_src = false || ext_kw <= jcp.l_pad
+//            || ext_kw <= jcp.r_pad || ext_kh <= jcp.t_pad
+//            || ext_kh <= jcp.b_pad;
+//    if (kernel_outside_src) return status::unimplemented;
 
     const auto dat_tag_nxc = (ndims == 3 ? nwc : nhwc);
     const auto dat_tag_ncx = (ndims == 3 ? ncw : nchw);
@@ -442,9 +458,9 @@ status_t jit_sse41_conv_fwd_kernel_f32::init_conf(jit_conv_conf_t &jcp,
                                           : pick(ndims - 3, Owi8o, Ohwi8o);
 
     jcp.src_tag
-            = src_d.matches_one_of_tag(dat_tag_ncx, dat_tag_nxc, dat_tag_nCx8c);
+            = src_d.mb_stride_relaxed_match(dat_tag_ncx, dat_tag_nxc, dat_tag_nCx8c);
     jcp.wei_tag = weights_d.matches_one_of_tag(wei_tag_OIxio, wei_tag_Oxio);
-    jcp.dst_tag = dst_d.matches_one_of_tag(dat_tag_nxc, dat_tag_nCx8c);
+    jcp.dst_tag = dst_d.mb_stride_relaxed_match(dat_tag_nxc, dat_tag_nCx8c);
 
     const bool is_data_layout_nxc
             = utils::everyone_is(dat_tag_nxc, jcp.src_tag, jcp.dst_tag);
@@ -458,17 +474,19 @@ status_t jit_sse41_conv_fwd_kernel_f32::init_conf(jit_conv_conf_t &jcp,
 
     const int binary_ind = post_ops.find(primitive_kind::binary);
     jcp.with_binary = binary_ind != -1;
+    jcp.with_depthwise = post_ops.find(primitive_kind::depthwise) != -1;
+    jcp.with_quantization = post_ops.find(primitive_kind::quantization) != -1;
 
     jcp.post_ops = post_ops;
 
     using namespace injector;
     static constexpr bool sum_at_pos_0_only = true;
     static constexpr bool sum_requires_scale_one = true;
-    const bool post_ops_ok_ = post_ops_ok({sse41, {eltwise, binary, sum},
+    const bool post_ops_ok_ = post_ops_ok({sse41, {eltwise, binary, sum, depthwise, quantization},
             jcp.post_ops, &dst_d, sum_at_pos_0_only, sum_requires_scale_one});
     if (!post_ops_ok_) return status::unimplemented;
 
-    const bool flat = jcp.ic == 3;
+    const bool flat = jcp.ic == 3 || jcp.ic == 1;
     const bool mimo = !flat;
 
     bool args_ok = true
@@ -488,7 +506,15 @@ status_t jit_sse41_conv_fwd_kernel_f32::init_conf(jit_conv_conf_t &jcp,
             && jcp.oc <= dst_d.padded_dims()[1];
     if (!args_ok) return status::unimplemented;
 
+    bool ok_to_pad_channels = true && jcp.ngroups == 1;
+
     const int simd_w = 8; // 2 SSE vectors processing at once
+    if (ok_to_pad_channels) {
+        jcp.oc = rnd_up(jcp.oc, simd_w);
+        if (mimo) {
+            jcp.ic = rnd_up(jcp.ic, simd_w);
+        }
+    }
 
     jcp.ur_h = 1; /* no code-unrolling by h so far */
     jcp.ur_w = 3;
@@ -543,6 +569,15 @@ status_t jit_sse41_conv_fwd_kernel_f32::init_conf(jit_conv_conf_t &jcp,
     }
 
     return status::success;
+}
+
+void jit_sse41_conv_fwd_kernel_f32::init_scratchpad(
+        memory_tracking::registrar_t &scratchpad,
+        const jit_conv_conf_t &jcp) {
+    using namespace dnnl::impl::memory_tracking::names;
+
+    if (jcp.prop_kind != backward_data && jcp.oc != jcp.oc_without_padding)
+        scratchpad.book<float>(key_conv_padded_bias, sizeof(float) * jcp.oc);
 }
 
 } // namespace x64

@@ -75,6 +75,15 @@ private:
     const Xbyak::Opmask k_load_dim_mask = Xbyak::Opmask(2);
     const Xbyak::Opmask k_load_dim_tail_mask = Xbyak::Opmask(3);
     const Xbyak::Opmask postops_mask = Xbyak::Opmask(4);
+
+    const Xbyak::Reg64 reg_d_weights = aux_reg_bcast_data;
+    const Xbyak::Reg64 reg_d_bias = reduce_loop_iter;
+    const Xbyak::Reg64 reg_oc_off = aux_reg_load_data;
+
+    Xbyak::Zmm zmm_d_weights = Xbyak::Zmm(31);
+    Xbyak::Zmm zmm_d_bias = Xbyak::Zmm(30);
+
+    const Xbyak::Opmask ktail_mask = k6;
     const Xbyak::Opmask vmask = k7;
 
     const Vmm vmm_tmp = Vmm(28);

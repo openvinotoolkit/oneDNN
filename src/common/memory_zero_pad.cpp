@@ -18,6 +18,7 @@
 
 #include "dnnl_thread.hpp"
 #include "dnnl_traits.hpp"
+#include "dnnl_sel_build.hpp"
 #include "stream.hpp"
 #include "type_helpers.hpp"
 #include "utils.hpp"
@@ -25,6 +26,7 @@
 #include "memory.hpp"
 #include "primitive_exec_types.hpp"
 
+using namespace dnnl;
 using namespace dnnl::impl;
 using namespace dnnl::impl::data_type;
 using namespace dnnl::impl::status;
@@ -216,9 +218,11 @@ status_t typed_zero_pad(const memory_t *memory, const exec_ctx_t &ctx) {
 #define CASE(blksize_, blk_kind) \
     do { \
         if (blksize == (blksize_)) { \
-            typed_zero_pad_blk<dt, blk_kind, blksize_>(mdw, data); \
-            ctx.unmap_memory_storage( \
+            DNNL_CSCOPE(DNNL_MACRO_CAT3(typed_zero_pad_blk_, blksize_, blk_kind), \
+                typed_zero_pad_blk<dt, blk_kind, blksize_>(mdw, data); \
+                ctx.unmap_memory_storage( \
                     memory_storage, mapped_ptr, ctx.stream()); \
+            ); \
             return success; \
         } \
     } while (0)
@@ -281,6 +285,7 @@ static status_t zero_pad(const memory_t *memory, const exec_ctx_t &ctx) {
         case s32: return typed_zero_pad<s32>(memory, ctx);
         case s8: return typed_zero_pad<s8>(memory, ctx);
         case u8: return typed_zero_pad<u8>(memory, ctx);
+        case bin: return typed_zero_pad<u8>(memory, ctx);
         default: assert(!"memory is undefined"); return unimplemented;
     }
     return unimplemented;

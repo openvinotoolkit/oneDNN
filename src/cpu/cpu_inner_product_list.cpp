@@ -38,48 +38,64 @@ using namespace dnnl::impl::data_type;
 // clang-format off
 const pd_create_f impl_list[] = {
         /* f32 */
-        CPU_INSTANCE_X64(brgemm_inner_product_fwd_t<avx512_core>)
-        CPU_INSTANCE_X64(brgemm_inner_product_bwd_data_t<avx512_core, f32>)
-        CPU_INSTANCE_X64(brgemm_inner_product_bwd_weights_t<avx512_core, f32>)
-        CPU_INSTANCE(gemm_inner_product_fwd_t<f32>)
-        CPU_INSTANCE(gemm_inner_product_bwd_data_t<f32>)
-        CPU_INSTANCE(gemm_inner_product_bwd_weights_t<f32>)
-        CPU_INSTANCE(ref_inner_product_fwd_t<f32>)
-        CPU_INSTANCE(ref_inner_product_bwd_data_t<f32, f32, f32, f32>)
-        CPU_INSTANCE(ref_inner_product_bwd_weights_t<f32>)
+        CPU_INSTANCE_X64(brgemm_inner_product_fwd_t, avx512_core)
+        CPU_INSTANCE_X64(brgemm_inner_product_bwd_data_t, avx512_core, f32)
+        CPU_INSTANCE_X64(brgemm_inner_product_bwd_weights_t, avx512_core, f32)
+        CPU_INSTANCE(gemm_inner_product_fwd_t, f32)
+#ifdef ENABLE_UNUSED_PRIM
+        CPU_INSTANCE(gemm_inner_product_bwd_data_t, f32)
+        CPU_INSTANCE(gemm_inner_product_bwd_weights_t, f32)
+#endif
+        CPU_INSTANCE(ref_inner_product_fwd_t, f32)
+#ifdef ENABLE_UNUSED_PRIM
+        CPU_INSTANCE(ref_inner_product_bwd_data_t, f32, f32, f32, f32)
+        CPU_INSTANCE(ref_inner_product_bwd_weights_t, f32)
+#endif
         /* bfloat16 */
-        CPU_INSTANCE_X64(brgemm_inner_product_fwd_t<avx512_core_bf16>)
-        CPU_INSTANCE_X64(brgemm_inner_product_bwd_data_t<avx512_core_bf16, f32, bf16, bf16>)
-        CPU_INSTANCE_X64(brgemm_inner_product_bwd_data_t<avx512_core_bf16, bf16>)
-        CPU_INSTANCE_X64(brgemm_inner_product_bwd_weights_t<avx512_core_bf16, bf16, f32, bf16>)
-        CPU_INSTANCE_X64(brgemm_inner_product_bwd_weights_t<avx512_core_bf16, bf16>)
-        CPU_INSTANCE_X64(gemm_bf16_inner_product_fwd_t<f32>)
-        CPU_INSTANCE_X64(gemm_bf16_inner_product_fwd_t<bf16>)
-        CPU_INSTANCE_X64(gemm_bf16_inner_product_bwd_data_t<f32>)
-        CPU_INSTANCE_X64(gemm_bf16_inner_product_bwd_data_t<bf16>)
-        CPU_INSTANCE_X64(gemm_bf16_inner_product_bwd_weights_t<f32>)
-        CPU_INSTANCE_X64(gemm_bf16_inner_product_bwd_weights_t<bf16>)
-        CPU_INSTANCE(ref_inner_product_fwd_t<bf16, bf16, bf16, f32>)
-        CPU_INSTANCE(ref_inner_product_fwd_t<bf16, bf16, f32, f32>)
+        CPU_INSTANCE_X64(brgemm_inner_product_fwd_t, avx512_core_bf16)
+#ifdef ENABLE_UNUSED_PRIM
+        CPU_INSTANCE_X64(brgemm_inner_product_bwd_data_t, avx512_core_bf16, f32, bf16, bf16)
+        CPU_INSTANCE_X64(brgemm_inner_product_bwd_data_t, avx512_core_bf16, bf16)
+        CPU_INSTANCE_X64(brgemm_inner_product_bwd_weights_t, avx512_core_bf16, bf16, f32, bf16)
+        CPU_INSTANCE_X64(brgemm_inner_product_bwd_weights_t, avx512_core_bf16, bf16)
+#endif
+        CPU_INSTANCE_X64(gemm_bf16_inner_product_fwd_t, f32)
+        CPU_INSTANCE_X64(gemm_bf16_inner_product_fwd_t, bf16)
+#ifdef ENABLE_UNUSED_PRIM
+        CPU_INSTANCE_X64(gemm_bf16_inner_product_bwd_data_t, f32)
+        CPU_INSTANCE_X64(gemm_bf16_inner_product_bwd_data_t, bf16)
+        CPU_INSTANCE_X64(gemm_bf16_inner_product_bwd_weights_t, f32)
+        CPU_INSTANCE_X64(gemm_bf16_inner_product_bwd_weights_t, bf16)
+        CPU_INSTANCE(ref_inner_product_fwd_t, bf16, bf16, bf16, f32)
+        CPU_INSTANCE(ref_inner_product_fwd_t, bf16, bf16, f32, f32)
+#endif
         /* int */
-        CPU_INSTANCE_X64(brgemm_inner_product_fwd_t<avx512_core_bf16_amx_int8>)
-        CPU_INSTANCE_X64(brgemm_inner_product_fwd_t<avx512_core_vnni>)
-        CPU_INSTANCE(gemm_x8s8s32x_inner_product_fwd_t<u8, u8>)
-        CPU_INSTANCE(gemm_x8s8s32x_inner_product_fwd_t<u8, s8>)
-        CPU_INSTANCE(gemm_x8s8s32x_inner_product_fwd_t<u8, s32>)
-        CPU_INSTANCE(gemm_x8s8s32x_inner_product_fwd_t<u8, f32>)
-        CPU_INSTANCE(gemm_x8s8s32x_inner_product_fwd_t<s8, u8>)
-        CPU_INSTANCE(gemm_x8s8s32x_inner_product_fwd_t<s8, s8>)
-        CPU_INSTANCE(gemm_x8s8s32x_inner_product_fwd_t<s8, s32>)
-        CPU_INSTANCE(gemm_x8s8s32x_inner_product_fwd_t<s8, f32>)
-        CPU_INSTANCE(ref_inner_product_fwd_t<u8, s8, u8, s32>)
-        CPU_INSTANCE(ref_inner_product_fwd_t<u8, s8, s8, s32>)
-        CPU_INSTANCE(ref_inner_product_fwd_t<u8, s8, s32, s32>)
-        CPU_INSTANCE(ref_inner_product_fwd_t<u8, s8, f32, s32>)
-        CPU_INSTANCE(ref_inner_product_fwd_t<s8, s8, u8, s32>)
-        CPU_INSTANCE(ref_inner_product_fwd_t<s8, s8, s8, s32>)
-        CPU_INSTANCE(ref_inner_product_fwd_t<s8, s8, s32, s32>)
-        CPU_INSTANCE(ref_inner_product_fwd_t<s8, s8, f32, s32>)
+#ifdef ENABLE_UNUSED_PRIM
+        CPU_INSTANCE_X64(brgemm_inner_product_fwd_t, avx512_core_bf16_amx_int8)
+        CPU_INSTANCE_X64(brgemm_inner_product_fwd_t, avx512_core_vnni)
+#endif
+        CPU_INSTANCE(gemm_x8s8s32x_inner_product_fwd_t, u8, u8)
+        CPU_INSTANCE(gemm_x8s8s32x_inner_product_fwd_t, u8, s8)
+#ifdef ENABLE_UNUSED_PRIM
+        CPU_INSTANCE(gemm_x8s8s32x_inner_product_fwd_t, u8, s32)
+#endif
+        CPU_INSTANCE(gemm_x8s8s32x_inner_product_fwd_t, u8, f32)
+        CPU_INSTANCE(gemm_x8s8s32x_inner_product_fwd_t, s8, u8)
+        CPU_INSTANCE(gemm_x8s8s32x_inner_product_fwd_t, s8, s8)
+#ifdef ENABLE_UNUSED_PRIM
+        CPU_INSTANCE(gemm_x8s8s32x_inner_product_fwd_t, s8, s32)
+#endif
+        CPU_INSTANCE(gemm_x8s8s32x_inner_product_fwd_t, s8, f32)
+#ifdef ENABLE_UNUSED_PRIM
+        CPU_INSTANCE(ref_inner_product_fwd_t, u8, s8, u8, s32)
+        CPU_INSTANCE(ref_inner_product_fwd_t, u8, s8, s8, s32)
+        CPU_INSTANCE(ref_inner_product_fwd_t, u8, s8, s32, s32)
+        CPU_INSTANCE(ref_inner_product_fwd_t, u8, s8, f32, s32)
+        CPU_INSTANCE(ref_inner_product_fwd_t, s8, s8, u8, s32)
+        CPU_INSTANCE(ref_inner_product_fwd_t, s8, s8, s8, s32)
+        CPU_INSTANCE(ref_inner_product_fwd_t, s8, s8, s32, s32)
+        CPU_INSTANCE(ref_inner_product_fwd_t, s8, s8, f32, s32)
+#endif
         /* eol */
         nullptr,
 };

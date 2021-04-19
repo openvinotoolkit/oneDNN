@@ -43,6 +43,7 @@ const char *dnnl_dt2str(dnnl_data_type_t v) {
     if (v == dnnl_s32) return "s32";
     if (v == dnnl_s8) return "s8";
     if (v == dnnl_u8) return "u8";
+    if (v == dnnl_bin) return "bin";
     assert(!"unknown dt");
     return "unknown dt";
 }
@@ -162,6 +163,8 @@ const char *dnnl_fmt_tag2str(dnnl_format_tag_t v) {
     if (v == dnnl_ABcd8a16b2a) return "ABcd8a16b2a";
     if (v == dnnl_ABcd2b8a4b) return "ABcd2b8a4b";
     if (v == dnnl_ABcd8a8b) return "ABcd8a8b";
+    if (v == dnnl_ABcd8a32b) return "ABcd8a32b";
+    if (v == dnnl_ABcd16a32b) return "ABcd16a32b";
     if (v == dnnl_ABcd8a4b) return "ABcd8a4b";
     if (v == dnnl_aBcd8b) return "aBcd8b";
     if (v == dnnl_aBCd4c8b2c) return "aBCd4c8b2c";
@@ -260,6 +263,8 @@ const char *dnnl_fmt_tag2str(dnnl_format_tag_t v) {
     if (v == dnnl_aCBdef16c16b) return "aCBdef16c16b";
     if (v == dnnl_aBdefc4b) return "aBdefc4b";
     if (v == dnnl_aBdefc8b) return "aBdefc8b";
+    if (v == dnnl_Abcdef4a) return "Abcdef4a";
+    if (v == dnnl_Abcdef8a) return "Abcdef8a";
     if (v == dnnl_Abcdef16a) return "Abcdef16a";
     if (v == dnnl_Abcdef32a) return "Abcdef32a";
     if (v == dnnl_aBedc16b) return "aBedc16b";
@@ -580,6 +585,8 @@ const char *dnnl_fmt_tag2str(dnnl_format_tag_t v) {
     if (v == dnnl_OIhw8o16i2o) return "OIhw8o16i2o";
     if (v == dnnl_OIhw2i8o4i) return "OIhw2i8o4i";
     if (v == dnnl_IOhw8o16i2o) return "IOhw8o16i2o";
+    if (v == dnnl_OIhw8o32i) return "OIhw8o23i";
+    if (v == dnnl_OIhw16o32i) return "OIhw16o23i";
     if (v == dnnl_OIhw8o8i) return "OIhw8o8i";
     if (v == dnnl_OIhw8o4i) return "OIhw8o4i";
     if (v == dnnl_Owhi16o) return "Owhi16o";
@@ -721,6 +728,8 @@ const char *dnnl_fmt_tag2str(dnnl_format_tag_t v) {
     if (v == dnnl_gIOdhw8o16i2o) return "gIOdhw8o16i2o";
     if (v == dnnl_gOIdhw8o8i) return "gOIdhw8o8i";
     if (v == dnnl_gOIdhw8o4i) return "gOIdhw8o4i";
+    if (v == dnnl_Goidhw4g) return "Goidhw4g";
+    if (v == dnnl_Goidhw8g) return "Goidhw8g";
     if (v == dnnl_Goidhw16g) return "Goidhw16g";
     if (v == dnnl_Goidhw32g) return "Goidhw32g";
     if (v == dnnl_gOIdhw2i4o2i) return "gOIdhw2i4o2i";
@@ -838,6 +847,8 @@ const char *dnnl_prim_kind2str(dnnl_primitive_kind_t v) {
     if (v == dnnl_pooling_v2) return "pooling_v2";
     if (v == dnnl_reduction) return "reduction";
     if (v == dnnl_prelu) return "prelu";
+    if (v == dnnl_depthwise) return "depthwise";
+    if (v == dnnl_quantization) return "quantization";
     if (v == dnnl_primitive_kind_max) return "primitive_kind_max";
     assert(!"unknown prim_kind");
     return "unknown prim_kind";
@@ -873,6 +884,9 @@ const char *dnnl_alg_kind2str(dnnl_alg_kind_t v) {
     if (v == dnnl_eltwise_logsigmoid) return "eltwise_logsigmoid";
     if (v == dnnl_eltwise_mish) return "eltwise_mish";
     if (v == dnnl_eltwise_hardswish) return "eltwise_hardswish";
+    if (v == dnnl_eltwise_hsigmoid) return "eltwise_hsigmoid";
+    if (v == dnnl_eltwise_round_half_to_even) return "eltwise_round_half_to_even";
+    if (v == dnnl_eltwise_round_half_away_from_zero) return "eltwise_round_half_away_from_zero";
     if (v == dnnl_eltwise_relu_use_dst_for_bwd) return "eltwise_relu_use_dst_for_bwd";
     if (v == dnnl_eltwise_tanh_use_dst_for_bwd) return "eltwise_tanh_use_dst_for_bwd";
     if (v == dnnl_eltwise_elu_use_dst_for_bwd) return "eltwise_elu_use_dst_for_bwd";
@@ -913,6 +927,11 @@ const char *dnnl_alg_kind2str(dnnl_alg_kind_t v) {
     if (v == dnnl_reduction_norm_lp_sum) return "reduction_norm_lp_sum";
     if (v == dnnl_reduction_norm_lp_power_p_max) return "reduction_norm_lp_power_p_max";
     if (v == dnnl_reduction_norm_lp_power_p_sum) return "reduction_norm_lp_power_p_sum";
+    if (v == dnnl_depthwise_scale_shift) return "depthwise_scale_shift";
+    if (v == dnnl_depthwise_prelu) return "depthwise_prelu";
+    if (v == dnnl_quantization_quantize_dequantize) return "quantization_quantize_dequantize";
+    if (v == dnnl_quantization_quantize) return "quantization_quantize";
+    if (v == dnnl_binarization_depthwise) return "binarization_depthwise";
     assert(!"unknown alg_kind");
     return "unknown alg_kind";
 }

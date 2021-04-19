@@ -51,13 +51,15 @@ status_t gemm_convolution_fwd_t::execute_forward_nspc(
     auto bia_base = CTX_IN_MEM(const data_t *, DNNL_ARG_BIAS);
     auto dst_base = CTX_OUT_MEM(data_t *, DNNL_ARG_DST);
 
+    auto MB = CTX_IN_BATCH(DNNL_ARG_SRC);
+
     auto scratchpad = ctx.get_scratchpad_grantor();
     const conv_gemm_conf_t &jcp = pd()->jcp_;
     std::atomic<status_t> st(status::success);
 
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
         status_t st_thr = execute_forward_thr_nspc(ctx, ithr, nthr, src_base,
-                wei_base, bia_base, dst_base, scratchpad);
+                wei_base, bia_base, dst_base, scratchpad, MB);
         if (st_thr != status::success) st = st_thr;
     });
 
@@ -67,7 +69,7 @@ status_t gemm_convolution_fwd_t::execute_forward_nspc(
 status_t gemm_convolution_fwd_t::execute_forward_thr_nspc(const exec_ctx_t &ctx,
         const int ithr, const int nthr, const data_t *src_base,
         const data_t *wei_base, const data_t *bia_base, data_t *dst_base,
-        const memory_tracking::grantor_t &scratchpad) const {
+        const memory_tracking::grantor_t &scratchpad, int MB) const {
     const conv_gemm_conf_t &jcp = pd()->jcp_;
 
     // Src Format: mb-spatial-groups-input_channels
@@ -101,9 +103,9 @@ status_t gemm_convolution_fwd_t::execute_forward_thr_nspc(const exec_ctx_t &ctx,
     const int nb_ow = div_up(jcp.ow, jcp.ow_block);
     // threads share work across mini-batch, groups, and blocked width/height
     const size_t work_amount
-            = static_cast<size_t>(jcp.mb) * jcp.ngroups * nb_oh * nb_ow;
+            = static_cast<size_t>(MB) * jcp.ngroups * nb_oh * nb_ow;
     balance211(work_amount, nthr, ithr, start, end);
-    nd_iterator_init(start, n, jcp.mb, g, jcp.ngroups, ohb, nb_oh, owb, nb_ow);
+    nd_iterator_init(start, n, MB, g, jcp.ngroups, ohb, nb_oh, owb, nb_ow);
 
     if (jcp.im2col_sz && is_problem_3d) {
         // jit_gemm_convolution_utils::im2col_dt_3d() requires external
@@ -215,7 +217,7 @@ status_t gemm_convolution_fwd_t::execute_forward_thr_nspc(const exec_ctx_t &ctx,
                 });
             }
         }
-        nd_iterator_step(n, jcp.mb, g, jcp.ngroups, ohb, nb_oh, owb, nb_ow);
+        nd_iterator_step(n, MB, g, jcp.ngroups, ohb, nb_oh, owb, nb_ow);
     }
     return status::success;
 }
@@ -227,14 +229,22 @@ status_t gemm_convolution_fwd_t::execute_forward_ncsp(
     auto bias = CTX_IN_MEM(const data_t *, DNNL_ARG_BIAS);
     auto dst = CTX_OUT_MEM(data_t *, DNNL_ARG_DST);
 
+    auto MB = CTX_IN_BATCH(DNNL_ARG_SRC);
+
     auto col = ctx.get_scratchpad_grantor().get<data_t>(key_conv_gemm_col);
 
     const conv_gemm_conf_t &jcp = this->pd()->jcp_;
 
-    const size_t src_step = jcp.ic * jcp.ih * jcp.iw * jcp.id;
+    const memory_desc_wrapper src_d(pd()->src_md());
+    const memory_desc_wrapper dst_d(pd()->dst_md());
+
+    const size_t src_step = (src_d.blk_off(1) - src_d.off_l(0)) / jcp.ngroups;
+    const size_t dst_step = (dst_d.blk_off(1) - dst_d.off_l(0)) / jcp.ngroups;
     const size_t weights_oc_size = jcp.ic * jcp.ks;
     const size_t weights_g_size = weights_oc_size * jcp.oc;
     const bool is_problem_3d = pd()->ndims() == 5;
+    src += src_d.off_l(0);
+    dst += dst_d.off_l(0);
 
     assert(IMPLICATION(is_problem_3d,
             jcp.os_block == jcp.os && jcp.ic_block == jcp.ic
@@ -275,7 +285,6 @@ status_t gemm_convolution_fwd_t::execute_forward_ncsp(
             const data_t one = 1.0;
 
             const dim_t M = jcp.os * jcp.od;
-            const size_t dst_step = jcp.oc * M;
             const dim_t m = step.sp;
             const dim_t LDA = jcp.im2col_sz ? m : M;
             data_t *_dst = dst + (curr.n * jcp.ngroups + curr.g) * dst_step
@@ -358,11 +367,11 @@ status_t gemm_convolution_fwd_t::execute_forward_ncsp(
         end.ic = jcp.ic;
 
         if (!is_problem_3d) {
-            const int sp_work = jcp.mb * jcp.ngroups * jcp.od * jcp.os;
+            const int sp_work = MB * jcp.ngroups * jcp.od * jcp.os;
             balance2D(nthr, ithr, sp_work, start.sp, end.sp, jcp.oc, start.oc,
                     end.oc, jcp.nthr_oc);
         } else {
-            const int sp_work = jcp.mb * jcp.ngroups * jcp.od;
+            const int sp_work = MB * jcp.ngroups * jcp.od;
             balance2D(nthr, ithr, sp_work, start.sp, end.sp, jcp.oc, start.oc,
                     end.oc, jcp.nthr_oc);
             start.sp *= jcp.os;
@@ -379,7 +388,7 @@ status_t gemm_convolution_fwd_t::execute_forward_ncsp(
             for (curr.ic = 0; curr.ic < jcp.ic; curr.ic += step.ic)
                 for (int spatial = start.sp; spatial < end.sp;
                         spatial += step.sp) {
-                    nd_iterator_init(spatial, curr.n, jcp.mb, curr.g,
+                    nd_iterator_init(spatial, curr.n, MB, curr.g,
                             jcp.ngroups, curr.od, jcp.od, curr.sp, jcp.os);
                     for (curr.oc = start.oc; curr.oc < end.oc;
                             curr.oc += step.oc) {
@@ -393,7 +402,7 @@ status_t gemm_convolution_fwd_t::execute_forward_ncsp(
                 }
         else if (jcp.loop_order == gemm_loop_lrb)
             for (int spatial = start.sp; spatial < end.sp; spatial += step.sp) {
-                nd_iterator_init(spatial, curr.n, jcp.mb, curr.g, jcp.ngroups,
+                nd_iterator_init(spatial, curr.n, MB, curr.g, jcp.ngroups,
                         curr.od, jcp.od, curr.sp, jcp.os);
                 for (curr.ic = 0; curr.ic < jcp.ic; curr.ic += step.ic)
                     for (curr.oc = start.oc; curr.oc < end.oc;
@@ -421,13 +430,15 @@ status_t gemm_convolution_bwd_data_t::execute_backward_data_nspc(
     auto bia_base = CTX_IN_MEM(const data_t *, DNNL_ARG_BIAS);
     auto diff_src_base = CTX_OUT_MEM(data_t *, DNNL_ARG_DIFF_SRC);
 
+    auto MB = CTX_IN_BATCH(DNNL_ARG_DIFF_DST);
+
     auto scratchpad = ctx.get_scratchpad_grantor();
     const conv_gemm_conf_t &jcp = pd()->jcp_;
     std::atomic<status_t> st(status::success);
 
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
         status_t st_thr = execute_backward_data_thr_nspc(ithr, nthr,
-                diff_dst_base, wei_base, bia_base, diff_src_base, scratchpad);
+                diff_dst_base, wei_base, bia_base, diff_src_base, scratchpad, MB);
         if (st_thr != status::success) st = st_thr;
     });
 
@@ -437,7 +448,7 @@ status_t gemm_convolution_bwd_data_t::execute_backward_data_nspc(
 status_t gemm_convolution_bwd_data_t::execute_backward_data_thr_nspc(
         const int ithr, const int nthr, const data_t *diff_dst_base,
         const data_t *wei_base, const data_t *bia_base, data_t *diff_src_base,
-        const memory_tracking::grantor_t &scratchpad) const {
+        const memory_tracking::grantor_t &scratchpad, int MB) const {
     const conv_gemm_conf_t &jcp = pd()->jcp_;
 
     // Diff_dst Format: mb-spatial-groups-output_channels
@@ -455,7 +466,9 @@ status_t gemm_convolution_bwd_data_t::execute_backward_data_thr_nspc(
     const size_t diff_src_os_stride = jcp.ngroups * jcp.ic;
 
     // threads share work across mini-batch and groups
-    const size_t work_amount = jcp.ngroups * jcp.mb;
+    const size_t work_amount = jcp.ngroups * MB;
+
+    const auto &p = pd()->attr()->post_ops_;
 
     data_t *__restrict col = scratchpad.get<data_t>(key_conv_gemm_col)
             + (ptrdiff_t)ithr * jcp.im2col_sz;
@@ -469,7 +482,7 @@ status_t gemm_convolution_bwd_data_t::execute_backward_data_thr_nspc(
     size_t start = 0, end = 0;
 
     balance211(work_amount, nthr, ithr, start, end);
-    nd_iterator_init(start, n, jcp.mb, g, jcp.ngroups);
+    nd_iterator_init(start, n, MB, g, jcp.ngroups);
 
     for (size_t iwork = start; iwork < end; ++iwork) {
         const data_t *__restrict diff_dst = diff_dst_base
@@ -505,7 +518,26 @@ status_t gemm_convolution_bwd_data_t::execute_backward_data_thr_nspc(
                 }
             });
         }
-        nd_iterator_step(n, jcp.mb, g, jcp.ngroups);
+        if (p.len() > 0) {
+            int depthwise_inj_idx = 0;
+            for (int i = 0; i < p.len(); i++) {
+                auto &post_op = p.entry_[i];
+                if (post_op.is_depthwise()) {
+                    auto depthwise_weights = post_op.depthwise.weights_data;
+                    auto depthwise_bias = post_op.depthwise.biases_data;
+                    parallel_nd(static_cast<size_t>(jcp.is) * jcp.id, [&](size_t is) {
+                        data_t *__restrict diff_src_arr
+                                = diff_src + is * diff_src_os_stride;
+                        for (int ic = 0; ic < jcp.ic; ic++) {
+                            diff_src_arr[ic] = depthwise_injectors[depthwise_inj_idx]->compute_scalar(diff_src_arr[ic],
+                                depthwise_weights + g * jcp.ic + ic, depthwise_bias + g * jcp.ic + ic);
+                        }
+                    });
+                    depthwise_inj_idx++;
+                }
+            }
+        }
+        nd_iterator_step(n, MB, g, jcp.ngroups);
     }
     return status::success;
 }
@@ -516,21 +548,30 @@ status_t gemm_convolution_bwd_data_t::execute_backward_data_ncsp(
     auto weights = CTX_IN_MEM(const data_t *, DNNL_ARG_WEIGHTS);
     auto diff_src = CTX_OUT_MEM(data_t *, DNNL_ARG_DIFF_SRC);
 
+    auto MB = CTX_IN_BATCH(DNNL_ARG_DIFF_DST);
+
     auto col = ctx.get_scratchpad_grantor().get<data_t>(key_conv_gemm_col);
 
     const conv_gemm_conf_t &jcp = this->pd()->jcp_;
 
     const dim_t M = jcp.os * jcp.od;
-    const size_t src_step = (size_t)jcp.ic * jcp.ih * jcp.iw * jcp.id;
-    const size_t dst_step = (size_t)jcp.oc * M;
+    const size_t src_step_to_clean = jcp.ic * jcp.ih * jcp.iw * jcp.id;
+    const memory_desc_wrapper diff_src_d(pd()->diff_src_md());
+    const memory_desc_wrapper diff_dst_d(pd()->diff_dst_md());
+    const size_t src_step = diff_src_d.blk_off(1) / jcp.ngroups;
+    const size_t dst_step = diff_dst_d.blk_off(1) / jcp.ngroups;
+    diff_src += diff_src_d.off_l(0);
+    diff_dst += diff_dst_d.off_l(0);
     const size_t weights_g_size = (size_t)jcp.ic * jcp.oc * jcp.ks;
 
     const dim_t m = jcp.os_block;
     const dim_t K = jcp.oc;
     const dim_t N = jcp.ic * jcp.ks;
 
-    const size_t work_amount = (size_t)jcp.ngroups * jcp.mb;
+    const size_t work_amount = (size_t)jcp.ngroups * MB;
     const bool is_problem_3d = pd()->ndims() == 5;
+
+    const auto &p = pd()->attr()->post_ops_;
 
     std::atomic<status_t> st(status::success);
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
@@ -539,14 +580,14 @@ status_t gemm_convolution_bwd_data_t::execute_backward_data_ncsp(
         int g {0}, n {0};
         size_t start = 0, end = 0;
         balance211(work_amount, nthr, ithr, start, end);
-        nd_iterator_init(start, g, jcp.ngroups, n, jcp.mb);
+        nd_iterator_init(start, g, jcp.ngroups, n, MB);
         for (size_t iwork = start; iwork < end; ++iwork) {
 
             data_t *_diff_src = diff_src + (n * jcp.ngroups + g) * src_step;
             if (is_problem_3d && jcp.im2col_sz > 0) {
                 // jit_gemm_convolution_utils::col2im_3d() assumes that the
                 // accumulator is initialized by zeroes
-                for (size_t i = 0; i < src_step; i++)
+                for (size_t i = 0; i < src_step_to_clean; i++)
                     _diff_src[i] = (data_t)0;
             }
 
@@ -579,7 +620,27 @@ status_t gemm_convolution_bwd_data_t::execute_backward_data_ncsp(
                     }
                 }
             }
-            nd_iterator_step(g, jcp.ngroups, n, jcp.mb);
+            if (p.len() > 0) {
+                int depthwise_inj_idx = 0;
+                for (int i = 0; i < p.len(); i++) {
+                    auto &post_op = p.entry_[i];
+                    if (post_op.is_depthwise()) {
+                        auto depthwise_weights = post_op.depthwise.weights_data;
+                        auto depthwise_bias = post_op.depthwise.biases_data;
+                        parallel_nd(jcp.ic, [&](const int ic) {
+                            for (int id = 0; id < jcp.id; ++id) {
+                                data_t *d_ = _diff_src + ic * jcp.id * jcp.is + id * jcp.is;
+                                for (int iS = 0; iS < jcp.is; ++iS) {
+                                    d_[iS] = depthwise_injectors[depthwise_inj_idx]->compute_scalar(d_[iS],
+                                            depthwise_weights + g * jcp.ic + ic, depthwise_bias + g * jcp.ic + ic);
+                                }
+                            }
+                        });
+                        depthwise_inj_idx++;
+                    }
+                }
+            }
+            nd_iterator_step(g, jcp.ngroups, n, MB);
         }
     });
 

@@ -74,3 +74,4 @@ set(OBJ_LIB ${LIB_NAME}_cpu_x64)
 add_library(${OBJ_LIB} OBJECT ${SOURCES})
 set_property(GLOBAL APPEND PROPERTY DNNL_LIB_DEPS
     $<TARGET_OBJECTS:${OBJ_LIB}>)
+enable_conditional_compilation4(${OBJ_LIB})

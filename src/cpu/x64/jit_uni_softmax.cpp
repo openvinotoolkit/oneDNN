@@ -28,7 +28,7 @@
 #include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
 #include "cpu/x64/jit_uni_softmax.hpp"
 
-#if __INTEL_COMPILER && __INTEL_COMPILER < 1900
+#if defined(__INTEL_COMPILER) && __INTEL_COMPILER < 1900
 // Intel Compilers 17.x and 18.x do not like that diff_src_ptr() is only used
 // in a single descendant class and marks it as unused. This breaks builds
 // with DNNL_WERROR=on. Disabling the warning for this file seems to be less
@@ -726,7 +726,8 @@ status_t jit_uni_softmax_fwd_t<isa>::execute(const exec_ctx_t &ctx) const {
     auto src = CTX_IN_MEM(const char *, DNNL_ARG_SRC);
     auto dst = CTX_OUT_MEM(char *, DNNL_ARG_DST);
 
-    const memory_desc_wrapper data_d(pd()->src_md());
+    auto real_src_md = ctx.input(DNNL_ARG_SRC)->md();
+    const memory_desc_wrapper data_d(real_src_md);
     const auto data_type_size = data_d.data_type() == data_type::bf16
             ? sizeof(bfloat16_t)
             : sizeof(float);

@@ -156,6 +156,7 @@ public:
         _cmp_nlt_us = 5u,
         _cmp_nle_us = 6u,
 
+        _op_near = 0u,
         _op_floor = 1u,
         _op_mxcsr = 4u,
     };
@@ -1267,6 +1268,87 @@ public:
     void uni_vpmaxsd(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
             const Xbyak::Operand &op) {
         vpmaxsd(x1, x2, op);
+    }
+
+    void uni_vcmpgtps(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
+                      const Xbyak::Operand &op) {
+        assert(x1.getIdx() == x2.getIdx());
+        cmpps(x1, op, _cmp_nle_us);
+    }
+
+    void uni_vcmpgtps(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
+                      const Xbyak::Operand &op) {
+        vcmpgtps(x1, x2, op);
+    }
+
+    void uni_vpmovzxwd(const Xbyak::Xmm &x, const Xbyak::Operand &op) {
+        pmovzxwd(x, op);
+    }
+    void uni_vpmovzxwd(const Xbyak::Ymm &x, const Xbyak::Operand &op) {
+        vpmovzxwd(x, op);
+    }
+
+    void uni_vpmovsxwd(const Xbyak::Xmm &x, const Xbyak::Operand &op) {
+        pmovsxwd(x, op);
+    }
+    void uni_vpmovsxwd(const Xbyak::Ymm &x, const Xbyak::Operand &op) {
+        vpmovsxwd(x, op);
+    }
+
+    void uni_vpackusdw(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2, const Xbyak::Operand &op) {
+        assert(x1.getIdx() == x2.getIdx());
+        packusdw(x1, op);
+    }
+    void uni_vpackusdw(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2, const Xbyak::Operand &op) {
+        vpackusdw(x1, x2, op);
+    }
+
+    void uni_vpcmpeqd(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
+                      const Xbyak::Operand &op) {
+        assert(x1.getIdx() == x2.getIdx());
+        pcmpeqd(x1, op);
+    }
+
+    void uni_vpcmpeqd(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
+                      const Xbyak::Operand &op) {
+        vpcmpeqd(x1, x2, op);
+    }
+
+    void uni_vpminsd(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2, const Xbyak::Operand &op) {
+        assert(x1.getIdx() == x2.getIdx());
+        pminsd(x1, op);
+    }
+    void uni_vpminsd(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2, const Xbyak::Operand &op) {
+        vpminsd(x1, x2, op);
+    }
+
+    void uni_vpand(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
+                   const Xbyak::Operand &op = Xbyak::Operand()) {
+        assert(x1.getIdx() == x2.getIdx());
+        pand(x1, op);
+    }
+    void uni_vpand(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
+                    const Xbyak::Operand &op = Xbyak::Operand()) {
+        vpand(x1, x2, op);
+    }
+
+    void uni_vpshufb(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
+                     const Xbyak::Operand &op) {
+        assert(x1.getIdx() == x2.getIdx());
+        pshufb(x1, op);
+    }
+
+    void uni_vpshufb(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
+                     const Xbyak::Operand &op) {
+        vpshufb(x1, x2, op);
+    }
+
+    void uni_vpslldq(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2, const Xbyak::uint8 &op) {
+        assert(x1.getIdx() == x2.getIdx());
+        pslldq(x1, op);
+    }
+    void uni_vpslldq(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2, const Xbyak::uint8 &op) {
+        vpslldq(x1, x2, op);
     }
 
     void mul_by_const(

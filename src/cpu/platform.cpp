@@ -15,7 +15,7 @@
 * limitations under the License.
 *******************************************************************************/
 
-#if DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_THREADPOOL
+#if (defined(DNNL_CPU_THREADING_RUNTIME) && DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_THREADPOOL)
 #include <algorithm>
 
 #if defined(_WIN32)

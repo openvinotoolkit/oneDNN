@@ -91,6 +91,19 @@ if(UNIX)
     endif()
 endif()
 
+macro(enable_conditional_compilation4 target)
+    if(COMMAND ie_mark_target_as_cc)
+        ie_mark_target_as_cc(${target})
+        if(SELECTIVE_BUILD STREQUAL "ON")
+            # After disabling a block of code, some variables might be unused.
+            if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+                    OR CMAKE_CXX_COMPILER_ID MATCHES "^(Apple)?Clang$")
+                target_compile_options(${target} PRIVATE -Wno-unused-variable)
+            endif()
+        endif()
+    endif()
+endmacro()
+
 add_subdirectory(common)
 add_subdirectory(cpu)
 
@@ -217,7 +230,7 @@ endif()
 
 # Install custom find modules for transitive dependencies
 set(LIB_CONFIG_INSTALL_DIR_COMPAT "${CMAKE_INSTALL_LIBDIR}/cmake/mkldnn")
-if(DNNL_CPU_THREADING_RUNTIME STREQUAL "TBB")
+if("${DNNL_CPU_THREADING_RUNTIME}" MATCHES "^(TBB|TBB_AUTO)$")
     if(WIN32)
         install(FILES "../cmake/win/TBBConfig.cmake" RENAME "FindTBB.cmake"
             DESTINATION ${LIB_CONFIG_INSTALL_DIR})

@@ -43,17 +43,19 @@ static inline dim_t get_offset(
 
 using namespace nstl;
 
-template <data_type_t data_type, data_type_t acc_type>
-status_t ref_pooling_fwd_t<data_type, acc_type>::execute_forward(
+template <data_type_t src_type, data_type_t dst_type, data_type_t acc_type>
+status_t ref_pooling_fwd_t<src_type, dst_type, acc_type>::execute_forward(
         const exec_ctx_t &ctx) const {
 
     status_t status = status::success;
 
-    auto src = CTX_IN_MEM(const data_t *, DNNL_ARG_SRC);
-    auto dst = CTX_OUT_CLEAN_MEM(data_t *, DNNL_ARG_DST, status);
+    auto src = CTX_IN_MEM(const src_data_t *, DNNL_ARG_SRC);
+    auto dst = CTX_OUT_CLEAN_MEM(dst_data_t *, DNNL_ARG_DST, status);
     CHECK(status);
     auto ws = CTX_OUT_CLEAN_MEM(unsigned char *, DNNL_ARG_WORKSPACE, status);
     CHECK(status);
+
+    auto MB = CTX_IN_BATCH(DNNL_ARG_SRC);
 
     const memory_desc_wrapper src_d(pd()->src_md());
     const memory_desc_wrapper dst_d(pd()->dst_md());
@@ -79,6 +81,9 @@ status_t ref_pooling_fwd_t<data_type, acc_type>::execute_forward(
     const int DD = pd()->DD();
     const int DH = pd()->DH();
     const int DW = pd()->DW();
+    const int padB = pd()->padB();
+    const int padR = pd()->padR();
+    const int padBack = pd()->padBack();
 
     auto set_ws = [=](int mb, int oc, int od, int oh, int ow, int value) {
         if (ws) {
@@ -94,6 +99,7 @@ status_t ref_pooling_fwd_t<data_type, acc_type>::execute_forward(
     };
 
     auto ker_max = [=](float &d, int mb, int oc, int od, int oh, int ow) {
+        bool is_initialized = false;
         for (int kd = 0; kd < KD; ++kd) {
             const int id = od * SD - padF + kd * (DD + 1);
             if (id < 0 || id >= ID) continue;
@@ -106,9 +112,15 @@ status_t ref_pooling_fwd_t<data_type, acc_type>::execute_forward(
 
                     const auto off = get_offset(src_d, mb, oc, id, ih, iw);
                     auto s = src[off];
-                    if (s > d) {
+                    if (!is_initialized) {
                         d = s;
-                        set_ws(mb, oc, od, oh, ow, (kd * KH + kh) * KW + kw);
+                        set_ws(mb, oc, od, oh, ow, kd * KH * KW + kh*KW + kw);
+                        is_initialized = true;
+                    } else {
+                        if (s > d) {
+                            d = s;
+                            set_ws(mb, oc, od, oh, ow, kd * KH * KW + kh * KW + kw);
+                        }
                     }
                 }
             }
@@ -131,17 +143,25 @@ status_t ref_pooling_fwd_t<data_type, acc_type>::execute_forward(
                 }
             }
         }
-        int num_summands;
-        if (alg == alg_kind::pooling_avg_include_padding)
-            num_summands = KW * KH * KD;
-        else {
-            auto id_start = od * SD - padF;
-            auto ih_start = oh * SH - padT;
-            auto iw_start = ow * SW - padL;
-            auto id_end = od * SD - padF + (KD - 1) * DD + KD;
-            auto ih_end = oh * SH - padT + (KH - 1) * DH + KH;
-            auto iw_end = ow * SW - padL + (KW - 1) * DW + KW;
 
+        auto id_start = od*SD - padF;
+        auto ih_start = oh*SH - padT;
+        auto iw_start = ow*SW - padL;
+        auto id_end = nstl::min(od*SD - padF + KD, ID + padBack);
+        auto ih_end = nstl::min(oh*SH - padT + KH, IH + padB);
+        auto iw_end = nstl::min(ow*SW - padL + KW, IW + padR);
+
+        // case alg == pooling_avg_include_padding
+        auto num_summands = (ih_end - ih_start)*(iw_end - iw_start)*(id_end - id_start);
+
+        id_start = nstl::max(id_start, 0);
+        ih_start = nstl::max(ih_start, 0);
+        iw_start = nstl::max(iw_start, 0);
+        id_end = nstl::min(id_end, ID);
+        ih_end = nstl::min(ih_end, IH);
+        iw_end = nstl::min(iw_end, IW);
+
+        if (alg == alg_kind::pooling_avg_exclude_padding) {
             auto id_start_excluded
                     = id_start < 0 ? (0 - id_start - 1) / (DD + 1) + 1 : 0;
             auto ih_start_excluded
@@ -156,13 +176,33 @@ status_t ref_pooling_fwd_t<data_type, acc_type>::execute_forward(
                     = iw_end > IW ? (iw_end - IW - 1) / (DW + 1) + 1 : 0;
 
             num_summands = (KD - id_start_excluded - id_end_excluded)
-                    * (KH - ih_start_excluded - ih_end_excluded)
-                    * (KW - iw_start_excluded - iw_end_excluded);
+                           * (KH - ih_start_excluded - ih_end_excluded)
+                           * (KW - iw_start_excluded - iw_end_excluded);
         }
+        if (num_summands == 0) return;
+
         d /= num_summands;
+
+        const auto &p = pd()->attr()->post_ops_;
+        for (int i = 0; i < p.len(); i++) {
+            auto &post_op = p.entry_[i];
+            if (post_op.is_quantization()) {
+                auto quant = post_op.quantization;
+                float cl = quant.crop_low_data->shifts_[quant.crop_low_data->count_ == 1 ? 0 : oc];
+                float ch = quant.crop_high_data->shifts_[quant.crop_high_data->count_ == 1 ? 0 : oc];
+                float isc = quant.input_scale_data->scales_[quant.input_scale_data->count_ == 1 ? 0 : oc];
+                float ish = quant.input_shift_data->shifts_[quant.input_shift_data->count_ == 1 ? 0 : oc];
+                float osc = quant.output_scale_data->scales_[quant.output_scale_data->count_ == 1 ? 0 : oc];
+                float osh = quant.output_shift_data->shifts_[quant.output_shift_data->count_ == 1 ? 0 : oc];
+
+                d = nstl::min(ch, nstl::max(cl, d));
+                d = d * isc + ish;
+                d = roundf(d);
+                d = d * osc + osh;
+            }
+        }
     };
 
-    const int MB = pd()->MB();
     const int OC = pd()->C();
     const int OD = pd()->OD();
     const int OH = pd()->OH();
@@ -172,36 +212,20 @@ status_t ref_pooling_fwd_t<data_type, acc_type>::execute_forward(
         parallel_nd(MB, OC, OD, OH, OW,
                 [&](int mb, int oc, int od, int oh, int ow) {
                     auto data_p_off = get_offset(dst_d, mb, oc, od, oh, ow);
-                    auto data_l_off
-                            = (((mb * OC + oc) * OD + od) * OH + oh) * OW + ow;
-                    float res = numeric_limits<data_t>::lowest();
+                    float res = 0.f;
                     set_ws(mb, oc, od, oh, ow, 0);
                     ker_max(res, mb, oc, od, oh, ow);
 
-                    ref_post_ops_t::args_t args;
-                    args.ctx = &ctx;
-                    args.l_offset = data_l_off;
-                    args.dst_md = pd()->dst_md();
-                    ref_post_ops->execute(res, args);
-
-                    dst[data_p_off] = cpu::saturate_and_round<data_t>(res);
+                    dst[data_p_off] = cpu::saturate_and_round<dst_data_t >(res);
                 });
     } else {
         parallel_nd(MB, OC, OD, OH, OW,
                 [&](int mb, int oc, int od, int oh, int ow) {
                     auto data_p_off = get_offset(dst_d, mb, oc, od, oh, ow);
-                    auto data_l_off
-                            = (((mb * OC + oc) * OD + od) * OH + oh) * OW + ow;
                     float res = 0.f;
                     ker_avg(res, mb, oc, od, oh, ow);
 
-                    ref_post_ops_t::args_t args;
-                    args.ctx = &ctx;
-                    args.l_offset = data_l_off;
-                    args.dst_md = pd()->dst_md();
-                    ref_post_ops->execute(res, args);
-
-                    dst[data_p_off] = cpu::saturate_and_round<data_t>(res);
+                    dst[data_p_off] = cpu::saturate_and_round<dst_data_t >(res);
                 });
     }
     return status::success;
@@ -362,11 +386,13 @@ status_t ref_pooling_bwd_t<data_type>::execute_backward(
     return status::success;
 }
 
-template struct ref_pooling_fwd_t<data_type::f32>;
-template struct ref_pooling_fwd_t<data_type::s32>;
-template struct ref_pooling_fwd_t<data_type::bf16, data_type::f32>;
-template struct ref_pooling_fwd_t<data_type::s8, data_type::s32>;
-template struct ref_pooling_fwd_t<data_type::u8, data_type::s32>;
+template struct ref_pooling_fwd_t<data_type::f32, data_type::f32, data_type::f32>;
+template struct ref_pooling_fwd_t<data_type::s32, data_type::s32, data_type::s32>;
+template struct ref_pooling_fwd_t<data_type::bf16, data_type::bf16, data_type::f32>;
+template struct ref_pooling_fwd_t<data_type::s8, data_type::s8, data_type::s32>;
+template struct ref_pooling_fwd_t<data_type::u8, data_type::u8, data_type::s32>;
+template struct ref_pooling_fwd_t<data_type::s8, data_type::f32, data_type::f32>;
+template struct ref_pooling_fwd_t<data_type::u8, data_type::f32, data_type::f32>;
 
 template struct ref_pooling_bwd_t<data_type::f32>;
 template struct ref_pooling_bwd_t<data_type::s32>;

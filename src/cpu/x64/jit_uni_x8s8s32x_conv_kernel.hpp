@@ -44,6 +44,7 @@ private:
             = cpu_isa_traits<isa>::vlen / sizeof(float);
     std::unique_ptr<injector::jit_uni_postops_injector_t<isa>>
             postops_injector_;
+
     enum {
         typesize = sizeof(float),
         ic_sub_step = 4,
@@ -92,10 +93,18 @@ private:
     const Xbyak::Reg64 reg_src_zero_point = aux_reg_ker_d;
     const Xbyak::Reg64 reg_dst_zero_point = reg_src_zero_point;
 
+    const Xbyak::Reg64 reg_input_zp = reg_bias_alpha;
+
+    const Xbyak::Reg64 reg_d_weights = r15;
+    const Xbyak::Reg64 reg_d_bias = r13;
+
+    const Vmm vmm_d_weights = Vmm(0);
+    const Vmm vmm_d_bias = Vmm(1);
+
     const Vmm vmm_wei = Vmm(0);
     /* used during bias/comp/scale section of store_output */
     const Vmm vmm_bias = Vmm(0);
-    const Vmm vmm_comp = Vmm(2); // only for signed input
+    const Vmm vmm_comp = Vmm(3); // only for signed input
     const Vmm vmm_scale = Vmm(1);
     /* used during post_op sum section of store_output */
     const Vmm vmm_prev_dst = Vmm(0);

@@ -21,6 +21,7 @@
 
 #if DNNL_X64
 #include "cpu/x64/jit_uni_softmax.hpp"
+#include "cpu/x64/jit_uni_fork_softmax.hpp"
 using namespace dnnl::impl::cpu::x64;
 #elif DNNL_AARCH64
 #include "cpu/aarch64/jit_uni_softmax.hpp"
@@ -38,16 +39,25 @@ using namespace dnnl::impl::data_type;
 
 // clang-format off
 const pd_create_f impl_list[] = {
-        CPU_INSTANCE_X64(jit_uni_softmax_fwd_t<avx512_common>)
-        CPU_INSTANCE_X64(jit_uni_softmax_bwd_t<avx512_common>)
-        CPU_INSTANCE_X64(jit_uni_softmax_fwd_t<avx2>)
-        CPU_INSTANCE_X64(jit_uni_softmax_fwd_t<sse41>)
-        CPU_INSTANCE_AARCH64(jit_uni_softmax_fwd_t<sve_512>)
-        CPU_INSTANCE_AARCH64(jit_uni_softmax_bwd_t<sve_512>)
-        CPU_INSTANCE(ref_softmax_fwd_t<f32>)
-        CPU_INSTANCE(ref_softmax_bwd_t<f32>)
-        CPU_INSTANCE(ref_softmax_fwd_t<bf16>)
-        CPU_INSTANCE(ref_softmax_bwd_t<bf16>)
+        CPU_INSTANCE_X64(jit_uni_softmax_fwd_t, avx512_common)
+#ifdef ENABLE_UNUSED_PRIM
+        CPU_INSTANCE_X64(jit_uni_softmax_bwd_t, avx512_common)
+#endif
+        CPU_INSTANCE_X64(jit_uni_softmax_fwd_t, avx2)
+        CPU_INSTANCE_X64(jit_uni_softmax_fwd_t, sse41)
+        CPU_INSTANCE_X64(jit_uni_fork_softmax_fwd_t, avx512_common)
+        CPU_INSTANCE_X64(jit_uni_fork_softmax_fwd_t, avx2)
+        CPU_INSTANCE_X64(jit_uni_fork_softmax_fwd_t, sse41)
+        CPU_INSTANCE_AARCH64(jit_uni_softmax_fwd_t, sve_512)
+        CPU_INSTANCE_AARCH64(jit_uni_softmax_bwd_t, sve_512)
+        CPU_INSTANCE(ref_softmax_fwd_t, f32)
+#ifdef ENABLE_UNUSED_PRIM
+        CPU_INSTANCE(ref_softmax_bwd_t, f32)
+#endif
+        CPU_INSTANCE(ref_softmax_fwd_t, bf16)
+#ifdef ENABLE_UNUSED_PRIM
+        CPU_INSTANCE(ref_softmax_bwd_t, bf16)
+#endif
         /* eol */
         nullptr,
 };

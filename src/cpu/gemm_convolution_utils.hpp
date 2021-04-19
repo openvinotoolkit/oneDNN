@@ -67,6 +67,9 @@ struct conv_gemm_conf_t {
     data_type_t dst_data_type;
     size_t dst_os_stride;
     size_t scale_idx_mult;
+
+    bool with_input_zp;
+    bool with_weights_zp;
 };
 
 struct single_gemm_conv_chunk_desc_t {
@@ -82,6 +85,27 @@ struct single_gemm_conv_chunk_desc_t {
     dim_t w_size_ = 0;
 };
 
+namespace gemm_convolution_utils {
+
+struct pp_kernel_t {
+    static pp_kernel_t *create(
+            const convolution_pd_t *pd, const conv_gemm_conf_t &jcp);
+
+    virtual ~pp_kernel_t() = default;
+
+    virtual void operator()(float *dst, const float *bias, const int len, const int oc_start, const int oc_work, const int oc_stride) const = 0;
+
+    virtual status_t create_kernel() { return status::success; }
+
+protected:
+    pp_kernel_t(const convolution_pd_t *pd, const conv_gemm_conf_t &jcp);
+
+    bool do_bias_ = false;
+    post_ops_t post_ops_;
+};
+
+} // namespace gemm_convolution_utils
+
 namespace jit_gemm_convolution_utils {
 template <typename data_type_t>
 void im2col_3d(const conv_gemm_conf_t &jcp, const data_type_t *im,
@@ -93,7 +117,7 @@ void transpose_dt(const conv_gemm_conf_t &jcp, const T *__restrict im,
 
 template <typename im_dt, typename col_dt>
 void im2col_dt_3d(const conv_gemm_conf_t &jcp, const im_dt *__restrict im,
-        col_dt *__restrict col, int od);
+        col_dt *__restrict col, int od, const uint8_t *__restrict input_zp = nullptr);
 
 template <typename data_type_t>
 void im2col(const conv_gemm_conf_t &jcp, const data_type_t *__restrict im,
@@ -102,7 +126,7 @@ void im2col(const conv_gemm_conf_t &jcp, const data_type_t *__restrict im,
 template <typename im_dt, typename col_dt>
 void im2col_dt(const conv_gemm_conf_t &jcp, const im_dt *__restrict im,
         im_dt *__restrict imtr, col_dt *__restrict col, int hs, int hb, int ws,
-        int wb);
+        int wb, const uint8_t *__restrict input_zp = nullptr);
 
 template <typename T>
 void col2im_dt(

@@ -35,10 +35,12 @@ using namespace dnnl::impl::data_type;
 
 // clang-format off
 const pd_create_f impl_list[] = {
-        CPU_INSTANCE_X64(jit_uni_shuffle_t<avx512_common>)
-        CPU_INSTANCE_X64(jit_uni_shuffle_t<avx>)
-        CPU_INSTANCE_X64(jit_uni_shuffle_t<sse41>)
+#ifdef ENABLE_UNUSED_PRIM
+        CPU_INSTANCE_X64(jit_uni_shuffle_t, avx512_common)
+        CPU_INSTANCE_X64(jit_uni_shuffle_t, avx)
+        CPU_INSTANCE_X64(jit_uni_shuffle_t, sse41)
         CPU_INSTANCE(ref_shuffle_t)
+#endif
         /* eol */
         nullptr,
 };

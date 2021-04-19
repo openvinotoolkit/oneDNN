@@ -389,6 +389,31 @@ inline U hardswish_bwd(T dd, T s) {
                                 : s >= 3.f ? dd : 0.f);
 }
 
+template <typename T,
+        typename U = typename utils::remove_reference<T>::type>
+inline U hsigmoid_fwd(T s) {
+    float v = s + 3.0f;
+    v = v > 0.0f ? v : 0.0f;
+    v = v < 6.0f ? v : 6.0f;
+    return (U)(v / 6.0f);
+}
+
+template <typename T,
+        typename U = typename utils::remove_reference<T>::type>
+inline U round_half_to_even_fwd(T s) {
+    float r = ::roundf((float)s);
+    float d = (float)s - r;
+    float remainder = ::fmodf(r, 2.0f);
+    return ((d != 0.5f) && (d != -0.5f)) || (remainder == 0.0f) ? (U)r :
+           (U)((float)s + d);
+}
+
+template <typename T,
+        typename U = typename utils::remove_reference<T>::type>
+inline U round_half_away_from_zero_fwd(T s) {
+    return (U)(::roundf((float)s));
+}
+
 inline bool is_eltwise_ok(
         data_type_t dt, alg_kind_t alg, float alpha, float beta) {
     using namespace alg_kind;
@@ -401,7 +426,8 @@ inline bool is_eltwise_ok(
                       eltwise_logsigmoid, eltwise_mish, eltwise_logistic,
                       eltwise_exp, eltwise_gelu_tanh, eltwise_hardswish,
                       eltwise_swish, eltwise_log, eltwise_clip, eltwise_clip_v2,
-                      eltwise_pow, eltwise_gelu_erf, eltwise_round)
+                      eltwise_pow, eltwise_gelu_erf, eltwise_round, eltwise_hsigmoid,
+                      eltwise_round_half_away_from_zero, eltwise_round_half_to_even)
             && IMPLICATION(alg == eltwise_bounded_relu, alpha >= 0)
             && IMPLICATION(
                     one_of(alg, eltwise_clip, eltwise_clip_v2), beta >= alpha)
@@ -435,6 +461,25 @@ inline float get_bias(const char *bias, size_t offset, data_type_t data_type) {
         CASE(data_type::s8);
         CASE(data_type::u8);
         CASE(data_type::bf16);
+        CASE(data_type::s32);
+        CASE(data_type::f32);
+        default: assert(!"unimplemented");
+    }
+    return 0; // never happens (should probably be a NaN)
+#undef CASE
+}
+
+inline float get_sum(char *sum, size_t offset, data_type_t data_type)
+{
+    if (!sum)
+        return 0.0f;
+
+#define CASE(dt) \
+    case dt: return (float)((const prec_traits<dt>::type *)sum)[offset]
+
+    switch (data_type) {
+        CASE(data_type::s8);
+        CASE(data_type::u8);
         CASE(data_type::s32);
         CASE(data_type::f32);
         default: assert(!"unimplemented");

@@ -70,6 +70,8 @@ ref_convolution_fwd_t<src_type, wei_type, dst_type, acc_type>::execute_forward(
     auto dst = CTX_OUT_CLEAN_MEM(dst_data_t *, DNNL_ARG_DST, status);
     CHECK(status);
 
+    auto MB = CTX_IN_BATCH(DNNL_ARG_SRC);
+
     DEFINE_ZERO_POINTS_BUFFER(src_zero_point, DNNL_ARG_SRC);
     DEFINE_ZERO_POINTS_BUFFER(dst_zero_point, DNNL_ARG_DST);
 
@@ -81,7 +83,6 @@ ref_convolution_fwd_t<src_type, wei_type, dst_type, acc_type>::execute_forward(
     const bool with_groups = pd()->with_groups();
 
     const auto G = pd()->G();
-    const auto MB = pd()->MB();
     const auto OD = pd()->OD();
     const auto OH = pd()->OH();
     const auto OW = pd()->OW();
@@ -286,6 +287,8 @@ status_t ref_convolution_bwd_data_t<diff_src_type, wei_type, diff_dst_type,
             = CTX_OUT_CLEAN_MEM(diff_src_data_t *, DNNL_ARG_DIFF_SRC, status);
     CHECK(status);
 
+    auto MB = CTX_IN_BATCH(DNNL_ARG_DIFF_DST);
+
     const memory_desc_wrapper diff_dst_d(pd()->diff_dst_md());
     const memory_desc_wrapper diff_src_d(pd()->diff_src_md());
     const memory_desc_wrapper weights_d(pd()->weights_md(0));
@@ -294,7 +297,6 @@ status_t ref_convolution_bwd_data_t<diff_src_type, wei_type, diff_dst_type,
     const bool with_groups = pd()->with_groups();
 
     const auto G = pd()->G();
-    const auto MB = pd()->MB();
     const auto OD = pd()->OD();
     const auto OH = pd()->OH();
     const auto OW = pd()->OW();
@@ -321,6 +323,8 @@ status_t ref_convolution_bwd_data_t<diff_src_type, wei_type, diff_dst_type,
     const auto padL = pd()->padL();
 
     const auto ndims = pd()->desc()->diff_src_desc.ndims;
+
+    const auto &p = pd()->attr()->post_ops_;
 
     using namespace data_type;
     bool is_int_conv = utils::one_of(diff_dst_type, s32, s8, u8);
@@ -462,6 +466,19 @@ status_t ref_convolution_bwd_data_t<diff_src_type, wei_type, diff_dst_type,
                     a += ker_plain(g, mb, ic, id, ih, iw);
                 else
                     a += ker(g, mb, ic, id, ih, iw);
+
+                int depthwise_inj_idx = 0;
+                for (int i = 0; i < p.len(); i++) {
+                    auto &post_op = p.entry_[i];
+                    if (post_op.is_depthwise()) {
+                        auto depthwise_weights = post_op.depthwise.weights_data;
+                        auto depthwise_bias = post_op.depthwise.biases_data;
+
+                        a = depthwise_injectors[depthwise_inj_idx]->compute_scalar(a, depthwise_weights + g * IC + ic, depthwise_bias + g * IC + ic);
+                    }
+                    depthwise_inj_idx++;
+                }
+
                 maybe_oscale(a, g, ic);
                 if (is_int_conv)
                     diff_src[ds_idx] = saturate_and_round<diff_src_data_t>(a);

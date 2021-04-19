@@ -254,7 +254,7 @@ struct jit_avx512_common_1x1_convolution_fwd_t : public primitive_t {
         if (pd()->jcp_.with_dw_conv) {
             CHECK(safe_ptr_assign(kernel_dw_,
                     new dw_conv_kernel_t(
-                            pd()->dw_conv_pd_->jcp_, *pd()->dst_md(0))));
+                            pd()->dw_conv_pd_->jcp_, *pd()->dst_md(0), *pd()->dw_conv_pd_->attr())));
             CHECK(kernel_dw_->create_kernel());
         }
 
@@ -275,7 +275,7 @@ private:
             const dst_data_t *bias_dw, dst_data_t *dst,
             const memory_tracking::grantor_t &scratchpad,
             const void *post_ops_binary_rhs_arg_vec,
-            const void *post_ops_binary_rhs_arg_vec_dw) const;
+            const void *post_ops_binary_rhs_arg_vec_dw, int MB) const;
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 
     std::unique_ptr<jit_avx512_common_1x1_conv_kernel> kernel_;
@@ -306,8 +306,9 @@ struct jit_avx512_common_1x1_convolution_bwd_data_t : public primitive_t {
                     && set_default_alg_kind(alg_kind::convolution_direct)
                     && expect_data_types(diff_src_type, wei_type,
                             data_type::undef, diff_dst_type, data_type::undef)
-                    && attr()->has_default_values() && !has_zero_dim_memory()
-                    && set_default_formats();
+                    && !has_zero_dim_memory()
+                    && set_default_formats()
+                    && is_supported_post_ops();
             if (!ok) return status::unimplemented;
 
             const convolution_desc_t *conv_d = desc();
@@ -342,6 +343,23 @@ struct jit_avx512_common_1x1_convolution_bwd_data_t : public primitive_t {
                     gIOdhw16o16i);
 
             return set_default_formats_common(dat_tag, wei_tag, dat_tag);
+        }
+
+        bool is_supported_post_ops() const {
+            const auto &p = this->attr()->post_ops_;
+            if (p.len() > 1)
+                return false;
+
+            auto all_post_ops_supported = [&]() {
+                bool ok = true;
+
+                for (int i = 0; i < p.len(); i++) {
+                    ok = ok && utils::one_of(p.entry_[i].kind, primitive_kind::depthwise);
+                }
+                return ok;
+            };
+
+            return all_post_ops_supported();
         }
     };
 

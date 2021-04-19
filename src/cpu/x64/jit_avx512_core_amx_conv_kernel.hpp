@@ -333,6 +333,12 @@ private:
     const Xbyak::Reg64 &bin_injector_helper_reg_1 = r14;
     const Xbyak::Reg64 &bin_injector_helper_reg_2 = r15;
 
+    const Xbyak::Reg64 reg_d_weights = reg_zp_compensation;
+    const Xbyak::Reg64 reg_d_bias = reg_src_zero_point;
+
+    const Xbyak::Zmm zmm_d_weights = Xbyak::Zmm(31);
+    const Xbyak::Zmm zmm_d_bias = Xbyak::Zmm(30);
+
     // AUX: Steps, shifts and offsets
     size_t get_inp_icb_step() const;
     size_t get_wei_icb_step() const;

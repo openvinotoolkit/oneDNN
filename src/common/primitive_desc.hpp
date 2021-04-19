@@ -23,6 +23,7 @@
 
 #include "c_types_map.hpp"
 #include "dnnl_thread.hpp"
+#include "dnnl_sel_build.hpp"
 #include "memory_tracking.hpp"
 #include "nstl.hpp"
 #include "primitive_attr.hpp"
@@ -310,6 +311,12 @@ protected:
     dnnl::impl::engine_t *engine_;
 };
 
+#if defined(SELECTIVE_BUILD_ANALYZER)
+# define DNNL_PRIMITIVE_MARKER OV_ITT_SCOPED_TASK(dnnl::FACTORY_DNNL, std::string("CREATE$CPUEngine$") + typeid(pd_t).name());
+#else
+# define DNNL_PRIMITIVE_MARKER
+#endif
+
 #define DECLARE_COMMON_PD_t(impl_name, impl_type, use_global_scratchpad) \
     pd_t *clone() const override { \
         auto new_pd = utils::make_unique<pd_t>(*this); \
@@ -319,6 +326,7 @@ protected:
     status_t create_primitive( \
             std::pair<std::shared_ptr<primitive_t>, bool> &primitive, \
             engine_t *engine) const override { \
+        DNNL_PRIMITIVE_MARKER \
         return primitive_t::create_primitive_common<impl_type, pd_t>( \
                 primitive, this, engine, use_global_scratchpad); \
     } \

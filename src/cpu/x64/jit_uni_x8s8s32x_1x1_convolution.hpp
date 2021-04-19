@@ -70,7 +70,10 @@ struct jit_uni_x8s8s32x_1x1_convolution_fwd_t : public primitive_t {
                                     data_type::s8, data_type::u8))
                     && attr()->has_default_values(smask_t::oscale
                                     | smask_t::zero_points_runtime
-                                    | smask_t::post_ops,
+                                    | smask_t::post_ops
+                                    | smask_t::sum_dt
+                                    | smask_t::input_zero_points
+                                    | smask_t::output_compensations,
                             dst_type)
                     && !has_zero_dim_memory() && zero_points_ok()
                     && set_default_formats_common(
@@ -412,7 +415,7 @@ private:
             const int32_t *src_zero_point, const int32_t *dst_zero_point,
             const memory_tracking::grantor_t &scratchpad,
             const void *post_ops_binary_rhs_arg_vec,
-            const void *post_ops_binary_rhs_arg_vec_dw) const;
+            const void *post_ops_binary_rhs_arg_vec_dw, int MB) const;
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 
     std::unique_ptr<jit_uni_x8s8s32x_1x1_conv_kernel<isa>> kernel_;

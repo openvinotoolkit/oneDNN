@@ -41,6 +41,8 @@ void jit_uni_dw_convolution_fwd_t<isa, src_type, dst_type>::execute_forward(
     const auto post_ops_binary_rhs_arg_vec
             = binary_injector::prepare_binary_args(jcp.post_ops, ctx);
 
+    auto MB = CTX_IN_BATCH(DNNL_ARG_SRC);
+
     const memory_desc_wrapper src_d(pd()->src_md());
     const memory_desc_wrapper dst_d(pd()->dst_md());
     const memory_desc_wrapper weights_d(pd()->weights_md(0));
@@ -78,7 +80,7 @@ void jit_uni_dw_convolution_fwd_t<isa, src_type, dst_type>::execute_forward(
     const auto is_src_layout_nxc = jcp.src_tag == format_tag::nhwc;
     const auto is_dst_layout_nxc = jcp.dst_tag == format_tag::nhwc;
 
-    const int work_amount = jcp.mb * chb_work * jcp.oh;
+    const int work_amount = MB * chb_work * jcp.oh;
     const auto nthr = jcp.nthr;
 
     parallel(nthr, [&](const int ithr, const int nthr) {
@@ -88,10 +90,10 @@ void jit_uni_dw_convolution_fwd_t<isa, src_type, dst_type>::execute_forward(
         int n {0}, chb {0}, oh {0};
         if (jcp.loop_order == loop_ngcw)
             utils::nd_iterator_init(
-                    start, n, jcp.mb, chb, chb_work, oh, jcp.oh);
+                    start, n, MB, chb, chb_work, oh, jcp.oh);
         else if (jcp.loop_order == loop_nhwcg)
             utils::nd_iterator_init(
-                    start, n, jcp.mb, oh, jcp.oh, chb, chb_work);
+                    start, n, MB, oh, jcp.oh, chb, chb_work);
         else
             assert(!"unsupported loop order");
 
@@ -143,14 +145,16 @@ void jit_uni_dw_convolution_fwd_t<isa, src_type, dst_type>::execute_forward(
             par_conv.post_ops_binary_rhs_arg_vec
                     = post_ops_binary_rhs_arg_vec.data();
             par_conv.dst_orig = dst;
+            par_conv.oc_off = ch * jcp.ch_block * sizeof(float);
+
             (*kernel_)(&par_conv);
 
             if (jcp.loop_order == loop_ngcw) {
                 ++iwork;
-                utils::nd_iterator_step(n, jcp.mb, chb, chb_work, oh, jcp.oh);
+                utils::nd_iterator_step(n, MB, chb, chb_work, oh, jcp.oh);
             } else if (jcp.loop_order == loop_nhwcg) {
                 utils::nd_iterator_jump(
-                        iwork, end, n, jcp.mb, oh, jcp.oh, chb, chb_work);
+                        iwork, end, n, MB, oh, jcp.oh, chb, chb_work);
             } else
                 assert(!"unsupported loop order");
         }
@@ -172,6 +176,8 @@ void jit_uni_dw_convolution_bwd_data_t<isa, diff_dst_type,
     auto diff_dst = CTX_IN_MEM(const diff_dst_data_t *, DNNL_ARG_DIFF_DST);
     auto weights = CTX_IN_MEM(const wei_data_t *, DNNL_ARG_WEIGHTS);
     auto diff_src = CTX_OUT_MEM(diff_src_data_t *, DNNL_ARG_DIFF_SRC);
+
+    auto MB = CTX_IN_BATCH(DNNL_ARG_DIFF_DST);
 
     const memory_desc_wrapper diff_dst_d(pd()->diff_dst_md());
     const memory_desc_wrapper diff_src_d(pd()->diff_src_md());
@@ -206,13 +212,15 @@ void jit_uni_dw_convolution_bwd_data_t<isa, diff_dst_type,
 
         par_conv.ch_blocks = nstl::min(ch + ch_num, jcp.nb_ch) - ch;
 
+        par_conv.ic_off = ch * jcp.ch_block * sizeof(float);
+
         return par_conv;
     };
 
     const int aux_w
             = nstl::min(jcp.iw, jcp.iw - jcp.kw + jcp.r_pad + jcp.stride_w);
     const int chb_work = utils::div_up(jcp.nb_ch, jcp.nb_ch_blocking);
-    parallel_nd(jcp.mb, chb_work, jcp.ih, [&](int n, int chb, int ih) {
+    parallel_nd(MB, chb_work, jcp.ih, [&](int n, int chb, int ih) {
         int ch = chb * jcp.nb_ch_blocking;
         int ch_num = jcp.nb_ch_blocking;
 

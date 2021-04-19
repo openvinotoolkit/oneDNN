@@ -34,9 +34,9 @@ using namespace Xbyak;
 using namespace dnnl::impl::utils;
 
 jit_avx512_dw_conv_fwd_kernel_bf16::jit_avx512_dw_conv_fwd_kernel_bf16(
-        const jit_conv_conf_t &ajcp, const memory_desc_t &dst_md)
-    : jcp(ajcp) {
-    if (jcp.with_eltwise || jcp.with_binary) {
+        const jit_conv_conf_t &ajcp, const memory_desc_t &dst_md, const primitive_attr_t& attr)
+    : jcp(ajcp), attr_(attr) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise || jcp.with_quantization) {
         using namespace binary_injector;
         static constexpr bool preserve_gpr = true;
         static constexpr bool preserve_vmm = false;
@@ -52,10 +52,12 @@ jit_avx512_dw_conv_fwd_kernel_bf16::jit_avx512_dw_conv_fwd_kernel_bf16(
                 use_exact_tail_scalar_bcast};
         const static_params_t static_params {
                 this->param1, rhs_arg_static_params};
+        quantization_injector::static_params_t quantization_static_params
+                {zmm_d_weights.getIdx(), zmm_d_bias.getIdx(), reg_d_weights, reg_d_bias};
 
         postops_injector_ = utils::make_unique<
                 injector::jit_uni_postops_injector_t<avx512_core>>(
-                this, jcp.post_ops, static_params);
+                this, jcp.post_ops, static_params, quantization_static_params);
     }
     if (!isa_has_bf16(jcp.isa))
         bf16_emu_ = utils::make_unique<bf16_emulation_t>(this,
@@ -188,7 +190,15 @@ static void iterate(const int ur_ch_blocks, const int ur_w, const F &f) {
 
 void jit_avx512_dw_conv_fwd_kernel_bf16::apply_postops(
         int ur_ch_blocks, int ur_w) {
-    if (this->jcp.with_eltwise || this->jcp.with_binary) {
+    if (this->jcp.with_eltwise || this->jcp.with_binary || this->jcp.with_depthwise || this->jcp.with_quantization) {
+        std::map<size_t, int> vmm_idx_off;
+        iterate(ur_ch_blocks, ur_w, [&](int ch, int ow, int) {
+            vmm_idx_off.insert({get_acc_reg_idx(ch * ur_w + ow), ch * jcp.ch_block * sizeof(float)});
+        });
+
+        depthwise_injector::dynamic_params_t ddp {zmm_d_weights.getIdx(), zmm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
+                                                  ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off};
+        quantization_injector::dynamic_params_t qdp {ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off};
 
         injector_utils::vmm_index_set_t vmm_idxs;
         if (jcp.with_binary) {
@@ -242,14 +252,14 @@ void jit_avx512_dw_conv_fwd_kernel_bf16::apply_postops(
                 jmp(postops_done, T_NEAR);
                 L(postops_no_tail);
             }
-            postops_injector_->compute_vector_range(vmm_idxs, rhs_arg_params);
+            postops_injector_->compute_vector_range(vmm_idxs, rhs_arg_params, ddp, qdp);
             L(postops_done);
 
         } else {
             iterate(ur_ch_blocks, ur_w, [&](int ch, int ow, int) {
                 vmm_idxs.emplace(get_acc_reg_idx(ch * ur_w + ow));
             });
-            postops_injector_->compute_vector_range(vmm_idxs);
+            postops_injector_->compute_vector_range(vmm_idxs, binary_injector::rhs_arg_dynamic_params_t(), ddp, qdp);
         }
     }
 }
@@ -642,6 +652,34 @@ inline void jit_avx512_dw_conv_bwd_data_kernel_bf16::apply_filter(
     L(iter_exit_label);
 }
 
+void jit_avx512_dw_conv_bwd_data_kernel_bf16::apply_postprocess(int ur_ch_blocks, int ur_str_) {
+    const auto& p = attr_.post_ops_;
+    int depthwise_inj_idx = 0;
+    for (int i = 0; i < p.len(); i++) {
+        auto& post_op = p.entry_[i];
+        if (post_op.is_depthwise()) {
+            mov(reg_d_weights, reinterpret_cast<size_t>(post_op.depthwise.weights_data));
+            mov(reg_d_bias, reinterpret_cast<size_t>(post_op.depthwise.biases_data));
+
+            add(reg_d_weights, ptr[this->param1 + GET_OFF(ic_off)]);
+            add(reg_d_bias, ptr[this->param1 + GET_OFF(ic_off)]);
+
+            for (int ch = 0; ch < ur_ch_blocks; ch++) {
+                int start_idx = get_acc_reg(ur_str_ * ch).getIdx();
+                int end_idx = get_acc_reg(ur_str_ * ch + ur_str_).getIdx();
+
+                depthwise_injectors[depthwise_inj_idx]->compute_vector_range(
+                    start_idx, end_idx, reg_d_weights, reg_d_bias);
+
+                add(reg_d_weights, jcp.ch_block * sizeof(float));
+                add(reg_d_bias, jcp.ch_block * sizeof(float));
+            }
+
+            depthwise_inj_idx++;
+        }
+    }
+}
+
 inline void jit_avx512_dw_conv_bwd_data_kernel_bf16::store_dsrc(
         int ur_ch_blocks, int ur_str_w) {
     int ch_blk = jcp.ch_block;
@@ -694,6 +732,7 @@ inline void jit_avx512_dw_conv_bwd_data_kernel_bf16::loop_body(
 
         load_ddst(ur_ch_blocks, ur_w);
         apply_filter(ur_ch_blocks, ur_w);
+        apply_postprocess(ur_ch_blocks, ur_w);
         store_dsrc(ur_ch_blocks, ur_w);
 
         add(reg_dsrc, jcp.typesize_out * ur_w * jcp.ch_block * jcp.stride_w);
@@ -715,6 +754,7 @@ inline void jit_avx512_dw_conv_bwd_data_kernel_bf16::loop_body(
 
         load_ddst(ur_ch_blocks, ur_w);
         apply_filter(ur_ch_blocks, ur_w);
+        apply_postprocess(ur_ch_blocks, ur_w);
         store_dsrc(ur_ch_blocks, ur_w);
 
         add(reg_dsrc, jcp.typesize_out * ur_w * jcp.ch_block * jcp.stride_w);
@@ -728,6 +768,17 @@ inline void jit_avx512_dw_conv_bwd_data_kernel_bf16::loop_body(
 }
 
 void jit_avx512_dw_conv_bwd_data_kernel_bf16::generate() {
+    const auto& p = attr_.post_ops_;
+    for (int i = 0; i < p.len(); i++) {
+        auto& post_op = p.entry_[i];
+        if (post_op.is_depthwise()) {
+            depthwise_injectors.push_back(new jit_uni_depthwise_injector_f32<avx512_common>(
+                this,
+                post_op.depthwise.alg
+                ));
+        }
+    }
+
     preamble();
     mov(reg_dsrc, ptr[this->param1 + GET_OFF(src)]);
     mov(reg_ddst, ptr[this->param1 + GET_OFF(dst)]);

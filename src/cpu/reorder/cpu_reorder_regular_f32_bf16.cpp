@@ -25,23 +25,24 @@ namespace cpu {
 const impl_list_map_t regular_f32_bf16_impl_list_map {
     // f32 -> bf16
     {{f32, bf16, 0}, {
-        rnn_weights_reorder_t<f32, bf16>::pd_t::create,
+        REG_REORDER_FN(rnn_weights_reorder_t, f32, bf16)
 
-        DNNL_X64_ONLY(x64::jit_uni_reorder_create,)
+        DNNL_X64_ONLY(REG_REORDER_FN(uni_reorder_t))
 
-        REG_SR_BIDIR(f32, any, bf16, nChw16c),
-        REG_SR_BIDIR(f32, any, bf16, nCdhw16c),
+        REG_SR_BIDIR(f32, nchw, bf16, nChw16c)
+        REG_SR_BIDIR(f32, any, bf16, nChw16c)
+        REG_SR_BIDIR(f32, any, bf16, nCdhw16c)
 
-        REG_SR(f32, oihw, bf16, OIhw8i16o2i, fmt_order::keep),
-        REG_SR(f32, goihw, bf16, gOIhw8i16o2i, fmt_order::keep),
-        REG_SR(f32, oihw, bf16, OIhw8o16i2o, fmt_order::keep),
-        REG_SR(f32, goihw, bf16, gOIhw8o16i2o, fmt_order::keep),
-        REG_SR(f32, oihw, bf16, IOhw8o16i2o, fmt_order::keep),
-        REG_SR(f32, goihw, bf16, gIOhw8o16i2o, fmt_order::keep),
-        REG_SR(f32, oihw, bf16, OIhw16i16o, fmt_order::keep),
-        REG_SR(f32, goihw, bf16, gOIhw16i16o, fmt_order::keep),
+        REG_SR(f32, oihw, bf16, OIhw8i16o2i, fmt_order::keep)
+        REG_SR(f32, goihw, bf16, gOIhw8i16o2i, fmt_order::keep)
+        REG_SR(f32, oihw, bf16, OIhw8o16i2o, fmt_order::keep)
+        REG_SR(f32, goihw, bf16, gOIhw8o16i2o, fmt_order::keep)
+        REG_SR(f32, oihw, bf16, IOhw8o16i2o, fmt_order::keep)
+        REG_SR(f32, goihw, bf16, gIOhw8o16i2o, fmt_order::keep)
+        REG_SR(f32, oihw, bf16, OIhw16i16o, fmt_order::keep)
+        REG_SR(f32, goihw, bf16, gOIhw16i16o, fmt_order::keep)
 
-        REG_SR(f32, any, bf16, any, fmt_order::any, spec::reference),
+        REG_SR(f32, any, bf16, any, fmt_order::any, spec::reference)
 
         nullptr,
     }},

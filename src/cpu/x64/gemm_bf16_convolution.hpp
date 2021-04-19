@@ -28,6 +28,8 @@
 #include "cpu/x64/cpu_reducer.hpp"
 #include "cpu/x64/injectors/jit_uni_postops_injector.hpp"
 #include "cpu/x64/jit_avx512_core_bf16cvt.hpp"
+#include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
+#include "cpu/ref_depthwise_injector.hpp"
 
 namespace dnnl {
 namespace impl {
@@ -123,7 +125,7 @@ private:
             const src_data_t *src_base, const wei_data_t *wei_base,
             const float *bia_base, dst_data_t *dst_base,
             const memory_tracking::grantor_t &scratchpad,
-            const void *post_ops_binary_rhs_arg_vec) const;
+            const void *post_ops_binary_rhs_arg_vec, int MB) const;
 
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 
@@ -179,7 +181,7 @@ private:
         Xbyak::Reg64 reserved_eltwise_gpr = r10;
         Xbyak::Opmask reserved_eltwise_maskr = k2;
 
-        Xbyak::Zmm vreg_sum_scale, vreg_bias;
+        Xbyak::Zmm vreg_sum_scale, vreg_bias, vreg_dw;
 
         Xbyak::Zmm bf16_emu_reserv_1 = Xbyak::Zmm(27);
         Xbyak::Zmm bf16_emu_reserv_2 = Xbyak::Zmm(28);
@@ -251,7 +253,7 @@ struct gemm_bf16_convolution_bwd_data_t : public primitive_t {
                     && set_default_alg_kind(alg_kind::convolution_direct)
                     && expect_data_types(diff_src_data_type, data_type::bf16,
                             data_type::undef, data_type::bf16, data_type::f32)
-                    && !has_zero_dim_memory() && attr()->has_default_values();
+                    && !has_zero_dim_memory() && is_supported_post_ops();
             if (!ok) return status::unimplemented;
 
             auto scratchpad = scratchpad_registry().registrar();
@@ -261,9 +263,42 @@ struct gemm_bf16_convolution_bwd_data_t : public primitive_t {
         }
 
         conv_gemm_conf_t jcp_;
+
+
+    protected:
+        virtual bool is_supported_post_ops() const {
+            const auto &p = this->attr()->post_ops_;
+            if (p.len() > 1)
+                return false;
+
+            auto all_post_ops_supported = [&]() {
+                bool ok = true;
+
+                for (int i = 0; i < p.len(); i++) {
+                    ok = ok && utils::one_of(p.entry_[i].kind, primitive_kind::depthwise);
+                }
+                return ok;
+            };
+
+            return all_post_ops_supported();
+        }
     };
 
-    gemm_bf16_convolution_bwd_data_t(const pd_t *apd) : primitive_t(apd) {}
+    gemm_bf16_convolution_bwd_data_t(const pd_t* apd) : primitive_t(apd) {
+        const auto& post_ops = pd()->attr()->post_ops_;
+        for (int i = 0; i < post_ops.len(); i++) {
+            auto& post_op = post_ops.entry_[i];
+            if (post_op.is_depthwise()) {
+                depthwise_injectors.push_back(new ref_depthwise_scalar_fwd_t(post_op.depthwise.alg));
+            }
+        }
+    }
+
+    ~gemm_bf16_convolution_bwd_data_t() {
+        for (auto inj : depthwise_injectors)
+            delete inj;
+        depthwise_injectors.clear();
+    }
 
     typedef typename prec_traits<data_type::bf16>::type diff_dst_data_t;
     typedef typename prec_traits<data_type::f32>::type acc_data_t;
@@ -282,9 +317,11 @@ private:
     status_t execute_backward_data_thr_nspc(const int ithr, const int nthr,
             diff_src_data_t *diff_src_base, const wei_data_t *wei_base,
             const diff_dst_data_t *diff_dst_base,
-            const memory_tracking::grantor_t &scratchpad) const;
+            const memory_tracking::grantor_t &scratchpad, int MB) const;
 
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
+
+    nstl::vector<ref_depthwise_scalar_fwd_t*> depthwise_injectors;
 };
 
 template <data_type_t diff_wei_data_type>

@@ -26,19 +26,20 @@ const impl_list_map_t regular_f32_s8_impl_list_map {
     // f32 -> s8
     {{f32, s8, 0}, {
         DNNL_X64_ONLY(x64::wino_reorder_t<f32, s8>::pd_t::create,)
-        rnn_weights_reorder_s8_t<f32>::pd_t::create,
-        rnn_brgemm_weights_reorder_s8_t<f32, s8>::pd_t::create,
+        REG_REORDER_FN(rnn_weights_reorder_s8_t, f32)
+        REG_REORDER_FN(rnn_brgemm_weights_reorder_s8_t, f32, s8)
 
         REG_FAST_DIRECT_COPY_COMMA(f32, s8)
 
         DNNL_X64_ONLY(x64::jit_uni_reorder_create,)
         DNNL_AARCH64_ONLY(aarch64::jit_uni_reorder_create,)
 
-        REG_SR_BIDIR(f32, any, s8, nChw16c),
-        REG_SR_BIDIR(f32, any, s8, OIhw4i16o4i),
-        REG_SR_BIDIR(f32, any, s8, gOIhw4i16o4i),
+        REG_SR_BIDIR(f32, any, s8, nChw16c)
+        REG_SR_BIDIR(f32, any, s8, nChw8c)
+        REG_SR_BIDIR(f32, any, s8, OIhw4i16o4i)
+        REG_SR_BIDIR(f32, any, s8, gOIhw4i16o4i)
 
-        REG_SR(f32, any, s8, any, fmt_order::any, spec::reference),
+        REG_SR(f32, any, s8, any, fmt_order::any, spec::reference)
 
         nullptr,
     }},

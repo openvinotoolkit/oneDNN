@@ -37,9 +37,9 @@ using namespace Xbyak;
 
 template <cpu_isa_t isa>
 jit_uni_dw_conv_fwd_kernel_f32<isa>::jit_uni_dw_conv_fwd_kernel_f32(
-        const jit_conv_conf_t &ajcp, const memory_desc_t &dst_md)
-    : jit_generator(nullptr, MAX_CODE_SIZE, true, isa), jcp(ajcp) {
-    if (jcp.with_eltwise || jcp.with_binary) {
+        const jit_conv_conf_t &ajcp, const memory_desc_t &dst_md, const primitive_attr_t &attr)
+    : jit_generator(nullptr, MAX_CODE_SIZE, true, isa), jcp(ajcp), attr_(attr) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise || jcp.with_quantization) {
         using namespace binary_injector;
         static constexpr bool preserve_gpr = true;
         static constexpr bool preserve_vmm = false;
@@ -53,10 +53,12 @@ jit_uni_dw_conv_fwd_kernel_f32<isa>::jit_uni_dw_conv_fwd_kernel_f32(
                 memory_desc_wrapper(dst_md), tail_size, k_oc_tail_mask,
                 use_exact_tail_scalar_bcast};
         static_params_t static_params {this->param1, rhs_arg_static_params};
+        quantization_injector::static_params_t quantization_static_params
+                {vmm_d_weights.getIdx(), vmm_d_bias.getIdx(), reg_d_weights, reg_d_bias};
 
         postops_injector_
                 = utils::make_unique<injector::jit_uni_postops_injector_t<isa>>(
-                        this, jcp.post_ops, static_params);
+                        this, jcp.post_ops, static_params, quantization_static_params);
     }
 }
 
@@ -272,8 +274,19 @@ void iterate(
 template <cpu_isa_t isa>
 void jit_uni_dw_conv_fwd_kernel_f32<isa>::apply_postops(
         const int ur_ch_blocks, const int ur_w, const bool is_ch_tail) {
-    if (this->jcp.with_eltwise || this->jcp.with_binary) {
+    if (this->jcp.with_eltwise || this->jcp.with_binary || this->jcp.with_depthwise || this->jcp.with_quantization) {
         const int repeats = max_repeats();
+
+        std::map<size_t, int> vmm_idx_off;
+        iterate(repeats, ur_ch_blocks, ur_w,
+                [&](const int r, const int ch, const int ow, const bool) {
+                    vmm_idx_off.insert({get_acc_reg_idx(r * ur_ch_blocks * ur_w + ch * ur_w + ow), (ch * repeats + r) * jcp.ch_block / repeats * sizeof(float)});
+                });
+
+        depthwise_injector::dynamic_params_t ddp {vmm_d_weights.getIdx(), vmm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
+                                                  ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off};
+        quantization_injector::dynamic_params_t qdp {ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off};
+
         injector_utils::vmm_index_set_t vmm_idxs;
         if (jcp.with_binary) {
             binary_injector::rhs_arg_dynamic_params_t rhs_arg_params,
@@ -333,16 +346,16 @@ void jit_uni_dw_conv_fwd_kernel_f32<isa>::apply_postops(
                 cmp(reg_tail, jcp.nb_ch_blocking * jcp.ch_block);
                 jge(postops_no_tail, T_NEAR);
                 postops_injector_->compute_vector_range(
-                        vmm_idxs, rhs_arg_params_tail);
+                        vmm_idxs, rhs_arg_params_tail, ddp, qdp);
                 jmp(postops_done, T_NEAR);
                 L(postops_no_tail);
             } else if (is_ch_tail) {
                 postops_injector_->compute_vector_range(
-                        vmm_idxs, rhs_arg_params_tail);
+                        vmm_idxs, rhs_arg_params_tail, ddp, qdp);
             }
             if (!is_ch_tail) {
                 postops_injector_->compute_vector_range(
-                        vmm_idxs, rhs_arg_params);
+                        vmm_idxs, rhs_arg_params, ddp, qdp);
                 L(postops_done);
             }
         } else {
@@ -351,7 +364,7 @@ void jit_uni_dw_conv_fwd_kernel_f32<isa>::apply_postops(
                         vmm_idxs.emplace(get_acc_reg_idx(
                                 r * ur_ch_blocks * ur_w + ch * ur_w + ow));
                     });
-            postops_injector_->compute_vector_range(vmm_idxs);
+            postops_injector_->compute_vector_range(vmm_idxs, binary_injector::rhs_arg_dynamic_params_t(), ddp, qdp);
         }
     }
 }
@@ -756,6 +769,37 @@ inline void jit_uni_dw_conv_bwd_data_kernel_f32<isa>::apply_filter(
 }
 
 template <cpu_isa_t isa>
+void jit_uni_dw_conv_bwd_data_kernel_f32<isa>::apply_postprocess(int ur_ch_blocks, int ur_str_w) {
+    int repeats = isa == sse41 ? 2 : 1;
+
+    const auto &p = attr_.post_ops_;
+    int depthwise_inj_idx = 0;
+    for (int i = 0; i < p.len(); i++) {
+        auto& post_op = p.entry_[i];
+        if (post_op.is_depthwise()) {
+            mov(reg_d_weights, reinterpret_cast<size_t>(post_op.depthwise.weights_data));
+            mov(reg_d_bias, reinterpret_cast<size_t>(post_op.depthwise.biases_data));
+
+            add(reg_d_weights, ptr[this->param1 + GET_OFF(ic_off)]);
+            add(reg_d_bias, ptr[this->param1 + GET_OFF(ic_off)]);
+
+            for (int ch = 0; ch < ur_ch_blocks; ch++) {
+                for (int k = 0; k < repeats; k++) {
+                    int start_idx = get_acc_reg(k*ur_ch_blocks*ur_str_w + ur_str_w * ch).getIdx();
+                    int end_idx = get_acc_reg(k*ur_ch_blocks*ur_str_w + ur_str_w * ch + ur_str_w).getIdx();
+
+                    depthwise_injectors[depthwise_inj_idx]->compute_vector_range(start_idx, end_idx, reg_d_weights, reg_d_bias);
+
+                    add(reg_d_weights, jcp.ch_block / repeats * sizeof(float));
+                    add(reg_d_bias, jcp.ch_block / repeats * sizeof(float));
+                }
+            }
+        }
+        depthwise_inj_idx++;
+    }
+}
+
+template <cpu_isa_t isa>
 inline void jit_uni_dw_conv_bwd_data_kernel_f32<isa>::store_dsrc(
         int ur_ch_blocks, int ur_str_w) {
     int ch_blk = jcp.ch_block;
@@ -796,6 +840,7 @@ inline void jit_uni_dw_conv_bwd_data_kernel_f32<isa>::loop_body(
 
         load_ddst(ur_ch_blocks, ur_w);
         apply_filter(ur_ch_blocks, ur_w);
+        apply_postprocess(ur_ch_blocks, ur_w);
         store_dsrc(ur_ch_blocks, ur_w);
 
         add(reg_dsrc, sizeof(float) * ur_w * jcp.ch_block * jcp.stride_w);
@@ -817,6 +862,7 @@ inline void jit_uni_dw_conv_bwd_data_kernel_f32<isa>::loop_body(
 
         load_ddst(ur_ch_blocks, ur_w);
         apply_filter(ur_ch_blocks, ur_w);
+        apply_postprocess(ur_ch_blocks, ur_w);
         store_dsrc(ur_ch_blocks, ur_w);
 
         add(reg_dsrc, sizeof(float) * ur_w * jcp.ch_block * jcp.stride_w);
@@ -831,6 +877,17 @@ inline void jit_uni_dw_conv_bwd_data_kernel_f32<isa>::loop_body(
 
 template <cpu_isa_t isa>
 void jit_uni_dw_conv_bwd_data_kernel_f32<isa>::generate() {
+    const auto &p = attr_.post_ops_;
+    for (int i = 0; i < p.len(); i++) {
+        auto &post_op = p.entry_[i];
+        if (post_op.is_depthwise()) {
+            depthwise_injectors.push_back(new jit_uni_depthwise_injector_f32<isa>(
+                    this,
+                    post_op.depthwise.alg
+            ));
+        }
+    }
+
     preamble();
 
     mov(reg_dsrc, ptr[this->param1 + GET_OFF(src)]);
