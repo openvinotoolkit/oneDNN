@@ -2816,11 +2816,28 @@ status_t jit_blk_reorder_t::pd_t::init(const engine_t *engine,
     // TODO: Add tail processing support in blk_reorder
     VDISPATCH_REORDER(!prb.is_tail_present, "tail processing is not supported");
 
+    // NB! Fall back to ref, if input and output both batch-strided
+    bool batch_strided_input = false;
+    bool batch_strided_output = false;
+    if (prb.ndims > 1) {
+        int batch_idx = prb.nodes[0].is > prb.nodes[1].is ? 0 : 1;
+        int channel_idx = batch_idx == 0 ? 1 : 0;
+        batch_strided_input =
+                (ptrdiff_t) prb.nodes[channel_idx].n * prb.nodes[channel_idx].is < prb.nodes[batch_idx].is;
+        batch_idx = prb.nodes[0].os > prb.nodes[1].os ? 0 : 1;
+        channel_idx = batch_idx == 0 ? 1 : 0;
+        batch_strided_output =
+                (ptrdiff_t) prb.nodes[channel_idx].n * prb.nodes[channel_idx].is < prb.nodes[batch_idx].is;
+    }
+
     prb_tile_normalize(prb);
     DEBUG({
         verbose_printf(
                 verbose_t::debuginfo, "tile : %s\n", prb_dump(prb).c_str());
     });
+    // NB! Fall back to ref, if input and output both batch-strided
+    if (batch_strided_input && batch_strided_output)
+        return status::unimplemented;
 
     VDISPATCH_REORDER(tr::jit_single_blk_kernel_t::applicable(prb),
             "applicable() call failed");
