@@ -499,11 +499,13 @@ const impl_list_map_t regular_impl_list_map {
 
     // u8 ->
     {{u8, data_type::undef, 0}, {
+        // Why do all this cases enabled only for intel compiler?
         REG_FAST_DIRECT_COPY_COMMA(u8, f32)
         REG_FAST_DIRECT_COPY_COMMA(u8, s32)
         REG_FAST_DIRECT_COPY_COMMA(u8, bf16)
         REG_FAST_DIRECT_COPY_COMMA(u8, s8)
-        REG_FAST_DIRECT_COPY_COMMA(u8, u8)
+        // REG_FAST_DIRECT_COPY_COMMA(u8, u8)
+        REG_SR_DIRECT_COPY(u8, u8)
 
         DNNL_X64_ONLY(REG_REORDER_FN(uni_reorder_t))
 
