@@ -214,42 +214,44 @@ static inline bool mayiuse(const cpu_isa_t cpu_isa, bool soft = false) {
 
     switch (cpu_isa) {
         case sse41: return cpu().has(Cpu::tSSE41);
-        case avx: return cpu().has(Cpu::tAVX);
-        case avx2: return cpu().has(Cpu::tAVX2);
-        case avx_vnni: return cpu().has(Cpu::tAVX_VNNI);
-        case avx2_vnni: return mayiuse(avx2, soft) && mayiuse(avx_vnni, soft);
-        case avx512_common: return cpu().has(Cpu::tAVX512F);
-        case avx512_core:
-            return cpu().has(Cpu::tAVX512F) && cpu().has(Cpu::tAVX512BW)
-                    && cpu().has(Cpu::tAVX512VL) && cpu().has(Cpu::tAVX512DQ);
-        case avx512_core_vnni:
-            return cpu().has(Cpu::tAVX512F) && cpu().has(Cpu::tAVX512BW)
-                    && cpu().has(Cpu::tAVX512VL) && cpu().has(Cpu::tAVX512DQ)
-                    && cpu().has(Cpu::tAVX512_VNNI);
-        case avx512_mic:
-            return cpu().has(Cpu::tAVX512F) && cpu().has(Cpu::tAVX512CD)
-                    && cpu().has(Cpu::tAVX512ER) && cpu().has(Cpu::tAVX512PF);
-        case avx512_mic_4ops:
-            return mayiuse(avx512_mic, soft) && cpu().has(Cpu::tAVX512_4FMAPS)
-                    && cpu().has(Cpu::tAVX512_4VNNIW);
-        case avx512_core_bf16:
-            return mayiuse(avx512_core_vnni, soft)
-                    && cpu().has(Cpu::tAVX512_BF16);
-        case amx_tile: return cpu().has(Cpu::tAMX_TILE);
-        case amx_int8:
-            return mayiuse(amx_tile, soft) && cpu().has(Cpu::tAMX_INT8);
-        case amx_bf16:
-            return mayiuse(amx_tile, soft) && cpu().has(Cpu::tAMX_BF16);
-        case avx512_core_bf16_amx_int8:
-            return mayiuse(avx512_core_bf16, soft) && mayiuse(amx_int8, soft);
-        case avx512_core_bf16_amx_bf16:
-            return mayiuse(avx512_core_bf16, soft) && mayiuse(amx_bf16, soft);
-        case avx512_core_amx:
-            return mayiuse(avx512_core_bf16_amx_int8, soft)
-                    && mayiuse(avx512_core_bf16_amx_bf16, soft);
-        case avx512_vpopcnt: return cpu().has(Cpu::tAVX512_VPOPCNTDQ);
+//        case avx: return cpu().has(Cpu::tAVX);
+//        case avx2: return cpu().has(Cpu::tAVX2);
+//        case avx_vnni: return cpu().has(Cpu::tAVX_VNNI);
+//        case avx2_vnni: return mayiuse(avx2, soft) && mayiuse(avx_vnni, soft);
+//        case avx512_common: return cpu().has(Cpu::tAVX512F);
+//        case avx512_core:
+//            return cpu().has(Cpu::tAVX512F) && cpu().has(Cpu::tAVX512BW)
+//                    && cpu().has(Cpu::tAVX512VL) && cpu().has(Cpu::tAVX512DQ);
+//        case avx512_core_vnni:
+//            return cpu().has(Cpu::tAVX512F) && cpu().has(Cpu::tAVX512BW)
+//                    && cpu().has(Cpu::tAVX512VL) && cpu().has(Cpu::tAVX512DQ)
+//                    && cpu().has(Cpu::tAVX512_VNNI);
+//        case avx512_mic:
+//            return cpu().has(Cpu::tAVX512F) && cpu().has(Cpu::tAVX512CD)
+//                    && cpu().has(Cpu::tAVX512ER) && cpu().has(Cpu::tAVX512PF);
+//        case avx512_mic_4ops:
+//            return mayiuse(avx512_mic, soft) && cpu().has(Cpu::tAVX512_4FMAPS)
+//                    && cpu().has(Cpu::tAVX512_4VNNIW);
+//        case avx512_core_bf16:
+//            return mayiuse(avx512_core_vnni, soft)
+//                    && cpu().has(Cpu::tAVX512_BF16);
+//        case amx_tile: return cpu().has(Cpu::tAMX_TILE);
+//        case amx_int8:
+//            return mayiuse(amx_tile, soft) && cpu().has(Cpu::tAMX_INT8);
+//        case amx_bf16:
+//            return mayiuse(amx_tile, soft) && cpu().has(Cpu::tAMX_BF16);
+//        case avx512_core_bf16_amx_int8:
+//            return mayiuse(avx512_core_bf16, soft) && mayiuse(amx_int8, soft);
+//        case avx512_core_bf16_amx_bf16:
+//            return mayiuse(avx512_core_bf16, soft) && mayiuse(amx_bf16, soft);
+//        case avx512_core_amx:
+//            return mayiuse(avx512_core_bf16_amx_int8, soft)
+//                    && mayiuse(avx512_core_bf16_amx_bf16, soft);
+//        case avx512_vpopcnt: return cpu().has(Cpu::tAVX512_VPOPCNTDQ);
         case isa_any: return true;
         case isa_all: return false;
+        // NB!
+        default: return false;
     }
     return false;
 }
