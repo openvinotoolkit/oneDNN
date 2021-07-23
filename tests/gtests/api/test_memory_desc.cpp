@@ -88,6 +88,19 @@ HANDLE_EXCEPTIONS_FOR_TEST(memory_desc_test_t, TestComparison) {
     EXPECT_NE(plain_md, blocked_md);
 }
 
+HANDLE_EXCEPTIONS_FOR_TEST(memory_desc_test_t, TestSimilarToStrideStart) {
+    auto first = memory::desc({2, 3}, memory::data_type::f32, {3, 1});
+    auto second = memory::desc({2, 3}, memory::data_type::f32, {4, 1});
+    const impl::memory_desc_wrapper first_wrapper(first.get());
+    const impl::memory_desc_wrapper second_wrapper(second.get());
+
+    EXPECT_FALSE(first_wrapper.similar_to(second_wrapper));
+    EXPECT_TRUE(first_wrapper.similar_to(second_wrapper, true, true, 0, 1));
+    EXPECT_FALSE(first_wrapper.similar_to(second_wrapper, true, true, 1, 0));
+    EXPECT_FALSE(first_wrapper.similar_to(second_wrapper, true, true, 0, -2));
+    EXPECT_FALSE(first_wrapper.similar_to(second_wrapper, true, true, 0, 3));
+}
+
 TEST(c_api_host_scalar_md, TestHostScalarF32) {
     dnnl_memory_desc_t scalar_md = nullptr;
     DNNL_CHECK(dnnl_memory_desc_create_host_scalar(&scalar_md, dnnl_f32));
