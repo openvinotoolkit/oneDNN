@@ -96,6 +96,15 @@ public:
             const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params)
             = 0;
     virtual void compute_vector_range(int start_idx, int end_idx) = 0;
+    virtual void compute_vector_range(size_t start_idx, size_t end_idx) = 0;
+
+    virtual void compute_vector_range(
+            const injector_utils::vmm_index_set_t &vmm_idxs,
+            const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
+            const depthwise_injector::dynamic_params_t &ddp,
+            const quantization_injector::dynamic_params_t &qdp,
+            bool is_broadcast)
+            = 0;
 
     virtual void compute_vector_range(
             const injector_utils::vmm_index_set_t &vmm_idxs,
@@ -104,7 +113,13 @@ public:
             const quantization_injector::dynamic_params_t &qdp)
             = 0;
 
-    virtual void compute_vector_range(size_t start_idx, size_t end_idx,
+    virtual void compute_vector(size_t idx,
+            const depthwise_injector::dynamic_params_t &ddp,
+            const quantization_injector::dynamic_params_t &qdp,
+            bool is_broadcast = false)
+            = 0;
+
+    virtual void compute_vector(size_t idx,
             const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
             const depthwise_injector::dynamic_params_t &ddp,
             const quantization_injector::dynamic_params_t &qdp)
@@ -158,6 +173,17 @@ public:
                     &quantization_static_params);
     jit_uni_postops_injector_t(jit_generator_t *host,
             const post_ops_t &post_ops,
+            const eltwise_injector::static_params_t &eltwise_static_params,
+            const quantization_injector::static_params_t
+                    &quantization_static_params);
+    jit_uni_postops_injector_t(jit_generator_t *host,
+            const post_ops_t &post_ops,
+            const binary_injector::static_params_t &binary_static_params,
+            const eltwise_injector::static_params_t &eltwise_static_params,
+            const quantization_injector::static_params_t
+                    &quantization_static_params);
+    jit_uni_postops_injector_t(jit_generator_t *host,
+            const post_ops_t &post_ops,
             const binary_injector::static_params_t &binary_static_params,
             const eltwise_injector::static_params_t &eltwise_static_params,
             const quantization_injector::static_params_t
@@ -169,13 +195,24 @@ public:
     void compute_vector_range(const injector_utils::vmm_index_set_t &vmm_idxs,
             const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
             const depthwise_injector::dynamic_params_t &ddp,
-            const quantization_injector::dynamic_params_t &qdp) override;
-
-    void compute_vector_range(size_t start_idx, size_t end_idx,
+            const quantization_injector::dynamic_params_t &qdp,
+            bool is_broadcast) override;
+    void compute_vector_range(const injector_utils::vmm_index_set_t &vmm_idxs,
             const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
             const depthwise_injector::dynamic_params_t &ddp,
             const quantization_injector::dynamic_params_t &qdp) override;
-
+    void compute_vector_range(size_t start_idx, size_t end_idx,
+            const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
+            const depthwise_injector::dynamic_params_t &ddp,
+            const quantization_injector::dynamic_params_t &qdp);
+    void compute_vector(size_t idx,
+            const depthwise_injector::dynamic_params_t &ddp,
+            const quantization_injector::dynamic_params_t &qdp,
+            bool is_broadcast = false) override;
+    void compute_vector(size_t idx,
+            const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
+            const depthwise_injector::dynamic_params_t &ddp,
+            const quantization_injector::dynamic_params_t &qdp) override;
     // See `jit_uni_postops_injector_base_t::compute_vector_range(...)`
     void compute_vector_range(const injector_utils::vmm_index_set_t &vmm_idxs,
             const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params)
@@ -190,6 +227,7 @@ public:
             override;
 
     void compute_vector_range(int start_idx, int end_idx) override;
+    void compute_vector_range(size_t start_idx, size_t end_idx) override;
 
     // See `jit_uni_postops_injector_base_t::compute_vector(...)`
     void compute_vector(int idx,

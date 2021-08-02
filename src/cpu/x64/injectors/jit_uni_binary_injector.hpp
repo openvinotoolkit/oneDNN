@@ -124,7 +124,8 @@ struct rhs_arg_static_params_t {
             bool preserve_vmm_helper, int abi_param_offset,
             dim_t dst_orig_offset, const memory_desc_wrapper &dst_d,
             int tail_size, const Xbyak::Opmask &tail_opmask,
-            bool use_exact_tail_scalar_bcast);
+            bool use_exact_tail_scalar_bcast,
+            std::size_t rhs_prelu_helper_vmm_idx = 0);
     rhs_arg_static_params_t(int rhs_dt_helper_vmm_idx,
             const Xbyak::Reg64 &rhs_addr_reg,
             const Xbyak::Reg64 &rhs_helper_reg,
@@ -132,8 +133,8 @@ struct rhs_arg_static_params_t {
             bool preserve_vmm_helper, int abi_param_offset,
             dim_t dst_orig_offset, const memory_desc_wrapper &dst_d,
             int tail_size, const Xbyak::Opmask &tail_opmask,
-            const Xbyak::Reg64 &reg_tail_size,
-            bool use_exact_tail_scalar_bcast);
+            const Xbyak::Reg64 &reg_tail_size, bool use_exact_tail_scalar_bcast,
+            std::size_t rhs_prelu_helper_vmm_idx = 0);
 
     bool is_opmask_set() const noexcept { return is_opmask_set_; }
 
@@ -151,6 +152,8 @@ struct rhs_arg_static_params_t {
     bool use_exact_tail_scalar_bcast;
     Xbyak::Reg64 reg_tail_size;
     bool is_tail;
+
+    mutable std::size_t rhs_prelu_helper_vmm_idx;
 
 private:
     rhs_arg_static_params_t(int rhs_dt_helper_vmm_idx,
@@ -550,10 +553,18 @@ private:
     execute_cmp_binary(const Vmm &dst, const Vmm &lhs, const T &rhs,
             const unsigned int cmp_predicate) const;
     template <typename T>
+    typename std::enable_if<std::is_same<T, Xbyak::Zmm>::value
+            || std::is_same<T, Xbyak::Address>::value>::type
+    execute_prelu_binary(const Vmm &dst, const Vmm &lhs, const T &rhs) const;
+    template <typename T>
     typename std::enable_if<!(std::is_same<T, Xbyak::Zmm>::value
             || std::is_same<T, Xbyak::Address>::value)>::type
     execute_cmp_binary(const Vmm &dst, const Vmm &lhs, const T &rhs,
             const unsigned int cmp_predicate) const;
+    template <typename T>
+    typename std::enable_if<!(std::is_same<T, Xbyak::Zmm>::value
+            || std::is_same<T, Xbyak::Address>::value)>::type
+    execute_prelu_binary(const Vmm &dst, const Vmm &lhs, const T &rhs) const;
     template <typename T>
     void execute_binary(alg_kind_t binary_alg, const Vmm &dst, const Vmm &lhs,
             const T &rhs) const;
