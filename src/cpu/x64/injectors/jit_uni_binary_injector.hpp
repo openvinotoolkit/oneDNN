@@ -598,6 +598,8 @@ private:
     void execute_cmp_binary(const Vmm &dst, const Vmm &lhs, const T &rhs,
             const unsigned int cmp_predicate) const;
     template <typename T>
+    void execute_prelu_binary(const Vmm &dst, const Vmm &lhs, const T &rhs) const;
+    template <typename T>
     void execute_binary(alg_kind_t binary_alg, const Vmm &dst, const Vmm &lhs,
             const T &rhs) const;
     void execute_prelu(const Vmm &dst, const Xbyak::Operand &rhs) const;

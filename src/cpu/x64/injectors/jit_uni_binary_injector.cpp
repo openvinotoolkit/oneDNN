@@ -2972,7 +2972,7 @@ void jit_uni_binary_injector_t<Vmm>::inject_binary(
             || (scalar_f32 && !has_avx512_core_)
             || with_tail_not_fusable_to_binary_op
             || !binary_op_with_unaligned_mem_operand_allowed_
-            || (cmp_op && !has_avx512_core_)
+            || ((cmp_op || alg == alg_kind::binary_prelu) && !has_avx512_core_)
             || cmp_op_with_tail_vector_mem_operand;
 
     if (process_rhs_arg_using_tmp_vmm) {
@@ -3629,6 +3629,43 @@ void jit_uni_binary_injector_t<Vmm>::execute_cmp_binary(const Vmm &dst,
 
 template <typename Vmm>
 template <typename T>
+void jit_uni_binary_injector_t<Vmm>::execute_prelu_binary(
+        const Vmm &dst, const Vmm &lhs, const T &rhs) const {
+    int scratch_idx = 0;
+    while (scratch_idx == dst.getIdx() || scratch_idx == lhs.getIdx()
+            || (!rhs.isMEM() && scratch_idx == rhs.getIdx()))
+        ++scratch_idx;
+    const Vmm scratch(scratch_idx);
+    push_vmm(host_, scratch);
+    if (has_avx512_core_) {
+        const auto mask = get_aux_kmask();
+        const Xbyak::Opmask tail_mask(dst.getOpmaskIdx());
+        push_opmask(host_, mask);
+        if (dst.getOpmaskIdx())
+            host_->vmovups(Vmm(dst.getIdx()) | tail_mask | host_->T_z, lhs);
+        host_->uni_vpxor(scratch, scratch, scratch);
+        host_->vcmpps(mask | tail_mask, scratch, lhs,
+            jit_generator_t::_cmp_nle_us);
+        host_->uni_vmulps(Vmm(dst.getIdx()) | mask, lhs, rhs);
+        pop_opmask(host_, mask);
+    } else {
+        int mask_idx = scratch_idx + 1;
+        while (mask_idx == dst.getIdx() || mask_idx == lhs.getIdx()
+            || (!rhs.isMEM() && mask_idx == rhs.getIdx()))
+            ++mask_idx;
+        const Vmm mask(mask_idx);
+        push_vmm(host_, mask);
+        host_->uni_vmulps(scratch, lhs, rhs);
+        host_->uni_vpxor(mask, mask, mask);
+        host_->uni_vcmpps(mask, mask, lhs, jit_generator_t::_cmp_nle_us);
+        host_->uni_vblendvps(dst, lhs, scratch, mask);
+        pop_vmm(host_, mask);
+    }
+    pop_vmm(host_, scratch);
+}
+
+template <typename Vmm>
+template <typename T>
 void jit_uni_binary_injector_t<Vmm>::execute_binary(alg_kind_t binary_alg,
         const Vmm &dst, const Vmm &lhs, const T &rhs) const {
     switch (binary_alg) {
@@ -3655,6 +3692,9 @@ void jit_uni_binary_injector_t<Vmm>::execute_binary(alg_kind_t binary_alg,
             break;
         case alg_kind::binary_ne:
             execute_cmp_binary(dst, lhs, rhs, jit_generator_t::_cmp_neq_uq);
+            break;
+        case alg_kind::binary_prelu:
+            execute_prelu_binary(dst, lhs, rhs);
             break;
         default: assert(!"unsupported algorithm");
     }

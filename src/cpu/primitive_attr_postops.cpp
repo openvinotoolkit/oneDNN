@@ -43,6 +43,7 @@ float compute_binary_scalar(alg_kind_t alg, float x, float y, bool c) {
         case binary_ne: return x != y;
         case binary_select: return c ? x : y;
         case binary_mul_inplace: return x * y;
+        case binary_prelu: return x >= 0 ? x : x * y;
         default: assert(!"unsupported operation!"); return NAN;
     }
 }
@@ -143,7 +144,7 @@ ref_binary_scalar_t::ref_binary_scalar_t(alg_kind_t alg) : alg_(alg) {
             alg_kind::binary_sub, alg_kind::binary_ge, alg_kind::binary_gt,
             alg_kind::binary_le, alg_kind::binary_lt, alg_kind::binary_eq,
             alg_kind::binary_ne, alg_kind::binary_select,
-            alg_kind::binary_mul_inplace));
+            alg_kind::binary_mul_inplace, alg_kind::binary_prelu));
 }
 
 ref_binary_scalar_t::ref_binary_scalar_t(
@@ -216,6 +217,8 @@ ref_post_ops_t::ref_post_ops_t(const post_ops_t &po, bool skip_sum)
             eltwise_po_.emplace_back(e.eltwise);
         } else if (po_.contain(primitive_kind::binary, idx)) {
             binary_po_.emplace_back(e.binary);
+        } else if (po_.contain(primitive_kind::depthwise, idx)) {
+            depthwise_po_.emplace_back(e.depthwise.alg);
         }
     }
 }
@@ -315,12 +318,13 @@ float ref_dropout(float src, uint8_t *mask, dim_t idx, float p, int64_t seed,
     return (m) ? src * inv_q : 0;
 }
 
-void ref_post_ops_t::execute(float &res, const args_t &args) const {
+void ref_post_ops_t::execute(float &res, const args_t &args, const size_t oc) const {
     if (po_.len() == 0) return;
 
     auto it_eltwise_po = eltwise_po_.begin();
     auto it_binary_po = binary_po_.begin();
     auto it_prelu_md = prelu_md_.begin();
+    auto it_depthwise_po = depthwise_po_.begin();
     for (auto idx = 0; idx < po_.len(); ++idx) {
         const auto &e = po_.entry_[idx];
         switch (e.kind) {
@@ -399,6 +403,13 @@ void ref_post_ops_t::execute(float &res, const args_t &args) const {
                 const auto &weights_value = prelu_weights[off];
                 res = weights_value * res;
                 ++it_prelu_md;
+            } break;
+            case primitive_kind::depthwise: {
+                auto depthwise_weights = e.depthwise.weights_data;
+                auto depthwise_bias = e.depthwise.biases_data;
+                res = it_depthwise_po->compute_scalar(res, depthwise_weights + oc,
+                    depthwise_bias ? depthwise_bias + oc : nullptr);
+                ++it_depthwise_po;
             } break;
             case primitive_kind::quantization: {
                 assert(args.ctx && args.dst_md && args.l_offset >= 0);

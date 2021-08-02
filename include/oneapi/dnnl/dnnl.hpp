@@ -515,6 +515,8 @@ enum class algorithm {
     binary_select = dnnl_binary_select,
     /// In-place multiplication: RHS = DST
     binary_mul_inplace = dnnl_binary_mul_inplace,
+    /// Binary prelu
+    binary_prelu = dnnl_binary_prelu,
     /// Nearest Neighbor resampling method
     resampling_nearest = dnnl_resampling_nearest,
     /// Linear (Bilinear, Trilinear) resampling method

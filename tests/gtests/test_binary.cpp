@@ -363,6 +363,64 @@ TEST(binary_attr_test, BinaryPostOpHonorsRhsOffset0) {
     EXPECT_FLOAT_EQ(dst[3], rhs_parent[3]);
 }
 
+TEST(binary_attr_test, BinaryPreluStandaloneAndPostOp) {
+        SKIP_IF(get_test_engine_kind() != engine::kind::cpu,
+                        "The test requires host-accessible memory.");
+
+        auto eng = get_test_engine();
+        auto strm = make_stream(eng);
+        const int count = 35;
+        const memory::desc data_md({1, count}, data_type::f32, tag::ab);
+        std::vector<float> src(count), zeros(count, 0.f), dst(count);
+        for (int idx = 0; idx < count; ++idx)
+                src[idx] = static_cast<float>(idx % 9 - 4);
+        src[0] = -0.f;
+
+        memory src_mem(data_md, eng, src.data());
+        memory zeros_mem(data_md, eng, zeros.data());
+        memory dst_mem(data_md, eng, dst.data());
+
+        for (bool scalar : {false, true}) {
+                const memory::desc rhs_md(
+                                {1, scalar ? 1 : count}, data_type::f32, tag::ab);
+                std::vector<float> rhs(scalar ? 1 : count);
+                for (size_t idx = 0; idx < rhs.size(); ++idx)
+                        rhs[idx] = idx % 2 ? -0.5f : 0.25f;
+                memory rhs_mem(rhs_md, eng, rhs.data());
+
+                const binary::primitive_desc standalone_pd(
+                                eng, algorithm::binary_prelu, data_md, rhs_md, data_md);
+                binary(standalone_pd)
+                                .execute(strm, {{DNNL_ARG_SRC_0, src_mem},
+                                                                           {DNNL_ARG_SRC_1, rhs_mem},
+                                                                           {DNNL_ARG_DST, dst_mem}});
+                strm.wait();
+                for (int idx = 0; idx < count; ++idx)
+                        EXPECT_FLOAT_EQ(dst[idx], src[idx] >= 0.f
+                                                        ? src[idx]
+                                                        : src[idx] * rhs[scalar ? 0 : idx]);
+
+                post_ops ops;
+                ops.append_binary(algorithm::binary_prelu, rhs_md);
+                primitive_attr attr;
+                attr.set_post_ops(ops);
+                const binary::primitive_desc fused_pd(
+                                eng, algorithm::binary_add, data_md, data_md, data_md, attr);
+                binary(fused_pd)
+                                .execute(strm, {{DNNL_ARG_SRC_0, src_mem},
+                                                                           {DNNL_ARG_SRC_1, zeros_mem},
+                                                                           {DNNL_ARG_DST, dst_mem},
+                                                                           {DNNL_ARG_ATTR_MULTIPLE_POST_OP(0)
+                                                                                                           | DNNL_ARG_SRC_1,
+                                                                                           rhs_mem}});
+                strm.wait();
+                for (int idx = 0; idx < count; ++idx)
+                        EXPECT_FLOAT_EQ(dst[idx], src[idx] >= 0.f
+                                                        ? src[idx]
+                                                        : src[idx] * rhs[scalar ? 0 : idx]);
+        }
+}
+
 static auto expected_failures = []() {
     return ::testing::Values(
             // test tag::any support
