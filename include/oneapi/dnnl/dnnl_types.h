@@ -2191,6 +2191,8 @@ typedef enum {
     dnnl_binary_ne = 0x1fffb,
     /// Binary select
     dnnl_binary_select = 0x1fffc,
+    /// Binary prelu
+    dnnl_binary_prelu = 0x1fffd,
     /// Nearest Neighbor Resampling Method
     dnnl_resampling_nearest = 0x2fff0,
     /// Linear Resampling Method

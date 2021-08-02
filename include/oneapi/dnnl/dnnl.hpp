@@ -480,6 +480,8 @@ enum class algorithm {
     binary_ne = dnnl_binary_ne,
     /// Binary select
     binary_select = dnnl_binary_select,
+    /// Binary prelu
+    binary_prelu = dnnl_binary_prelu,
     /// Nearest Neighbor resampling method
     resampling_nearest = dnnl_resampling_nearest,
     /// Linear (Bilinear, Trilinear) resampling method

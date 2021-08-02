@@ -160,7 +160,7 @@ status_t dnnl_binary_primitive_desc_create_v2(
     VCHECK_BINARY(
             one_of(alg_kind, binary_add, binary_mul, binary_max, binary_min,
                     binary_div, binary_sub, binary_ge, binary_gt, binary_le,
-                    binary_lt, binary_eq, binary_ne, binary_select),
+                    binary_lt, binary_eq, binary_ne, binary_select, binary_prelu),
             VERBOSE_BAD_ALGORITHM);
 
     CHECK(binary_md_check(engine, alg_kind, src0_md, src1_md, src2_md, dst_md));
