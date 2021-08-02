@@ -258,7 +258,7 @@ status_t post_ops_t::validate_binary(alg_kind_t alg,
     using namespace alg_kind;
     bool alg_ok = one_of(alg, binary_add, binary_mul, binary_max, binary_min,
             binary_div, binary_sub, binary_ge, binary_gt, binary_le, binary_lt,
-            binary_eq, binary_ne, binary_select);
+            binary_eq, binary_ne, binary_select, binary_prelu);
     bool is_ternary_op = (alg == binary_select);
 
     VCHECK_ATTR(alg_ok, VERBOSE_BAD_ALGORITHM);
