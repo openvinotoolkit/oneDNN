@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2020 Intel Corporation
+* Copyright 2020-2025 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -15,6 +15,7 @@
 *******************************************************************************/
 
 #include <functional>
+#include <vector>
 
 #include "cpu/x64/injectors/jit_uni_postops_injector.hpp"
 #include "cpu/x64/jit_gemm_x8s8s32x_conv_zp_src_pad_comp.hpp"
@@ -39,17 +40,17 @@ struct jit_pp_ker_t : pp_ker_t, public jit_generator_t {
     status_t create_kernel() override {
         return jit_generator_t::create_kernel();
     }
-    void operator()(void *void_dst, const acc_data_t *acc, const char *bias,
+    void operator()(void *void_dst, acc_data_t *acc, const char *bias,
             const float *scales, float dst_scale, float sum_scale,
             float signed_scale, int g, int /* mb */, size_t start, size_t end,
             const zero_point_call_params_t &zp,
             const void *post_ops_binary_rhs_arg_vec, const void *dst_orig,
             const exec_ctx_t & /* ctx */, const memory_desc_t & /* dst_md */,
-            const single_gemm_conv_chunk_desc_t &) const override;
+            const single_gemm_conv_chunk_desc_t &chunk_desc) const override;
 
 private:
-    void apply_postops(
-            const Xbyak::Reg64 &reg_dst, const int idx, const dim_t offset);
+        void apply_postops(const Xbyak::Reg64 &reg_dst, int idx, dim_t offset,
+            bool apply_mask);
     void generate() override;
     void append_zp_src_comp(dim_t offset, int idx, bool apply_mask);
     void load_as_f32(const Xbyak::Zmm &dst, const Xbyak::Opmask &mask,
@@ -93,15 +94,19 @@ private:
 
     std::unique_ptr<injector::jit_uni_postops_injector_t<Xbyak::Zmm>>
             postops_injector_;
+        std::vector<std::unique_ptr<jit_uni_eltwise_injector_t<Xbyak::Zmm>>>
+            legacy_eltwise_injectors_;
+        std::vector<std::unique_ptr<jit_uni_depthwise_injector_f32<avx512_core>>>
+            legacy_depthwise_injectors_;
 
     int number_of_reserved_zmm_regs_;
     const dim_t bias_data_type_size_;
     const dim_t dst_data_type_size_;
     const bool saturation_needed_;
+        const bool with_legacy_postops_;
 
     const Xbyak::Reg64 &reg_param_ = rdi;
-    const Xbyak::Reg64 &reg_tmp_ = rcx; // intentional for shifting purposes
-
+    const Xbyak::Reg64 &reg_tmp_ = rcx;
     const Xbyak::Reg64 &reg_dst_ = rdx;
     const Xbyak::Reg64 &reg_acc_ = rax;
     const Xbyak::Reg64 &reg_bias_ = rbx;
@@ -113,9 +118,7 @@ private:
     const Xbyak::Reg64 &reg_zp_pad_comp_temp_ = r10;
     const Xbyak::Reg64 &reg_zp_pad_comp_ = r11;
     const Xbyak::Reg8 &reg_should_apply_src_pad_comp_ = r13b;
-
-    const Xbyak::Reg64 &reg_tmp_comp_
-            = r12; // used to broadcast scalar values to vreg
+    const Xbyak::Reg64 &reg_tmp_comp_ = r12;
     const Xbyak::Reg64 &reg_zp_src_comp_ = r14;
 
     const Xbyak::Zmm vreg_zero_;
@@ -125,7 +128,8 @@ private:
     const Xbyak::Zmm vreg_signed_scale_;
     const Xbyak::Zmm vreg_saturation_ubound_;
     const Xbyak::Zmm vreg_zp_dst_common_;
-
+    const Xbyak::Zmm vreg_d_weights_;
+    const Xbyak::Zmm vreg_d_bias_;
     const Xbyak::Opmask &kreg_rem_mask_short_ = k3;
     const Xbyak::Opmask &kreg_rem_mask_vlen_ = k4;
 
@@ -149,6 +153,8 @@ jit_pp_ker_t::jit_pp_ker_t(
     , dst_data_type_size_(types::data_type_size(jcp.dst_data_type))
     , saturation_needed_(utils::one_of(
               jcp_.dst_data_type, data_type::u8, data_type::s8, data_type::s32))
+    , with_legacy_postops_(post_ops_.find(primitive_kind::depthwise) >= 0
+              || post_ops_.find(primitive_kind::quantization) >= 0)
     , vreg_zero_((jcp_.with_eltwise || saturation_needed_) ? reserve_zmm()
                                                            : Xbyak::Zmm(0))
     , vreg_scale_(reserve_zmm())
@@ -158,6 +164,8 @@ jit_pp_ker_t::jit_pp_ker_t(
     , vreg_saturation_ubound_(
               saturation_needed_ ? reserve_zmm() : Xbyak::Zmm(0))
     , vreg_zp_dst_common_(jcp_.zp.dst_exists ? reserve_zmm() : Xbyak::Zmm(0))
+    , vreg_d_weights_(with_legacy_postops_ ? reserve_zmm() : Xbyak::Zmm(0))
+    , vreg_d_bias_(with_legacy_postops_ ? reserve_zmm() : Xbyak::Zmm(0))
     , zmm_step_(1u)
     , bias_step_factor_(jcp_.with_bias ? zmm_step_++ : 0u)
     , sum_step_factor_(jcp_.with_sum ? zmm_step_++ : 0)
@@ -175,7 +183,18 @@ jit_pp_ker_t::jit_pp_ker_t(
 
 {
 
-    if (jcp.with_eltwise || jcp.with_binary) {
+    if (with_legacy_postops_) {
+        for (const auto &post_op : post_ops_.entry_) {
+            if (post_op.is_eltwise())
+                legacy_eltwise_injectors_.emplace_back(
+                        new jit_uni_eltwise_injector_t<Xbyak::Zmm>(
+                                this, post_op.eltwise));
+            else if (post_op.is_depthwise())
+                legacy_depthwise_injectors_.emplace_back(
+                        new jit_uni_depthwise_injector_f32<avx512_core>(this,
+                                post_op, pd->dst_md()->dims[1], k2));
+        }
+    } else if (jcp.with_eltwise || jcp.with_binary) {
         using namespace binary_injector;
         static constexpr bool preserve_gpr = true;
         static constexpr bool preserve_vmm = true;
@@ -202,7 +221,7 @@ jit_pp_ker_t::jit_pp_ker_t(
     }
 }
 
-void jit_pp_ker_t::operator()(void *void_dst, const acc_data_t *acc,
+void jit_pp_ker_t::operator()(void *void_dst, acc_data_t *acc,
         const char *bias, const float *scales, float dst_scale, float sum_scale,
         float signed_scale, int g, int /* mb */, size_t start, size_t end,
         const zero_point_call_params_t &zp,
@@ -227,7 +246,7 @@ void jit_pp_ker_t::operator()(void *void_dst, const acc_data_t *acc,
 
     const dim_t g_oc_offset = g * jcp_.oc;
     const dim_t g_oc_offset_prologue = g_oc_offset + oc_offset;
-    args.bias = bias + g_oc_offset_prologue * bias_data_type_size_;
+    args.bias = bias ? bias + g_oc_offset_prologue * bias_data_type_size_ : nullptr;
     args.zp_src = zp.src
             ? zp.src + (jcp_.zp.src_is_common ? 0 : g_oc_offset_prologue)
             : nullptr;
@@ -310,10 +329,66 @@ void jit_pp_ker_t::append_zp_src_comp(dim_t offset, int idx, bool apply_mask) {
         });
 }
 
-void jit_pp_ker_t::apply_postops(
-        const Xbyak::Reg64 &reg_dst, const int idx, const dim_t offset) {
+void jit_pp_ker_t::apply_postops(const Xbyak::Reg64 &reg_dst, const int idx,
+        const dim_t offset, const bool apply_mask) {
 #define PARAM_OFF(x) offsetof(ker_args_t, x)
-    if (jcp_.with_eltwise || jcp_.with_binary) {
+    if (with_legacy_postops_) {
+        const auto dst = get_vreg_dst(idx);
+        const auto mask = apply_mask ? kreg_rem_mask_short_ : kreg_rem_mask_vlen_;
+        const auto weights = r13;
+        const auto bias = r15;
+        push(weights);
+        push(bias);
+        push(reg_oc_offset_);
+        add(reg_oc_offset_, ptr[reg_param_ + PARAM_OFF(g_oc_offset)]);
+        size_t eltwise_index = 0;
+        size_t depthwise_index = 0;
+        for (int i = 0; i < post_ops_.len(); ++i) {
+            const auto &post_op = post_ops_.entry_[i];
+            if (post_op.is_eltwise()) {
+                legacy_eltwise_injectors_[eltwise_index++]->compute_vector(
+                        dst.getIdx());
+            } else if (post_op.is_depthwise()) {
+                mov(weights, reinterpret_cast<size_t>(post_op.depthwise.weights_data + offset));
+                lea(weights, ptr[weights + reg_oc_offset_ * sizeof(float)]);
+                if (post_op.depthwise.biases_data) {
+                    mov(bias, reinterpret_cast<size_t>(post_op.depthwise.biases_data + offset));
+                    lea(bias, ptr[bias + reg_oc_offset_ * sizeof(float)]);
+                }
+                legacy_depthwise_injectors_[depthwise_index++]->compute_vector_range(
+                        dst.getIdx(), dst.getIdx() + 1, weights, bias);
+            } else if (post_op.is_quantization()) {
+                const auto &quant = post_op.quantization;
+                const auto load_param = [&](const Xbyak::Zmm &vreg,
+                                                const float *values, size_t count) {
+                    mov(weights, reinterpret_cast<size_t>(values + (count == 1 ? 0 : offset)));
+                    if (count == 1)
+                        vbroadcastss(vreg, ptr[weights]);
+                    else
+                        vmovups(vreg | mask,
+                                ptr[weights + reg_oc_offset_ * sizeof(float)]);
+                };
+                load_param(vreg_d_weights_, quant.crop_low_data->shifts_, quant.crop_low_data->count_);
+                load_param(vreg_d_bias_, quant.crop_high_data->shifts_, quant.crop_high_data->count_);
+                vmaxps(dst, dst, vreg_d_weights_);
+                vminps(dst, dst, vreg_d_bias_);
+                load_param(vreg_d_weights_, quant.input_scale_data->scales_, quant.input_scale_data->count_);
+                load_param(vreg_d_bias_, quant.input_shift_data->shifts_, quant.input_shift_data->count_);
+                vfmadd213ps(dst, vreg_d_weights_, vreg_d_bias_);
+                const bool dequantize = quant.alg == alg_kind::quantization_quantize_dequantize;
+                if (dequantize || dst_data_type_ == data_type::f32 || i != post_ops_.len() - 1)
+                    vrndscaleps(dst, dst, 0);
+                if (dequantize) {
+                    load_param(vreg_d_weights_, quant.output_scale_data->scales_, quant.output_scale_data->count_);
+                    load_param(vreg_d_bias_, quant.output_shift_data->shifts_, quant.output_shift_data->count_);
+                    vfmadd213ps(dst, vreg_d_weights_, vreg_d_bias_);
+                }
+            }
+        }
+        pop(reg_oc_offset_);
+        pop(bias);
+        pop(weights);
+    } else if (jcp_.with_eltwise || jcp_.with_binary) {
         if (jcp_.with_binary) {
             binary_injector::rhs_arg_dynamic_params_t rhs_arg_params;
             const auto vmm_idx = vreg_dst_idx(idx);
@@ -392,16 +467,15 @@ void jit_pp_ker_t::generate() {
     if (jcp_.with_sum)
         vbroadcastss(vreg_sum_scale_, ptr[reg_param_ + PARAM_OFF(sum_scale)]);
     if (jcp_.signed_input)
-        vbroadcastss(
-                vreg_signed_scale_, ptr[reg_param_ + PARAM_OFF(signed_scale)]);
-    if (jcp_.scale_idx_mult == 0) vbroadcastss(vreg_scale_, dword[reg_scales_]);
+        vbroadcastss(vreg_signed_scale_, ptr[reg_param_ + PARAM_OFF(signed_scale)]);
+    if (jcp_.scale_idx_mult == 0)
+        vbroadcastss(vreg_scale_, dword[reg_scales_]);
 #undef PARAM_OFF
 
     mov(reg_rem_mask_vlen_, 1);
     shl(reg_rem_mask_vlen_, vlen);
     sub(reg_rem_mask_vlen_, 1);
     kmovq(kreg_rem_mask_vlen_, reg_rem_mask_vlen_);
-
     if (jcp_.with_eltwise) vxorps(vreg_zero_, vreg_zero_, vreg_zero_);
     if (saturation_needed_)
         init_saturate_f32(vreg_zero_, vreg_saturation_ubound_, reg_tmp_comp_,
@@ -427,7 +501,6 @@ void jit_pp_ker_t::generate() {
         }
 
         if (jcp_.with_binary) kmovq(opmask_binary, mask_reg);
-
         const auto vreg_dst_masked = get_masked_vreg_dst(idx, apply_mask);
         const auto vreg_dst = get_vreg_dst(idx);
         if (jcp_.zp.src_exists) {
@@ -437,30 +510,22 @@ void jit_pp_ker_t::generate() {
         } else {
             vcvtdq2ps(vreg_dst_masked, acc_addr);
         }
-
         if (jcp_.signed_input)
             vmulps(vreg_dst_masked, vreg_dst, vreg_signed_scale_);
-
         vmulps(vreg_dst_masked, vreg_dst, vreg_scale_);
-
         if (jcp_.with_bias) {
-            const auto bias_addr
-                    = ptr[reg_bias_ + offset * bias_data_type_size_];
+            const auto bias_addr = ptr[reg_bias_ + offset * bias_data_type_size_];
             const auto vreg_bias = get_vreg_bias(idx);
             load_as_f32(vreg_bias, mask_reg, bias_addr, jcp_.bias_data_type);
             vaddps(vreg_dst_masked, vreg_dst, vreg_bias);
         }
-
         const auto dst_addr = ptr[reg_dst_ + offset * dst_data_type_size_];
-
         if (jcp_.with_sum) {
-            const auto vreg_prev_dst = get_vreg_prev_dst(idx);
-            load_as_f32(vreg_prev_dst, mask_reg, dst_addr, jcp_.sum_data_type);
-            vfmadd231ps(vreg_dst_masked, vreg_prev_dst, vreg_sum_scale_);
+            const auto previous = get_vreg_prev_dst(idx);
+            load_as_f32(previous, mask_reg, dst_addr, jcp_.sum_data_type);
+            vfmadd231ps(vreg_dst_masked, previous, vreg_sum_scale_);
         }
-
-        apply_postops(reg_dst_, idx, offset);
-
+        apply_postops(reg_dst_, idx, offset, apply_mask);
         if (jcp_.with_dst_scale) {
             vmulps(vreg_dst_masked, vreg_dst, vreg_dst_scale_);
         }
@@ -504,6 +569,7 @@ void jit_pp_ker_t::generate() {
                 });
             }
         }
+        if (with_legacy_postops_) add(reg_oc_offset_, offset);
     };
 
     // Advance all pointers by a value stored in a register
@@ -522,16 +588,14 @@ void jit_pp_ker_t::generate() {
                             + offset * static_cast<int>(bias_data_type_size_)]);
 
         if (jcp_.zp.src_exists) {
-            lea(reg_zp_src_comp_,
-                    ptr[reg_zp_src_comp_ + offset * sizeof(int32_t)]);
-
+            lea(reg_zp_src_comp_, ptr[reg_zp_src_comp_ + offset * sizeof(int32_t)]);
             if (zp_pad_comp_helper_)
                 zp_pad_comp_helper_->zp_src_comp_pad_operation(
                         [&](const Xbyak::Reg64 &reg_zp_pad_comp) {
-                    lea(reg_zp_pad_comp,
-                            ptr[reg_zp_pad_comp + offset * sizeof(int32_t)]);
+                    lea(reg_zp_pad_comp, ptr[reg_zp_pad_comp + offset * sizeof(int32_t)]);
                 });
         }
+        if (with_legacy_postops_) add(reg_oc_offset_, offset);
     };
 
     // Rewind pointers that point to data that is indexed by output channel
@@ -549,6 +613,7 @@ void jit_pp_ker_t::generate() {
             sub(reg_scales_, jcp_.oc * static_cast<dim_t>(sizeof(float)));
         }
         add(reg_dst_, (dst_os_stride - jcp_.oc) * dst_data_type_size_);
+        if (with_legacy_postops_) xor_(reg_oc_offset_, reg_oc_offset_);
     };
 
     //                    <--------- OC --------------->
@@ -589,11 +654,9 @@ void jit_pp_ker_t::generate() {
 
         L(prologue_loop_tail);
         mov(reg_rem_mask_short_, 1);
-        // cl == reg_tmp_ because reg_tmp_ <= vlen here
         shl(reg_rem_mask_short_, cl);
         sub(reg_rem_mask_short_, 1);
         jz(prologue_loop_end, T_NEAR);
-
         kmovq(kreg_rem_mask_short_, reg_rem_mask_short_);
         compute(0, max_unroll_ - 1, true);
         advance_ptrs_reg(reg_tmp_, reg_tmp_);
@@ -681,10 +744,9 @@ void jit_pp_ker_t::generate() {
         }
 
         L(epilogue_loop_tail);
-        mov(reg_tmp_,
-                reg_len_); // reg_tmp_ is rcx, and we need cl for the shift
+        mov(reg_tmp_, reg_len_);
         mov(reg_rem_mask_short_, 1);
-        shl(reg_rem_mask_short_, cl); // reg_tmp_ == rcx and reg_tail < vlen
+        shl(reg_rem_mask_short_, cl);
         sub(reg_rem_mask_short_, 1);
         jz(epilogue_end, T_NEAR);
         kmovq(kreg_rem_mask_short_, reg_rem_mask_short_);
@@ -694,16 +756,19 @@ void jit_pp_ker_t::generate() {
     L(epilogue_end);
 
     if (zp_pad_comp_helper_) zp_pad_comp_helper_->fin();
-
     postamble();
-
-    if (jcp_.with_eltwise)
-        postops_injector_->prepare_table(/* generate = */ true);
+    if (with_legacy_postops_) {
+        for (auto &inj : legacy_eltwise_injectors_)
+            inj->prepare_table(true);
+    } else if (jcp_.with_eltwise) {
+        postops_injector_->prepare_table(true);
+    }
 }
 
 bool mayiuse_jit_pp_kernel(data_type_t dst_dt) noexcept {
     const auto is_bf16_dst_dt = dst_dt == data_type::bf16;
     return mayiuse(avx512_core) && !is_bf16_dst_dt;
+
 }
 
 pp_ker_t *jit_pp_ker_create(
@@ -719,7 +784,7 @@ bool post_ops_ok(const post_ops_t &post_ops, const memory_desc_wrapper *dst_d) {
     static constexpr bool sum_requires_scale_one = false;
     return mayiuse_jit_pp_kernel(dst_d->data_type())
             && dnnl::impl::cpu::x64::injector::post_ops_ok(
-                    {avx512_core, {binary, eltwise, sum}, post_ops, dst_d,
+                    {avx512_core, {binary, eltwise, sum, depthwise, quantization}, post_ops, dst_d,
                             sum_at_pos_0_only, sum_requires_scale_one});
 }
 

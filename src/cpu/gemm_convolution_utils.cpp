@@ -23,6 +23,12 @@
 #include "common/utils.hpp"
 #include "cpu/gemm_convolution_utils.hpp"
 #include "cpu/scale_utils.hpp"
+
+#include <vector>
+
+#include "ref_eltwise.hpp"
+#include "ref_depthwise_injector.hpp"
+
 #if DNNL_X64
 #include "cpu/x64/injectors/jit_uni_postops_injector.hpp"
 #endif
@@ -30,6 +36,7 @@
 #include "cpu/platform.hpp"
 
 #if DNNL_X64
+#include "cpu/x64/jit_gemm_convolution_utils.hpp"
 #include "cpu/x64/cpu_isa_traits.hpp"
 #endif
 
@@ -50,6 +57,151 @@ single_gemm_conv_chunk_desc_t::single_gemm_conv_chunk_desc_t(dim_t d_off,
     , h_size_(h_size)
     , w_off_(w_off)
     , w_size_(w_size) {}
+
+namespace gemm_convolution_utils {
+
+struct ref_pp_kernel_t : pp_kernel_t {
+    ref_pp_kernel_t(const convolution_pd_t *pd, const conv_gemm_conf_t &jcp)
+            : pp_kernel_t(pd, jcp) {
+        for (int i = 0; i < post_ops_.len(); i++) {
+            auto &post_op = post_ops_.entry_[i];
+            if (post_op.is_eltwise()) {
+                ref_eltwise_injectors_.push_back(new ref_eltwise_scalar_fwd_t(post_op.eltwise));
+            } else if (post_op.is_depthwise()) {
+                ref_depthwise_injectors_.push_back(new ref_depthwise_scalar_fwd_t(
+                        post_op.depthwise.alg));
+            }
+        }
+    }
+    ~ref_pp_kernel_t() {
+        for (auto impl : ref_eltwise_injectors_)
+            delete impl;
+        ref_eltwise_injectors_.clear();
+        for (auto impl : ref_depthwise_injectors_)
+            delete impl;
+        ref_depthwise_injectors_.clear();
+    }
+
+    void operator()(float *dst, const float *bias, dim_t len, dim_t oc_start,
+            dim_t oc_work, dim_t oc_stride) const override;
+
+private:
+        std::vector<ref_eltwise_scalar_fwd_t*> ref_eltwise_injectors_;
+        std::vector<ref_depthwise_scalar_fwd_t*> ref_depthwise_injectors_;
+};
+
+void ref_pp_kernel_t::operator()(float *dst, const float *bias, dim_t len,
+        dim_t oc_start, dim_t oc_work, dim_t oc_stride) const {
+    // TODO: for "outer threading" we have parallel section within
+    // outermost "parallel". It is not good. Consider to use
+    // "parallel" here with number of threads passed as parameter
+    const auto &p = post_ops_;
+    bool need_bias = do_bias_;
+    if (p.len() > 0) {
+        int eltwise_inj_idx = 0;
+        int depthwise_inj_idx = 0;
+
+        for (int i = 0; i < p.len(); i++) {
+            auto &post_op = p.entry_[i];
+            // todo: sum?
+            if (post_op.is_eltwise()) {
+                parallel_nd(oc_work, [&](const dim_t oc) {
+                    float b = need_bias ? bias[oc_start + oc] : 0;
+                    float *d_ = dst + oc * oc_stride;
+                    for (dim_t oS = 0; oS < len; ++oS) {
+                        d_[oS] += b;
+                        d_[oS] = ref_eltwise_injectors_[eltwise_inj_idx]->compute_scalar(d_[oS]);
+                    }
+                });
+
+                eltwise_inj_idx++;
+                need_bias = false;
+            } else if (post_op.is_depthwise()) {
+                auto depthwise_weights = post_op.depthwise.weights_data;
+                auto depthwise_bias = post_op.depthwise.biases_data;
+
+                parallel_nd(oc_work, [&](const dim_t oc) {
+                    float b = need_bias ? bias[oc_start + oc] : 0;
+                    float *d_ = dst + oc * oc_stride;
+                    for (dim_t oS = 0; oS < len; ++oS) {
+                        d_[oS] += b;
+                        d_[oS] = ref_depthwise_injectors_[depthwise_inj_idx]->compute_scalar(d_[oS],
+                                                                                             depthwise_weights + oc_start + oc,
+                                                                                             depthwise_bias ? depthwise_bias + oc_start + oc : nullptr);
+                    }
+                });
+
+                depthwise_inj_idx++;
+                need_bias = false;
+            } else if (post_op.is_quantization()) {
+                auto quant = post_op.quantization;
+                auto pcl = quant.crop_low_data->shifts_;
+                auto pch = quant.crop_high_data->shifts_;
+                auto pisc = quant.input_scale_data->scales_;
+                auto pish = quant.input_shift_data->shifts_;
+                const bool dequantize = quant.alg
+                        == alg_kind::quantization_quantize_dequantize;
+
+                parallel_nd(oc_work, [&](const dim_t oc) {
+                    float b = need_bias ? bias[oc_start + oc] : 0;
+                    float *d_ = dst + oc * oc_stride;
+
+                    dim_t cl_idx = quant.crop_low_data->count_ == 1 ? 0 : oc_start + oc;
+                    dim_t ch_idx = quant.crop_high_data->count_ == 1 ? 0 : oc_start + oc;
+                    dim_t isc_idx = quant.input_scale_data->count_ == 1 ? 0 : oc_start + oc;
+                    dim_t ish_idx = quant.input_shift_data->count_ == 1 ? 0 : oc_start + oc;
+                    PRAGMA_OMP_SIMD()
+                    for (dim_t oS = 0; oS < len; ++oS) {
+                        d_[oS] += b;
+
+                        d_[oS] = nstl::min(pch[ch_idx], nstl::max(pcl[cl_idx], d_[oS]));
+                        d_[oS] = d_[oS] * pisc[isc_idx] + pish[ish_idx];
+                                                d_[oS] = std::nearbyint(d_[oS]);
+                                                if (dequantize) {
+                                                        const auto &output_scale = *quant.output_scale_data;
+                                                        const auto &output_shift = *quant.output_shift_data;
+                                                        const dim_t osc_idx = output_scale.count_ == 1 ? 0 : oc_start + oc;
+                                                        const dim_t osh_idx = output_shift.count_ == 1 ? 0 : oc_start + oc;
+                                                        d_[oS] = d_[oS] * output_scale.scales_[osc_idx]
+                                                                        + output_shift.shifts_[osh_idx];
+                                                }
+                    }
+                });
+
+                need_bias = false;
+            }
+        }
+    }
+
+    if (need_bias) {
+        parallel_nd(oc_work, [&](const dim_t oc) {
+            float b = bias[oc_start + oc];
+            float *d_ = dst + oc * oc_stride;
+            PRAGMA_OMP_SIMD()
+            for (dim_t oS = 0; oS < len; ++oS) {
+                d_[oS] += b;
+            }
+        });
+    }
+}
+
+// Interface section
+
+pp_kernel_t::pp_kernel_t(const convolution_pd_t *pd, const conv_gemm_conf_t &jcp)
+        : do_bias_(pd->with_bias()), post_ops_(pd->attr()->post_ops_) {}
+
+pp_kernel_t *pp_kernel_t::create(
+        const convolution_pd_t *pd, const conv_gemm_conf_t &jcp) {
+#if DNNL_X64
+    auto *res
+            = x64::gemm_convolution_utils::jit_pp_kernel_create(pd, jcp);
+    if (res) return res;
+#endif
+
+    return new ref_pp_kernel_t(pd, jcp);
+}
+
+} // namespace gemm_convolution_utils
 
 namespace jit_gemm_convolution_utils {
 
@@ -1228,7 +1380,7 @@ status_t init_conf(conv_gemm_conf_t &jcp,
 
         VDISPATCH_CONV_IC(
                 post_ops_ok(post_ops_ok_args_t(x64::avx512_core,
-                        {binary, eltwise, sum}, attr.post_ops_, &dst_d,
+                        {binary, eltwise, sum, depthwise}, attr.post_ops_, &dst_d,
                         sum_at_pos_0_only, sum_requires_scale_one,
                         sum_requires_zp_zero)),
                 VERBOSE_UNSUPPORTED_POSTOP);

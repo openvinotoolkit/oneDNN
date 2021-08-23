@@ -86,6 +86,8 @@ struct gemm_x8s8s32x_convolution_fwd_t : public primitive_t {
             VDISPATCH_CONV(attr()->post_ops_.check_sum_consistency(dst_type,
                                    /* is_int8 */ true),
                     VERBOSE_UNSUPPORTED_POSTOP);
+            VDISPATCH_CONV(post_ops_ok(),
+                    VERBOSE_UNSUPPORTED_POSTOP);
             CHECK(attr_scales_ok());
             CHECK(attr_zero_points_ok());
 
@@ -105,6 +107,30 @@ struct gemm_x8s8s32x_convolution_fwd_t : public primitive_t {
         }
 
         conv_gemm_conf_t jcp_ = utils::zero<decltype(jcp_)>();
+
+    protected:
+        bool post_ops_ok() const {
+            using namespace dnnl::impl::primitive_kind;
+            auto const &po = attr()->post_ops_;
+
+            auto all_post_ops_supported = [&]() {
+                bool ok = true;
+
+                for (int i = 0; i < po.len(); i++) {
+                    ok = ok && utils::one_of(po.entry_[i].kind, sum, eltwise,
+                            binary, prelu, depthwise, quantization);
+                                        if (po.entry_[i].kind == sum) ok = ok && i == 0;
+                }
+                const bool legacy = po.find(depthwise) != -1
+                        || po.find(quantization) != -1;
+                const bool binary_postop = po.find(binary) != -1
+                        || po.find(prelu) != -1;
+                ok = ok && !(legacy && binary_postop);
+                return ok;
+            };
+
+            return all_post_ops_supported();
+        }
     };
 
     gemm_x8s8s32x_convolution_fwd_t(const pd_t *apd) : primitive_t(apd) {}

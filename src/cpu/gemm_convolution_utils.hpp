@@ -95,7 +95,8 @@ struct pp_kernel_t {
 
     virtual ~pp_kernel_t() = default;
 
-    virtual void operator()(float *dst, const float *bias, const int len, const int oc_start, const int oc_work, const int oc_stride) const = 0;
+    virtual void operator()(float *dst, const float *bias, dim_t len,
+            dim_t oc_start, dim_t oc_work, dim_t oc_stride) const = 0;
 
     virtual status_t create_kernel() { return status::success; }
 

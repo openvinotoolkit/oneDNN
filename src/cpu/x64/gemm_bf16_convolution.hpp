@@ -74,6 +74,8 @@ struct gemm_bf16_convolution_fwd_t : public primitive_t {
                                    primitive_attr_t::skip_mask_t::post_ops,
                                    dst_data_type),
                     VERBOSE_UNSUPPORTED_ATTR);
+            VDISPATCH_CONV(post_ops_ok(),
+                    VERBOSE_UNSUPPORTED_ATTR);
 
             auto scratchpad = scratchpad_registry().registrar();
 
@@ -97,6 +99,29 @@ struct gemm_bf16_convolution_fwd_t : public primitive_t {
         }
 
         conv_gemm_conf_t jcp_ = utils::zero<decltype(jcp_)>();
+
+    protected:
+        virtual bool post_ops_ok() const {
+            auto const &po = this->attr()->post_ops_;
+            if (po.find(primitive_kind::depthwise) == -1) return true;
+            auto all_post_ops_supported = [&]() {
+                bool ok = true;
+
+                for (int i = 0; i < po.len(); i++) {
+                    ok = ok && utils::one_of(po.entry_[i].kind, primitive_kind::sum, primitive_kind::eltwise, primitive_kind::depthwise);
+                }
+                return ok;
+            };
+
+            auto contain = [&](dnnl::impl::primitive_kind_t kind) { return po.find(kind) != -1; };
+            auto position = [&](dnnl::impl::primitive_kind_t kind) { return po.find(kind); };
+            auto count = [&](dnnl::impl::primitive_kind_t kind) { return po.count(kind); };
+
+            return all_post_ops_supported() &&
+                   count(primitive_kind::sum) <= 1 &&
+                   IMPLICATION(contain(primitive_kind::sum), position(primitive_kind::sum) == 0);
+
+        }
     };
 
     gemm_bf16_convolution_fwd_t(const pd_t *apd)
@@ -144,11 +169,12 @@ private:
         pp_ker_t(const pd_t *pd);
 
         void operator()(dst_data_t *dst, const acc_data_t *acc,
-                const acc_data_t *bias, float sum_scale, size_t oc_work,
+                const acc_data_t *bias, float sum_scale, size_t oc_work, size_t g_offset,
                 const void *post_ops_binary_rhs_arg_vec, const void *dst_orig,
                 const size_t g_oc_offset);
         void operator()(dst_data_t *dst, const acc_data_t *acc,
-                const acc_data_t *bias, float sum_scale, size_t dst_str,
+                const acc_data_t *bias,
+                size_t g_offset, size_t start_oc, float sum_scale, size_t dst_str,
                 size_t acc_str, size_t sp_len, size_t oc,
                 const void *post_ops_binary_rhs_arg_vec, const void *dst_orig,
                 const size_t g_oc_offset);
@@ -163,6 +189,7 @@ private:
             size_t acc_stride_in_bytes = 0;
             size_t spatial_length = 0;
             size_t oc_work = 0;
+            size_t oc_offset;
 
             size_t g_oc_offset = 0;
             const void *post_ops_binary_rhs_arg_vec = nullptr;
@@ -187,6 +214,11 @@ private:
         Xbyak::Reg64 reg_dst_str = r13;
         Xbyak::Reg64 reg_acc_str = r14;
 
+        using Vmm = typename cpu_isa_traits_t<avx512_core>::Vmm;
+        Xbyak::Reg64 reg_oc_offset = r10;
+        Xbyak::Reg64 reg_dw = r9;
+        Xbyak::Opmask kmask = k7;
+
         Xbyak::Reg64 reserved_eltwise_gpr = r10;
         Xbyak::Opmask reserved_eltwise_maskr = k2;
 
@@ -200,7 +232,9 @@ private:
         Xbyak::Zmm bf16_emu_reserv_6 = Xbyak::Zmm(31);
 
         const conv_gemm_conf_t &jcp_;
+        post_ops_t post_ops_;
         const bool do_sum_;
+        const bool do_depthwise_;
         int max_data_reg_idx_, max_unroll_, compute_reg_step_;
         int data_reg_base_idx_;
         size_t vlen_;
@@ -208,6 +242,8 @@ private:
         std::unique_ptr<bf16_emulation_t> bf16_emu_;
         std::unique_ptr<injector::jit_uni_postops_injector_t<Xbyak::Zmm>>
                 postops_injector_;
+        std::vector<std::unique_ptr<jit_uni_eltwise_injector_t<Xbyak::Zmm>>>
+            jit_eltwise_injectors_;
 
         void apply_postops(const bool apply_mask, const dim_t out_offset,
                 const int vmm_idx);
