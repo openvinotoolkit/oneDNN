@@ -78,8 +78,10 @@ struct gemm_x8s8s32x_convolution_fwd_t : public primitive_t {
                                    dst_type),
                     VERBOSE_UNSUPPORTED_ATTR);
 
-            VDISPATCH_CONV(attr()->post_ops_.check_sum_consistency(dst_type,
-                                   /* is_int8 */ true),
+            // VDISPATCH_CONV(attr()->post_ops_.check_sum_consistency(dst_type,
+            //                        /* is_int8 */ true),
+            //         VERBOSE_UNSUPPORTED_POSTOP);
+            VDISPATCH_CONV(post_ops_ok(),
                     VERBOSE_UNSUPPORTED_POSTOP);
             VDISPATCH_CONV(attr_scales_ok(), VERBOSE_UNSUPPORTED_SCALES_CFG);
             VDISPATCH_CONV(zero_points_valid(attr()), VERBOSE_UNSUPPORTED_ATTR);
@@ -92,14 +94,31 @@ struct gemm_x8s8s32x_convolution_fwd_t : public primitive_t {
                     *desc(), src_md_, weights_md_, dst_md_, bias_md_, attr_,
                     dnnl_get_max_threads()));
 
-            VDISPATCH_CONV(gemm_x8s8s32x_convolution_utils::post_ops_ok(
-                                   attr()->post_ops_, &dst_md_),
-                    VERBOSE_UNSUPPORTED_POSTOP);
+            // VDISPATCH_CONV(gemm_x8s8s32x_convolution_utils::post_ops_ok(
+            //                        attr()->post_ops_, &dst_md_),
+            //         VERBOSE_UNSUPPORTED_POSTOP);
 
             return status::success;
         }
 
         conv_gemm_conf_t jcp_ = utils::zero<decltype(jcp_)>();
+
+    protected:
+        bool post_ops_ok() const {
+            using namespace dnnl::impl::primitive_kind;
+            auto const &po = attr()->post_ops_;
+
+            auto all_post_ops_supported = [&]() {
+                bool ok = true;
+
+                for (int i = 0; i < po.len(); i++) {
+                    ok = ok && utils::one_of(po.entry_[i].kind, sum, eltwise, depthwise, quantization);
+                }
+                return ok;
+            };
+
+            return all_post_ops_supported();
+        }
     };
 
     gemm_x8s8s32x_convolution_fwd_t(const pd_t *apd) : primitive_t(apd) {}
