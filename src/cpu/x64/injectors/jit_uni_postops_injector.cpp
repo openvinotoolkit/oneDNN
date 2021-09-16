@@ -230,6 +230,9 @@ void jit_uni_postops_injector_t<Vmm>::compute_vector_range(
                 host_->push(ddp.reg_d_weights);
                 host_->push(ddp.reg_d_bias);
             }
+            std::map<int, std::set<size_t>> vmm_by_offset;
+            for (auto vmm_idx : vmm_idxs)
+                vmm_by_offset[qdp.vmm_idx_off.at(vmm_idx)].insert(vmm_idx);
             const bool rounding = post_op.quantization.alg
                             == alg_kind::quantization_quantize_dequantize
                     || qdp.dst_dt == dnnl_f32 || i != post_ops_.len() - 1;
@@ -237,26 +240,23 @@ void jit_uni_postops_injector_t<Vmm>::compute_vector_range(
                 quantization_injector.init_crop_ptrs(qdp.reg_oc_off_addr);
             else
                 quantization_injector.init_crop_ptrs(qdp.reg_oc_off);
-            for (auto vmm_idx : vmm_idxs)
+            for (const auto &group : vmm_by_offset)
                 quantization_injector.compute_crop(
-                    vmm_idx, vmm_idx + 1, qdp.vmm_idx_off.at(vmm_idx),
-                    false, is_broadcast);
+                        group.second, group.first, false, is_broadcast);
             if (qdp.useAddr)
                 quantization_injector.init_input_scale_shift_ptrs(qdp.reg_oc_off_addr);
             else
                 quantization_injector.init_input_scale_shift_ptrs(qdp.reg_oc_off);
-            for (auto vmm_idx : vmm_idxs)
-                quantization_injector.compute_input_scale_shift(vmm_idx,
-                    vmm_idx + 1, qdp.vmm_idx_off.at(vmm_idx), rounding,
-                    false, is_broadcast);
+            for (const auto &group : vmm_by_offset)
+                quantization_injector.compute_input_scale_shift(group.second,
+                        group.first, rounding, false, is_broadcast);
             if (qdp.useAddr)
                 quantization_injector.init_output_scale_shift_ptrs(qdp.reg_oc_off_addr);
             else
                 quantization_injector.init_output_scale_shift_ptrs(qdp.reg_oc_off);
-            for (auto vmm_idx : vmm_idxs)
+            for (const auto &group : vmm_by_offset)
                 quantization_injector.compute_output_scale_shift(
-                    vmm_idx, vmm_idx + 1, qdp.vmm_idx_off.at(vmm_idx),
-                    false, is_broadcast);
+                        group.second, group.first, false, is_broadcast);
             if (ddp.preserve_gprs) {
                 host_->pop(ddp.reg_d_bias);
                 host_->pop(ddp.reg_d_weights);

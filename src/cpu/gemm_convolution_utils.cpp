@@ -135,10 +135,12 @@ void ref_pp_kernel_t::operator()(float *dst, const float *bias, dim_t len,
                 need_bias = false;
             } else if (post_op.is_quantization()) {
                 auto quant = post_op.quantization;
-                auto pcl = quant.crop_low_data->shifts_;
-                auto pch = quant.crop_high_data->shifts_;
-                auto pisc = quant.input_scale_data->scales_;
-                auto pish = quant.input_shift_data->shifts_;
+                auto pcl = quant.data[quant.crop_low];
+                auto pch = quant.data[quant.crop_high];
+                auto pisc = quant.data[quant.inp_scale];
+                auto pish = quant.data[quant.inp_shift];
+                auto posc = quant.data[quant.output_scale];
+                auto posh = quant.data[quant.output_shift];
                 const bool dequantize = quant.alg
                         == alg_kind::quantization_quantize_dequantize;
 
@@ -146,10 +148,12 @@ void ref_pp_kernel_t::operator()(float *dst, const float *bias, dim_t len,
                     float b = need_bias ? bias[oc_start + oc] : 0;
                     float *d_ = dst + oc * oc_stride;
 
-                    dim_t cl_idx = quant.crop_low_data->count_ == 1 ? 0 : oc_start + oc;
-                    dim_t ch_idx = quant.crop_high_data->count_ == 1 ? 0 : oc_start + oc;
-                    dim_t isc_idx = quant.input_scale_data->count_ == 1 ? 0 : oc_start + oc;
-                    dim_t ish_idx = quant.input_shift_data->count_ == 1 ? 0 : oc_start + oc;
+                    dim_t cl_idx = !quant.per_channel[quant.crop_low] ? 0 : oc_start + oc;
+                    dim_t ch_idx = !quant.per_channel[quant.crop_high] ? 0 : oc_start + oc;
+                    dim_t isc_idx = !quant.per_channel[quant.inp_scale] ? 0 : oc_start + oc;
+                    dim_t ish_idx = !quant.per_channel[quant.inp_shift] ? 0 : oc_start + oc;
+                    dim_t osc_idx = !quant.per_channel[quant.output_scale] ? 0 : oc_start + oc;
+                    dim_t osh_idx = !quant.per_channel[quant.output_shift] ? 0 : oc_start + oc;
                     PRAGMA_OMP_SIMD()
                     for (dim_t oS = 0; oS < len; ++oS) {
                         d_[oS] += b;
@@ -157,14 +161,8 @@ void ref_pp_kernel_t::operator()(float *dst, const float *bias, dim_t len,
                         d_[oS] = nstl::min(pch[ch_idx], nstl::max(pcl[cl_idx], d_[oS]));
                         d_[oS] = d_[oS] * pisc[isc_idx] + pish[ish_idx];
                                                 d_[oS] = std::nearbyint(d_[oS]);
-                                                if (dequantize) {
-                                                        const auto &output_scale = *quant.output_scale_data;
-                                                        const auto &output_shift = *quant.output_shift_data;
-                                                        const dim_t osc_idx = output_scale.count_ == 1 ? 0 : oc_start + oc;
-                                                        const dim_t osh_idx = output_shift.count_ == 1 ? 0 : oc_start + oc;
-                                                        d_[oS] = d_[oS] * output_scale.scales_[osc_idx]
-                                                                        + output_shift.shifts_[osh_idx];
-                                                }
+                                                if (dequantize)
+                                                        d_[oS] = d_[oS] * posc[osc_idx] + posh[osh_idx];
                     }
                 });
 

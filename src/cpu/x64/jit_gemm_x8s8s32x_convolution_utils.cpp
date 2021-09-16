@@ -368,19 +368,19 @@ void jit_pp_ker_t::apply_postops(const Xbyak::Reg64 &reg_dst, const int idx,
                         vmovups(vreg | mask,
                                 ptr[weights + reg_oc_offset_ * sizeof(float)]);
                 };
-                load_param(vreg_d_weights_, quant.crop_low_data->shifts_, quant.crop_low_data->count_);
-                load_param(vreg_d_bias_, quant.crop_high_data->shifts_, quant.crop_high_data->count_);
+                load_param(vreg_d_weights_, quant.data[quant.crop_low], quant.count[quant.crop_low]);
+                load_param(vreg_d_bias_, quant.data[quant.crop_high], quant.count[quant.crop_high]);
                 vmaxps(dst, dst, vreg_d_weights_);
                 vminps(dst, dst, vreg_d_bias_);
-                load_param(vreg_d_weights_, quant.input_scale_data->scales_, quant.input_scale_data->count_);
-                load_param(vreg_d_bias_, quant.input_shift_data->shifts_, quant.input_shift_data->count_);
+                load_param(vreg_d_weights_, quant.data[quant.inp_scale], quant.count[quant.inp_scale]);
+                load_param(vreg_d_bias_, quant.data[quant.inp_shift], quant.count[quant.inp_shift]);
                 vfmadd213ps(dst, vreg_d_weights_, vreg_d_bias_);
                 const bool dequantize = quant.alg == alg_kind::quantization_quantize_dequantize;
                 if (dequantize || dst_data_type_ == data_type::f32 || i != post_ops_.len() - 1)
                     vrndscaleps(dst, dst, 0);
                 if (dequantize) {
-                    load_param(vreg_d_weights_, quant.output_scale_data->scales_, quant.output_scale_data->count_);
-                    load_param(vreg_d_bias_, quant.output_shift_data->shifts_, quant.output_shift_data->count_);
+                    load_param(vreg_d_weights_, quant.data[quant.output_scale], quant.count[quant.output_scale]);
+                    load_param(vreg_d_bias_, quant.data[quant.output_shift], quant.count[quant.output_shift]);
                     vfmadd213ps(dst, vreg_d_weights_, vreg_d_bias_);
                 }
             }
