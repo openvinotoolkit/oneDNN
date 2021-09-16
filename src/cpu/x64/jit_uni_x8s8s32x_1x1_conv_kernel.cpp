@@ -201,7 +201,7 @@ void jit_uni_x8s8s32x_1x1_conv_kernel_vmm_t<isa, Vmm>::apply_postops(
         });
         depthwise_injector::dynamic_params_t ddp {vmm_d_weights.getIdx(), vmm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
                                                   reg_oc_off, vmm_idx_off};
-        quantization_injector::dynamic_params_t qdp {reg_oc_off, vmm_idx_off};
+        quantization_injector::dynamic_params_t qdp {reg_oc_off, vmm_idx_off, jcp.dst_dt};
 
         if (jcp.with_sum && *p_sum_zp != 0)
             mov(ptr[rsp + reg_bcast_loop_iter_off], reg_ptr_sum_zp);
