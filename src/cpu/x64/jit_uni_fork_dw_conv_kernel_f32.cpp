@@ -700,6 +700,22 @@ void jit_uni_fork_dw_conv_fwd_kernel_f32<isa>::generate() {
                             reg_d_bias));
         }
     }
+    if (with_binary) {
+        static constexpr bool preserve_gpr = true;
+        static constexpr bool preserve_vmm = true;
+        static constexpr size_t helper_vmm_idx = 2;
+        auto tail_size = static_cast<int>(jcp.oc_without_padding
+                % (cpu_isa_traits_t<isa>::vlen / sizeof(float)));
+        static constexpr bool use_exact_tail_scalar_bcast = false;
+        const binary_injector::rhs_arg_static_params_t rhs_sp {helper_vmm_idx,
+                r10, r11, r12, preserve_gpr, preserve_vmm,
+                GET_OFF(post_ops_binary_rhs_arg_vec), GET_OFF(dst_orig),
+                memory_desc_wrapper(&dst_md_), tail_size, k_oc_tail_mask,
+                use_exact_tail_scalar_bcast};
+        const binary_injector::static_params_t bsp {this->param1, rhs_sp};
+        binary_injector = utils::make_unique<
+                binary_injector::jit_uni_binary_injector_t<isa>>(this, bsp);
+    }
 
     this->preamble();
 

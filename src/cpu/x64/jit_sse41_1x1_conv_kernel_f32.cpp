@@ -48,7 +48,7 @@ jit_sse41_1x1_conv_kernel_f32_t::jit_sse41_1x1_conv_kernel_f32_t(
         static constexpr bool preserve_gpr = true;
         static constexpr bool preserve_vmm = false;
         static constexpr size_t helper_vmm_idx = 15;
-        const int tail_size = jcp.oc_without_padding % simd_w_;
+        const size_t tail_size = jcp.oc_without_padding % simd_w_;
         static constexpr bool use_exact_tail_scalar_bcast = false;
 
         const binary_injector::rhs_arg_static_params_t rhs_arg_static_params {
@@ -82,7 +82,7 @@ void jit_sse41_1x1_conv_kernel_f32_t::generate_bcast_loop(int load_loop_blk) {
     L(bcast_loop);
     {
         assert(jcp.bcast_block % jcp.ur == 0);
-        const int num_substeps = static_cast<int>(jcp.bcast_block / jcp.ur);
+        int num_substeps = jcp.bcast_block / jcp.ur;
         assert(num_substeps > 0 && num_substeps < 10);
         for (int i = 0; i < num_substeps; i++) {
             generate_reduce_loop(load_loop_blk, jcp.ur);
@@ -143,7 +143,8 @@ void jit_sse41_1x1_conv_kernel_f32_t::apply_postops(
     depthwise_injector::dynamic_params_t ddp {xmm_d_weights.getIdx(),
             xmm_d_bias.getIdx(), reg_d_weights, reg_d_bias, reg_oc_off,
             vmm_idx_off};
-    quantization_injector::dynamic_params_t qdp {reg_oc_off, vmm_idx_off};
+    quantization_injector::dynamic_params_t qdp {
+            reg_oc_off, vmm_idx_off, jcp.dst_dt};
 
     injector_utils::vmm_index_set_t vmm_idxs;
     if (jcp.with_binary) {
@@ -684,6 +685,7 @@ status_t jit_sse41_1x1_conv_kernel_f32_t::init_conf(jit_1x1_conv_conf_t &jcp,
     VDISPATCH_CONV_IC(args_ok, VERBOSE_UNSUPPORTED_TAG);
 
     const int simd_w = 4;
+
     bool ok_to_pad_channels = true && !is_data_layout_nxc && jcp.ngroups == 1;
     if (ok_to_pad_channels) {
         jcp.oc = rnd_up(jcp.oc, simd_w * 2);
@@ -737,13 +739,12 @@ status_t jit_sse41_1x1_conv_kernel_f32_t::init_conf(jit_1x1_conv_conf_t &jcp,
         jcp.load_loop_iter_step = jcp.oc_block;
 
         load_blocking = is_data_layout_nxc
-                ? static_cast<int>(jcp.load_dim)
+                ? jcp.load_dim
                 : 120; // assumes the kernel is jcp.ur x 3
-        load_blocking_max
-                = is_data_layout_nxc ? static_cast<int>(jcp.load_dim) : 144;
+        load_blocking_max = is_data_layout_nxc ? jcp.load_dim : 144;
         bcast_blocking = 128; // affects load balancing across threads
         bcast_blocking_max = 192;
-        reduce_blocking = is_data_layout_nxc ? static_cast<int>(jcp.reduce_dim)
+        reduce_blocking = is_data_layout_nxc ? jcp.reduce_dim
                                              : 128; // affects L1$ utilization
     } else if (jcp.prop_kind == backward_data) {
         jcp.reduce_dim = jcp.oc;
@@ -801,7 +802,7 @@ status_t jit_sse41_1x1_conv_kernel_f32_t::init_conf(jit_1x1_conv_conf_t &jcp,
 
         /* --- */
 
-        load_blocking = static_cast<int>(div_up(jcp.load_dim, jcp.load_block));
+        load_blocking = div_up(jcp.load_dim, jcp.load_block);
         while (true) {
             if (load_blocking <= 32)
                 break;
@@ -816,8 +817,7 @@ status_t jit_sse41_1x1_conv_kernel_f32_t::init_conf(jit_1x1_conv_conf_t &jcp,
         load_blocking_max = load_blocking;
         assert(jcp.load_dim % load_blocking == 0);
 
-        bcast_blocking
-                = static_cast<int>(div_up(jcp.bcast_dim, jcp.bcast_block));
+        bcast_blocking = div_up(jcp.bcast_dim, jcp.bcast_block);
         while (true) {
             if (bcast_blocking <= 9)
                 break;

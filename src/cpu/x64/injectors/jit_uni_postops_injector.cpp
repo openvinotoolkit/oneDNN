@@ -417,16 +417,41 @@ void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
             bool do_rounding = do_dequantization || qdp.dst_dt == dnnl_f32
                     || i != post_ops_.len() - 1;
 
+            std::vector<std::pair<int, std::set<size_t>>> vec_of_vmm_idx_sets;
+            std::multimap<int, size_t> offset_vmm_idx_map;
+            for (auto vmm_idx : vmm_idxs) {
+                offset_vmm_idx_map.insert(
+                        {qdp.vmm_idx_off.at(vmm_idx), vmm_idx});
+            }
+
+            auto external_it = offset_vmm_idx_map.begin();
+            while (external_it != offset_vmm_idx_map.end()) {
+                auto internal_it = external_it;
+                auto end_internal_it
+                        = offset_vmm_idx_map.upper_bound(external_it->first);
+
+                std::set<size_t> vmm_indexes_to_process;
+                while (internal_it != end_internal_it) {
+                    vmm_indexes_to_process.insert(internal_it->second);
+                    internal_it++;
+                }
+                vec_of_vmm_idx_sets.push_back(
+                        {external_it->first, vmm_indexes_to_process});
+
+                external_it = end_internal_it;
+            }
+
             if (qdp.useAddr)
                 quantization_injectors[quantization_inj_idx]->init_crop_ptrs(
                         qdp.reg_oc_off_addr);
             else
                 quantization_injectors[quantization_inj_idx]->init_crop_ptrs(
                         qdp.reg_oc_off);
-            for (auto vmm_idx : vmm_idxs) {
+
+            for (auto &idx_set_pair : vec_of_vmm_idx_sets) {
                 quantization_injectors[quantization_inj_idx]->compute_crop(
-                        vmm_idx, vmm_idx + 1, qdp.vmm_idx_off.at(vmm_idx),
-                        false, is_broadcast);
+                        idx_set_pair.second, idx_set_pair.first, false,
+                        is_broadcast);
             }
 
             if (qdp.useAddr)
@@ -435,10 +460,11 @@ void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
             else
                 quantization_injectors[quantization_inj_idx]
                         ->init_input_scale_shift_ptrs(qdp.reg_oc_off);
-            for (auto vmm_idx : vmm_idxs) {
+
+            for (auto &idx_set_pair : vec_of_vmm_idx_sets) {
                 quantization_injectors[quantization_inj_idx]
-                        ->compute_input_scale_shift(vmm_idx, vmm_idx + 1,
-                                qdp.vmm_idx_off.at(vmm_idx), do_rounding, false,
+                        ->compute_input_scale_shift(idx_set_pair.second,
+                                idx_set_pair.first, do_rounding, false,
                                 is_broadcast);
             }
 
@@ -448,11 +474,11 @@ void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
             else
                 quantization_injectors[quantization_inj_idx]
                         ->init_output_scale_shift_ptrs(qdp.reg_oc_off);
-            for (auto vmm_idx : vmm_idxs) {
+
+            for (auto &idx_set_pair : vec_of_vmm_idx_sets) {
                 quantization_injectors[quantization_inj_idx]
-                        ->compute_output_scale_shift(vmm_idx, vmm_idx + 1,
-                                qdp.vmm_idx_off.at(vmm_idx), false,
-                                is_broadcast);
+                        ->compute_output_scale_shift(idx_set_pair.second,
+                                idx_set_pair.first, false, is_broadcast);
             }
 
             quantization_inj_idx++;
