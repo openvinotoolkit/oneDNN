@@ -151,9 +151,14 @@ public:
     void preamble() {
         if (xmm_to_preserve) {
             sub(rsp, xmm_to_preserve * xmm_len);
-            for (size_t i = 0; i < xmm_to_preserve; ++i)
-                movdqu(ptr[rsp + i * xmm_len],
-                        Xbyak::Xmm(xmm_to_preserve_start + i));
+            for (size_t i = 0; i < xmm_to_preserve; ++i) {
+                if (mayiuse(avx512_core))
+                    vmovdqu32(ptr[rsp + i * xmm_len], Xbyak::Xmm(xmm_to_preserve_start + i));
+                else if (mayiuse(avx2))
+                    vmovdqu(ptr[rsp + i * xmm_len], Xbyak::Xmm(xmm_to_preserve_start + i));
+                else
+                    movdqu(ptr[rsp + i * xmm_len], Xbyak::Xmm(xmm_to_preserve_start + i));
+            }
         }
         for (size_t i = 0; i < num_abi_save_gpr_regs; ++i)
             push(Xbyak::Reg64(abi_save_gpr_regs[i]));
@@ -204,9 +209,14 @@ public:
         for (size_t i = 0; i < num_abi_save_gpr_regs; ++i)
             pop(Xbyak::Reg64(abi_save_gpr_regs[num_abi_save_gpr_regs - 1 - i]));
         if (xmm_to_preserve) {
-            for (size_t i = 0; i < xmm_to_preserve; ++i)
-                movdqu(Xbyak::Xmm(xmm_to_preserve_start + i),
-                        ptr[rsp + i * xmm_len]);
+            for (size_t i = 0; i < xmm_to_preserve; ++i) {
+                if (mayiuse(avx512_core))
+                    vmovdqu32(Xbyak::Xmm(xmm_to_preserve_start + i), ptr[rsp + i * xmm_len]);
+                else if (mayiuse(avx2))
+                    vmovdqu(Xbyak::Xmm(xmm_to_preserve_start + i), ptr[rsp + i * xmm_len]);
+                else
+                    movdqu(Xbyak::Xmm(xmm_to_preserve_start + i), ptr[rsp + i * xmm_len]);
+            }
             add(rsp, xmm_to_preserve * xmm_len);
         }
         uni_vzeroupper();
