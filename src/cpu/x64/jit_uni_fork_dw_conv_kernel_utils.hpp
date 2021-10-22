@@ -113,17 +113,15 @@ status_t jit_uni_fork_dw_conv_fwd_kernel<isa, kernel_dt>::init_conf(
     const memory_desc_wrapper bias_d(&bias_md);
 
     const int ndims = src_d.ndims();
-    // Currently this kernel only supports 2D and 3D convolutions.
-    if (ndims != 4 && ndims != 5) return status::unimplemented;
-    const auto blocked_tag = (ndims == 5)
-            ? one_of(isa, avx512_core, avx512_core) ? nCdhw16c : nCdhw8c
-            : one_of(isa, avx512_core, avx512_core) ? nChw16c
-                                                    : nChw8c;
-    const auto wei_tag = (ndims == 5)
-            ? one_of(isa, avx512_core, avx512_core) ? Goidhw16g : Goidhw8g
-            : one_of(isa, avx512_core, avx512_core) ? Goihw16g
-                                                    : Goihw8g;
-    const auto nxc_tag = (ndims == 5) ? ndhwc : nhwc;
+    if (ndims != 3 && ndims != 4 && ndims != 5) return status::unimplemented;
+
+    const auto blocked_tag = one_of(isa, avx512_core)
+            ? pick(ndims - 3, nCw16c, nChw16c, nCdhw16c)
+            : pick(ndims - 3, nCw8c, nChw8c, nCdhw8c);
+    const auto wei_tag = one_of(isa, avx512_core)
+            ? pick(ndims - 3, Goiw16g, Goihw16g, Goidhw16g)
+            : pick(ndims - 3, Goiw8g, Goihw8g, Goidhw8g);
+    const auto nxc_tag = pick(ndims - 3, nwc, nhwc, ndhwc);
 
     jcp.with_bias = cd.bias_desc.format_kind != format_kind::undef;
 
