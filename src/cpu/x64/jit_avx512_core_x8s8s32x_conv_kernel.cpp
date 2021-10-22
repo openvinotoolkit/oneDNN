@@ -1538,7 +1538,7 @@ status_t jit_avx512_core_x8s8s32x_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
             return status::unimplemented;
     }
 
-    if (jcp.with_input_zp && jcp.is_depthwise && ndims != 4)
+    if (jcp.with_input_zp && jcp.is_depthwise && ndims == 5)
         return status::unimplemented;
 
     if (jcp.with_weights_zp)
