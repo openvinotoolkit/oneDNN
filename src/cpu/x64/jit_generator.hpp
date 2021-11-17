@@ -1071,6 +1071,14 @@ public:
         vcmpps(x1, x2, op, cmp_predicate);
     }
 
+    void uni_cmpneqps(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
+            const Xbyak::Operand &op) {
+        if (is_valid_isa(avx))
+            vcmpneqps(x1, x2, op);
+        else
+            cmpneqps(x1, op);
+    }
+
     void uni_vtestps(const Xbyak::Xmm &x1, const Xbyak::Operand &op) {
         ptest(x1, op);
     }
@@ -1165,6 +1173,26 @@ public:
             vmovq(addr, x);
         else
             movq(addr, x);
+    }
+    void uni_vmovq(const Xbyak::Reg64 &r, const Xbyak::Xmm &x) {
+        if (is_valid_isa(avx))
+            vmovq(r, x);
+        else
+            movq(r, x);
+    }
+
+    void uni_movshdup(const Xbyak::Xmm &x, const Xbyak::Operand &op) {
+        if (is_valid_isa(avx))
+            vmovshdup(x, op);
+        else
+            movshdup(x, op);
+    }
+
+    void uni_movhlps(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2) {
+        if (is_valid_isa(avx))
+            vmovhlps(x1, x2);
+        else
+            movhlps(x1, x2);
     }
 
     void uni_vpackssdw(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
