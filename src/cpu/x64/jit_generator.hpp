@@ -1063,8 +1063,12 @@ public:
 
     void uni_vcmpps(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
             const Xbyak::Operand &op, int cmp_predicate) {
-        if (x1.getIdx() != x2.getIdx()) uni_vmovups(x1, x2);
-        cmpps(x1, op, cmp_predicate);
+        if (is_valid_isa(avx))
+            vcmpps(x1, x2, op, cmp_predicate);
+        else {
+            if (x1.getIdx() != x2.getIdx()) uni_vmovups(x1, x2);
+            cmpps(x1, op, cmp_predicate);
+        }
     }
     void uni_vcmpps(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
             const Xbyak::Operand &op, int cmp_predicate) {
@@ -1092,9 +1096,13 @@ public:
 
     void uni_vblendvps(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
             const Xbyak::Operand &op, const Xbyak::Xmm &msk) {
-        assert(x1.getIdx() == x2.getIdx());
         assert(msk.getIdx() == 0);
-        blendvps(x1, op);
+        if (is_valid_isa(avx))
+            vblendvps(x1, x2, op, msk);
+        else {
+            if (x1.getIdx() != x2.getIdx()) uni_vmovups(x1, x2);
+            blendvps(x1, op);
+        }
     }
     void uni_vblendvps(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
             const Xbyak::Operand &op, const Xbyak::Ymm &msk) {
@@ -1183,14 +1191,14 @@ public:
             movq(r, x);
     }
 
-    void uni_movshdup(const Xbyak::Xmm &x, const Xbyak::Operand &op) {
+    void uni_vmovshdup(const Xbyak::Xmm &x, const Xbyak::Operand &op) {
         if (is_valid_isa(avx))
             vmovshdup(x, op);
         else
             movshdup(x, op);
     }
 
-    void uni_movhlps(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2) {
+    void uni_vmovhlps(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2) {
         if (is_valid_isa(avx))
             vmovhlps(x1, x2);
         else
