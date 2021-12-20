@@ -95,6 +95,7 @@ struct jit_uni_i8i8_pooling_fwd_ker_t : public jit_generator {
     Reg64 aux_reg_src_h = rax;
     Reg64 aux_reg_src_w = rbx;
 
+    Reg64 reg_store_tmp = r11; // shared with reg_kh_index and used only as tmp register for store on avx2
     Reg64 reg_tmp = rdx; // only used during mask init and store
     Reg64 reg_src_safe_access = rbp;
     Reg64 reg_dst_safe_access = rsi;
@@ -718,8 +719,8 @@ void jit_uni_i8i8_pooling_fwd_ker_t<avx2>::store_dst_avg_op(
         //         maskmovdqu/vmaskmovdqu
         //         with low 8-bytes mask throws exception if high 8-bytes belongs write-protected page.
         // NOTE: use indirect move via gpr to avoid transition penalty
-        vmovq(reg_tmp, Xmm(vr_dst.getIdx()));
-        movq(mmx_dst_i8, reg_tmp);
+        vmovq(reg_store_tmp, Xmm(vr_dst.getIdx()));
+        movq(mmx_dst_i8, reg_store_tmp);
 
         // mmx_full_msk - mask for all 8 bytes in zero-tail case
         // mmx_mask(ll) - ll-th mask of tail in non-zero-tail case
