@@ -17,56 +17,13 @@
 #ifndef COMMON_PRIMITIVE_HASHING_UTILS_HPP
 #define COMMON_PRIMITIVE_HASHING_UTILS_HPP
 
-#include <thread>
-#include <typeindex>
-#include <type_traits>
-
-#include "common/c_types_map.hpp"
-#include "common/engine_id.hpp"
-#include "common/type_helpers.hpp"
-#include "common/verbose.hpp"
+#include "common/primitive_hashing.hpp"
 
 namespace dnnl {
 namespace impl {
-struct primitive_desc_t;
 namespace primitive_hashing {
 
-size_t get_md_hash(const memory_desc_t &md);
-size_t get_attr_hash(const primitive_attr_t &attr);
 size_t get_post_op_hash(size_t seed, const post_ops_t &post_ops);
-
-template <typename T>
-size_t get_array_hash(size_t seed, const T *v, int size) {
-    for (int i = 0; i < size; i++) {
-        seed = hash_combine(seed, v[i]);
-    }
-    return seed;
-}
-
-template <>
-inline size_t get_array_hash<memory_desc_t>(
-        size_t seed, const memory_desc_t *v, int size) {
-    for (int i = 0; i < size; i++) {
-        seed = hash_combine(seed, get_md_hash(v[i]));
-    }
-    return seed;
-}
-
-inline size_t get_array_hash(
-        size_t seed, const std::vector<const memory_desc_t *> &mds) {
-    for (const auto *md : mds)
-        seed = hash_combine(seed, get_md_hash(*md));
-    return seed;
-}
-
-template <>
-inline size_t get_array_hash<data_type_t>(
-        size_t seed, const data_type_t *v, int size) {
-    for (int i = 0; i < size; i++) {
-        seed = hash_combine(seed, static_cast<size_t>(v[i]));
-    }
-    return seed;
-}
 
 template<typename T, typename A>
 size_t get_vector_hash(size_t seed, const std::vector<T, A> &vec) {
