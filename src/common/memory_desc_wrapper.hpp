@@ -786,8 +786,11 @@ inline bool memory_desc_wrapper::similar_to(const memory_desc_wrapper &rhs,
         return false;
 
     const int ds = dim_start;
-    if (stride_start == -1)
+    if (stride_start == -1) {
         stride_start = ds;
+    } else if (stride_start > ndims()) {
+        stride_start = ndims();
+    }
     const auto &blk = blocking_desc();
     const auto &r_blk = rhs.blocking_desc();
 

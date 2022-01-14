@@ -28,7 +28,6 @@
 
 namespace dnnl {
 namespace impl {
-struct primitive_desc_t;
 namespace primitive_hashing {
 
 size_t get_md_hash(const memory_desc_t &md);
