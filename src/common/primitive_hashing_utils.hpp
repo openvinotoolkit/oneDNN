@@ -25,6 +25,11 @@ namespace primitive_hashing {
 
 size_t get_post_op_hash(size_t seed, const post_ops_t &post_ops);
 
+template <typename T, typename A>
+size_t get_vector_hash(size_t seed, const std::vector<T, A> &vec) {
+    return get_array_hash(seed, vec.data(), vec.size());
+}
+
 } // namespace primitive_hashing
 } // namespace impl
 } // namespace dnnl
