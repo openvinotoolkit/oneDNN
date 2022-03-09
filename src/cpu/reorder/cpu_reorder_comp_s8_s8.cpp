@@ -73,7 +73,6 @@ const impl_list_map_t comp_s8_s8_impl_list_map {
         nullptr,
     }},
     {{s8, s8, 4}, {
-#ifdef ENABLE_UNUSED_PRIM
         REG_SR(s8, any, s8, hwio, fmt_order_keep, spec_conv_req_comp)
         REG_SR(s8, any, s8, wigo, fmt_order_keep, spec_conv_req_comp)
         REG_SR(s8, goiw, s8, gOIw4i16o4i, fmt_order_keep, spec_conv_req_comp)
@@ -118,15 +117,10 @@ const impl_list_map_t comp_s8_s8_impl_list_map {
         REG_SR(s8, ihwo, s8, OIhw16i16o4i, fmt_order_keep, spec_conv_req_comp)
         REG_SR(s8, oihw, s8, OIhw16i16o4i, fmt_order_keep, spec_conv_req_comp)
         REG_SR(s8, hwio, s8, OIhw16i16o4i, fmt_order_keep, spec_conv_req_comp)
-#endif
-        REG_SR(s8, iohw, s8, OIhw4i16o4i, fmt_order_keep, spec_conv_req_comp)
-        REG_SR(s8, iohw, s8, OIhw2i8o4i, fmt_order_keep, spec_conv_req_comp)
-        REG_SR(s8, iohw, s8, OIhw4o4i, fmt_order_keep, spec_conv_req_comp)
 
         nullptr,
     }},
     {{s8, s8, 5}, {
-#ifdef ENABLE_UNUSED_PRIM
         REG_SR(s8, any, s8, hwigo, fmt_order_keep, spec_conv_req_comp)
         REG_SR(s8, any, s8, dhwio, fmt_order_keep, spec_conv_req_comp)
         REG_SR(s8, goihw, s8, gOIhw4i16o4i, fmt_order_keep, spec_conv_req_comp)
@@ -168,28 +162,16 @@ const impl_list_map_t comp_s8_s8_impl_list_map {
         REG_SR(s8, idhwo, s8, OIdhw16i16o4i, fmt_order_keep, spec_conv_req_comp)
         REG_SR(s8, oidhw, s8, OIdhw16i16o4i, fmt_order_keep, spec_conv_req_comp)
         REG_SR(s8, dhwio, s8, OIdhw16i16o4i, fmt_order_keep, spec_conv_req_comp)
-#endif
-        REG_SR(s8, giohw, s8, gOIhw4i16o4i, fmt_order_keep, spec_conv_req_comp)
-        REG_SR(s8, giohw, s8, gOIhw2i8o4i, fmt_order_keep, spec_conv_req_comp)
-        REG_SR(s8, giohw, s8, gOIhw4o4i, fmt_order_keep, spec_conv_req_comp)
-        REG_SR(s8, iodhw, s8, OIdhw4i16o4i, fmt_order_keep, spec_conv_req_comp)
-        REG_SR(s8, iodhw, s8, OIdhw2i8o4i, fmt_order_keep, spec_conv_req_comp)
-        REG_SR(s8, iodhw, s8, OIdhw4o4i, fmt_order_keep, spec_conv_req_comp)
 
         nullptr,
     }},
     {{s8, s8, 6}, {
-#ifdef ENABLE_UNUSED_PRIM
         REG_SR(s8, any, s8, dhwigo, fmt_order_keep, spec_conv_req_comp)
         REG_SR(s8, goidhw, s8, gOIdhw4i16o4i, fmt_order_keep, spec_conv_req_comp)
         REG_SR(s8, goidhw, s8, gOIdhw2i8o4i, fmt_order_keep, spec_conv_req_comp)
         REG_SR(s8, goidhw, s8, gOIdhw4o4i, fmt_order_keep, spec_conv_req_comp)
         REG_SR(s8, goidhw, s8, gOdhwI16o4i, fmt_order_keep, spec_conv_req_comp)
         REG_SR(s8, goidhw, s8, gOIdhw16i16o4i, fmt_order_keep, spec_conv_req_comp)
-#endif
-        REG_SR(s8, giodhw, s8, gOIdhw4i16o4i, fmt_order_keep, spec_conv_req_comp)
-        REG_SR(s8, giodhw, s8, gOIdhw2i8o4i, fmt_order_keep, spec_conv_req_comp)
-        REG_SR(s8, giodhw, s8, gOIdhw4o4i, fmt_order_keep, spec_conv_req_comp)
 
         nullptr,
     }},
