@@ -597,6 +597,7 @@ static dnnl_status_t gemm_kernel_driver(int ithr, dim_t m, dim_t n, dim_t k,
     if (mem_size > 0) {
         mem = (char *)malloc(mem_size, 128);
         if (!mem) return dnnl_out_of_memory;
+        memset(mem, 0, mem_size);
     }
 
     a_type *bufferA = (a_type *)align(mem, PAGE_4K);
@@ -813,6 +814,7 @@ static dnnl_status_t kernel_driver_parallel_acopiedbcopy(int ithr, dim_t m,
     if (mem_size > 0) {
         mem = (char *)malloc(mem_size, 128);
         if (!mem) return dnnl_out_of_memory;
+        memset(mem, 0, mem_size);
     }
 
     b_type *bufferB = (b_type *)align(mem, PAGE_4K);
@@ -1409,6 +1411,8 @@ static dnnl_status_t parallel_a_copy(const int ithr, const int nthrs,
             }
 
             *p_shared_mem = (char *)malloc(mem_size, 128);
+            if (!p_shared_mem) return dnnl_out_of_memory;
+            memset(p_shared_mem, 0, mem_size);
         }
 
         dnnl_thr_barrier();
@@ -1418,8 +1422,6 @@ static dnnl_status_t parallel_a_copy(const int ithr, const int nthrs,
 
         if (is_int8)
             a_row_sum = (c_type *)align(bufferA + a_buf_nelems, PAGE_4K);
-
-        if (!mem) return dnnl_out_of_memory;
     }
 
     dnnl_status_t result = dnnl_success; // Return status
