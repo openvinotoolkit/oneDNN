@@ -88,6 +88,7 @@ inline size_t data_type_size(data_type_t data_type) {
         case s32: return sizeof(prec_traits<s32>::type);
         case s8: return sizeof(prec_traits<s8>::type);
         case u8: return sizeof(prec_traits<u8>::type);
+        case bin: return sizeof(prec_traits<u8>::type);
         case data_type::undef:
         default: assert(!"unknown data_type");
     }
@@ -184,10 +185,7 @@ inline bool blocking_desc_is_equal(const memory_desc_t &lhs_md,
             && array_cmp(lhs.inner_idxs, rhs.inner_idxs, lhs.inner_nblks);
     if (ignore_strides) return equal;
 
-    // Check the strides.
-    // Note: for dimensions of size `1` the stride doesn't really matter.
     for (int d = 0; d < lhs_md.ndims; ++d) {
-        if (lhs_md.dims[d] == 1 && lhs_md.padded_dims[d] == 1) continue;
         equal = equal && lhs.strides[d] == rhs.strides[d];
     }
 
@@ -821,7 +819,7 @@ inline bool memory_desc_sanity_check(int ndims, const dims_t dims,
     if (ndims == 0) return true;
 
     bool ok = dims != nullptr && 0 < ndims && ndims <= DNNL_MAX_NDIMS
-            && utils::one_of(data_type, f16, bf16, f32, s32, s8, u8);
+            && utils::one_of(data_type, f16, bf16, f32, s32, s8, u8, bin);
     if (!ok) return false;
 
     bool has_runtime_dims = false;

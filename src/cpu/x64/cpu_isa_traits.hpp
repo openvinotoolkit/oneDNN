@@ -31,7 +31,7 @@
 #define XBYAK_NO_OP_NAMES
 /* in order to make selinux happy memory that would be marked with X-bit should
  * be obtained with mmap */
-#define XBYAK_USE_MMAP_ALLOCATOR
+//#define XBYAK_USE_MMAP_ALLOCATOR
 #define XBYAK_NO_EXCEPTION
 #if defined(_MSC_VER) && !defined(__INTEL_COMPILER)
 /* turn off `size_t to other-type implicit casting` warning
@@ -67,6 +67,7 @@ enum cpu_isa_bit_t : unsigned {
     amx_int8_bit = 1u << 10,
     amx_bf16_bit = 1u << 11,
     avx_vnni_bit = 1u << 12,
+    avx512_vpopcnt_bit = 1u << 13,
 
     // Fill in hints from most significant bit to least significant bit
     prefer_ymm_bit = 1u << (cpu_isa_total_bits - 1),
@@ -122,6 +123,7 @@ enum cpu_isa_t : unsigned {
     avx512_core_bf16_amx_int8 = avx512_core_bf16 | amx_int8,
     avx512_core_bf16_amx_bf16 = avx512_core_bf16 | amx_bf16,
     avx512_core_amx = avx512_core_bf16 | amx_int8 | amx_bf16,
+    avx512_vpopcnt = avx512_vpopcnt_bit,
     // NOTES: 1. isa_all by default has no isa specific hints
     isa_all = ~0u & ~cpu_isa_hints_utils::hints_mask,
 };
@@ -275,6 +277,13 @@ struct cpu_isa_traits<avx512_core_amx> {
     static constexpr const char *user_option_env = "avx512_core_amx";
 };
 
+template <>
+struct cpu_isa_traits<avx512_vpopcnt> {
+    static constexpr dnnl_cpu_isa_t user_option_val
+            = dnnl_cpu_isa_avx512_vpopcnt;
+    static constexpr const char *user_option_env = "AVX512_VPOPCNT";
+};
+
 inline const Xbyak::util::Cpu &cpu() {
     const static Xbyak::util::Cpu cpu_;
     return cpu_;
@@ -340,6 +349,7 @@ static inline bool mayiuse(const cpu_isa_t cpu_isa, bool soft = false) {
         case avx512_core_amx:
             return mayiuse(avx512_core_bf16_amx_int8, soft)
                     && mayiuse(avx512_core_bf16_amx_bf16, soft);
+        case avx512_vpopcnt: return cpu().has(Cpu::tAVX512_VPOPCNTDQ);
         case isa_any: return true;
         case isa_all: return false;
     }

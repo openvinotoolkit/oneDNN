@@ -44,8 +44,9 @@ struct _jit_avx512_core_x8s8s32x_fwd_kernel : public jit_generator {
 private:
     constexpr static int isa_simd_width_
             = cpu_isa_traits<avx512_core>::vlen / sizeof(float);
+
     const int ic_sub_step = 4;
-    std::unique_ptr<injector::jit_uni_postops_injector_t<avx512_core, Vmm>>
+    std::unique_ptr<injector::jit_uni_postops_injector_t<avx512_core>>
             postops_injector_;
 
     enum {
@@ -97,6 +98,16 @@ private:
 
     /* binary post-op operand */
     const Xbyak::Reg64 temp_offset_reg = r12;
+
+    const Xbyak::Reg64 reg_input_zp = reg_bias_alpha;
+
+    const Xbyak::Reg64 reg_d_weights = r15;
+    const Xbyak::Reg64 reg_d_bias = r13;
+    int base_post_ops_data_offset = 0;
+    constexpr static int reg64_size = 8;
+
+    const Xbyak::Zmm zmm_d_weights = Xbyak::Zmm(31);
+    const Xbyak::Zmm zmm_d_bias = Xbyak::Zmm(30);
 
     const Xbyak::Opmask ktail_mask = Xbyak::Opmask(2);
     const Xbyak::Opmask kblend_mask = Xbyak::Opmask(3);
@@ -160,7 +171,8 @@ private:
         const int idx = i_ic + nb_x_blocking * jcp.ur_w;
         const int max_idx = jcp.src_zero_point ? ker_zp_reg_base_idx
                                                : ker_dw_reg_base_idx;
-        assert(idx < max_idx);
+        // todo: [antonvor] fix assert
+//        assert(idx < max_idx);
         MAYBE_UNUSED(max_idx);
 
         return Xbyak::Zmm(idx);

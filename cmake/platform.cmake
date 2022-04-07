@@ -45,6 +45,11 @@ if($ENV{ONEDNN_WERROR})
     set(DNNL_WERROR $ENV{ONEDNN_WERROR})
 endif()
 
+# Compatibility with Intel MKL-DNN
+if($ENV{MKLDNN_WERROR})
+    set(DNNL_WERROR $ENV{MKLDNN_WERROR})
+endif()
+
 if($ENV{DNNL_WERROR})
     set(DNNL_WERROR $ENV{DNNL_WERROR})
 endif()

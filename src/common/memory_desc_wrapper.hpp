@@ -28,6 +28,10 @@
 namespace dnnl {
 namespace impl {
 
+status_t fill_blocked(memory_desc_t &md, std::vector<int> &perm,
+        std::vector<int> &inner_blks,
+        std::vector<int> &inner_idxs);
+
 /** thin wrapper class over \struct memory_desc_t which allows easy
  * manipulations with underlying C structure, which is taken by reference */
 struct memory_desc_wrapper : public c_compatible {
@@ -294,7 +298,8 @@ struct memory_desc_wrapper : public c_compatible {
      * following statement might be true: lhs == rhs && !lhs.similar_to(rhs) */
     /* TODO: revise */
     bool similar_to(const memory_desc_wrapper &rhs, bool with_padding = true,
-            bool with_data_type = true, int dim_start = 0) const;
+            bool with_data_type = true, int dim_start = 0, bool use_weak_cmp = false,
+            bool check_off0 = false, uint64_t stride_mask = 0xffffffffffffffff) const;
 
     /** returns true if one memory can be reordered to another */
     bool consistent_with(const memory_desc_wrapper &rhs) const;
@@ -314,6 +319,21 @@ struct memory_desc_wrapper : public c_compatible {
             if (memory_desc_matches_tag(*md_, tag)) return tag;
         }
         return format_tag::undef;
+    }
+
+    /** returns matching tag (or undef if match is not found) with taking into
+     *  account strides specified outside */
+    template<typename ...Tags>
+    dnnl_format_tag_t stride_relaxed_matches_any_of(const dims_t &strides, Tags... tags) const {
+        for (const auto &tag : {tags...})
+            if (matches_tag(tag, strides)) return tag;
+        return format_tag::undef;
+    }
+
+    template<typename ...Tags>
+    dnnl_format_tag_t mb_stride_relaxed_match(Tags... tags) const {
+        const dims_t skip_mb_stride{-1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+        return stride_relaxed_matches_any_of(skip_mb_stride, tags...);
     }
 
     /* offset section */
@@ -411,6 +431,11 @@ struct memory_desc_wrapper : public c_compatible {
     static status_t compute_blocking(
             memory_desc_t &memory_desc, format_tag_t tag);
 
+    static status_t compute_blocking(format_tag_t tag,
+                                     std::vector<size_t> &perm,
+                                     std::vector<size_t> &inner_blks,
+                                     std::vector<size_t> &inner_idxs);
+
 private:
     /* TODO: put logical_offset in utils */
     template <typename T>
@@ -440,7 +465,7 @@ private:
 };
 
 inline bool memory_desc_wrapper::similar_to(const memory_desc_wrapper &rhs,
-        bool with_padding, bool with_data_type, int dim_start) const {
+        bool with_padding, bool with_data_type, int dim_start, bool use_weak_cmp, bool check_off0, uint64_t stride_mask) const {
     using namespace utils;
 
     if (one_of(format_kind(), format_kind::undef, format_kind::any))
@@ -451,20 +476,38 @@ inline bool memory_desc_wrapper::similar_to(const memory_desc_wrapper &rhs,
     const auto &blk = blocking_desc();
     const auto &r_blk = rhs.blocking_desc();
 
+    auto custom_cpm = use_weak_cmp ? array_cmp_weak : array_cmp<dnnl_dim_t>;
+    auto cmp_strides = [&]() {
+        if (0xffffffffffffffff == stride_mask) {
+            return custom_cpm(blk.strides + ds, r_blk.strides + ds, ndims() - ds);
+        } else {
+            for (int i = 0; i < ndims(); ++i) {
+                if (stride_mask & (1 << i)) {
+                    if (blk.strides[i] != r_blk.strides[i]
+                        && IMPLICATION(use_weak_cmp, (blk.strides[i] != DNNL_RUNTIME_DIM_VAL && r_blk.strides[i] != DNNL_RUNTIME_DIM_VAL))) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
+    };
+
     return ndims() == rhs.ndims() && dim_start <= ndims() /* guard */
             && format_kind() == rhs.format_kind()
             && IMPLICATION(with_data_type, data_type() == rhs.data_type())
-            && array_cmp(dims() + ds, rhs.dims() + ds, ndims() - ds)
-            && array_cmp(blk.strides + ds, r_blk.strides + ds, ndims() - ds)
+            && custom_cpm(dims() + ds, rhs.dims() + ds, ndims() - ds)
+            && cmp_strides()
             && blk.inner_nblks == r_blk.inner_nblks
             && array_cmp(blk.inner_blks, r_blk.inner_blks, blk.inner_nblks)
             && array_cmp(blk.inner_idxs, r_blk.inner_idxs, blk.inner_nblks)
             && IMPLICATION(with_padding,
                     true
-                            && array_cmp(padded_dims() + ds,
+                            && custom_cpm(padded_dims() + ds,
                                     rhs.padded_dims() + ds, ndims() - ds)
-                            && array_cmp(padded_offsets() + ds,
-                                    rhs.padded_offsets() + ds, ndims() - ds));
+                            && custom_cpm(padded_offsets() + ds,
+                                    rhs.padded_offsets() + ds, ndims() - ds))
+            && IMPLICATION(check_off0, (offset0() == DNNL_RUNTIME_DIM_VAL || rhs.offset0() ==DNNL_RUNTIME_DIM_VAL || offset0() == rhs.offset0()));           
 }
 
 inline bool memory_desc_wrapper::consistent_with(

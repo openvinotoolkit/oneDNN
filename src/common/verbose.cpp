@@ -421,15 +421,17 @@ std::ostream &operator<<(std::ostream &ss, const primitive_attr_t *attr) {
                     if (s.dt != data_type::undef) ss << ":" << s.dt;
                 } break;
                 case primitive_kind::convolution: {
-                    using namespace data_type;
-                    const auto &c = e.depthwise_conv;
-                    ss << delim << "dw_k3s" << c.stride << "p1";
-                    if (c.wei_dt == s8 || c.dst_dt != f32)
-                        ss << ":" << c.dst_dt;
-                    if (c.count > 0 && c.wei_dt == s8) {
-                        ss << ":" << c.mask;
-                        if (c.mask == 0) ss << ":" << c.scales[0];
-                    }
+//                    using namespace data_type;
+//                    const auto &c = e.depthwise_conv;
+//                    ss << delim << "dw_k3s" << c.stride << "p1";
+//                    if (c.wei_dt == s8 || c.dst_dt != f32)
+//                        ss << ":" << c.dst_dt;
+//                    if (c.count > 0 && c.wei_dt == s8) {
+//                        ss << ":" << c.mask;
+//                        if (c.mask == 0) ss << ":" << c.scales[0];
+//                    }
+                    const char *alg_str = "depthwise_conv_old";
+                    ss << delim << alg_str;
                 } break;
                 case primitive_kind::eltwise: {
                     const post_ops_t::entry_t::eltwise_t &ew = e.eltwise;
@@ -453,6 +455,14 @@ std::ostream &operator<<(std::ostream &ss, const primitive_attr_t *attr) {
                     const auto &ep = e.prelu;
                     ss << delim << "prelu"
                        << ":" << ep.mask;
+                } break;
+                case primitive_kind::depthwise: {
+                    const post_ops_t::entry_t::depthwise_t &dw = e.depthwise;
+                    ss << delim << dw.alg;
+                } break;
+                case primitive_kind::quantization: {
+                    const post_ops_t::entry_t::quantization_t &qt = e.quantization;
+                    ss << delim << qt.alg;
                 } break;
                 default: assert(!"unsupported post op primitive kind!"); break;
             }

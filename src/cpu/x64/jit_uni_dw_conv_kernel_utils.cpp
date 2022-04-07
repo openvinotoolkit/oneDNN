@@ -62,7 +62,7 @@ status_t jit_uni_dw_conv_fwd_kernel<isa, kernel_dt>::init_conf(
         CHECK(memory_desc_init_by_tag(src_md, def_tag));
         jcp.src_tag = def_tag;
     } else {
-        jcp.src_tag = src_d.matches_one_of_tag(blocked_tag, nxc_tag);
+        jcp.src_tag = src_d.mb_stride_relaxed_match(blocked_tag, nxc_tag);
     }
 
     if (weights_d.format_kind() == format_kind::any) {
@@ -76,7 +76,7 @@ status_t jit_uni_dw_conv_fwd_kernel<isa, kernel_dt>::init_conf(
         CHECK(memory_desc_init_by_tag(dst_md, def_tag));
         jcp.dst_tag = def_tag;
     } else {
-        jcp.dst_tag = dst_d.matches_one_of_tag(blocked_tag, nxc_tag);
+        jcp.dst_tag = dst_d.mb_stride_relaxed_match(blocked_tag, nxc_tag);
     }
 
     if (jcp.with_bias) {
@@ -218,19 +218,21 @@ status_t jit_uni_dw_conv_fwd_kernel<isa, kernel_dt>::init_conf(
                         broadcasting_strategy_t::per_oc,
                         broadcasting_strategy_t::no_broadcast);
     }
+    jcp.with_depthwise = post_ops.find(primitive_kind::depthwise) != -1;
+    jcp.with_quantization = post_ops.find(primitive_kind::quantization) != -1;
 
     jcp.post_ops = post_ops;
 
     using namespace injector;
     static constexpr bool sum_at_pos_0_only = true;
     static constexpr bool sum_requires_scale_one = true;
-    const bool post_ops_ok_ = post_ops_ok({isa, {eltwise, binary, sum},
+    const bool post_ops_ok_ = post_ops_ok({isa, {eltwise, binary, sum, depthwise, quantization},
             jcp.post_ops, &dst_d, sum_at_pos_0_only, sum_requires_scale_one});
     if (!post_ops_ok_) return status::unimplemented;
 
     const bool ok_to_pad_channels = true && !is_data_layout_nxc
             && jcp.oc == jcp.ngroups && jcp.ic == jcp.ngroups
-            && one_of(isa, avx512_common, avx512_core, avx2);
+            && one_of(isa, avx512_common, avx512_core, avx2, sse41);
     if (ok_to_pad_channels) {
         jcp.oc = rnd_up(jcp.oc, simd_w);
         jcp.ic = rnd_up(jcp.oc, simd_w);
@@ -261,10 +263,28 @@ void jit_uni_dw_conv_fwd_kernel<isa, kernel_dt>::init_scratchpad(
 }
 
 template <cpu_isa_t isa, data_type_t kernel_dt>
+bool jit_uni_dw_conv_bwd_data_kernel<isa, kernel_dt>::post_ops_ok(const primitive_attr_t &attr) {
+    const auto &p = attr.post_ops_;
+    if (p.len() > 1)
+        return false;
+
+    auto all_post_ops_supported = [&]() {
+        bool ok = true;
+
+        for (int i = 0; i < p.len(); i++) {
+            ok = ok && utils::one_of(p.entry_[i].kind, primitive_kind::depthwise);
+        }
+        return ok;
+    };
+
+    return all_post_ops_supported();
+}
+
+template <cpu_isa_t isa, data_type_t kernel_dt>
 status_t jit_uni_dw_conv_bwd_data_kernel<isa, kernel_dt>::init_conf(
         jit_conv_conf_t &jcp, const convolution_desc_t &cd,
         memory_desc_t &diff_src_md, memory_desc_t &weights_md,
-        memory_desc_t &diff_dst_md) {
+        memory_desc_t &diff_dst_md, const primitive_attr_t &attr) {
     using namespace dnnl::impl::format_tag;
     using namespace dnnl::impl::utils;
 
@@ -324,9 +344,9 @@ status_t jit_uni_dw_conv_bwd_data_kernel<isa, kernel_dt>::init_conf(
             = one_of(isa, avx512_common, avx512_core) ? Goihw16g : Goihw8g;
 
     auto curr_src_tag
-            = diff_src_d.matches_one_of_tag(dat_tag_nxc, dat_tag_blocked);
+            = diff_src_d.mb_stride_relaxed_match(dat_tag_nxc, dat_tag_blocked);
     auto curr_dst_tag
-            = diff_dst_d.matches_one_of_tag(dat_tag_nxc, dat_tag_blocked);
+            = diff_dst_d.mb_stride_relaxed_match(dat_tag_nxc, dat_tag_blocked);
     bool is_data_layout_nxc
             = utils::everyone_is(dat_tag_nxc, curr_src_tag, curr_dst_tag);
     auto dat_tag = is_data_layout_nxc ? dat_tag_nxc : dat_tag_blocked;
@@ -362,6 +382,11 @@ status_t jit_uni_dw_conv_bwd_data_kernel<isa, kernel_dt>::init_conf(
     // note: sse41 uses 'ch_block = 8' where the value is derived
     // from: 'simd_w_ * reg_repeats_ = 4 * 2'
     jcp.ch_block = one_of(isa, avx512_common, avx512_core) ? 16 : 8;
+
+    if (!post_ops_ok(attr))
+        return status::unimplemented;
+
+    jcp.post_ops = attr.post_ops_;
 
     bool ok_to_pad_channels = !is_data_layout_nxc && jcp.oc == jcp.ngroups
             && jcp.ic == jcp.ngroups

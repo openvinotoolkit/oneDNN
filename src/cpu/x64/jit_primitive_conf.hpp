@@ -109,6 +109,8 @@ struct jit_conv_conf_t {
     bool with_sum;
     bool with_eltwise;
     bool with_binary;
+    bool with_depthwise;
+    bool with_quantization;
 
     data_type_t sum_dt;
 
@@ -262,6 +264,16 @@ struct jit_conv_conf_t {
     int max_width;
 
     bool transform_to_vnni;
+
+    bool with_input_zp;
+    bool with_weights_zp;
+
+    int oh_block;
+    int oh_block_step;
+    int nb_ow_blocking;
+
+    int dw_conv_oh, dw_conv_ow;
+    data_type_t dw_conv_dst_dt;
 };
 
 // calculates filter size taking into account dilation
@@ -273,6 +285,12 @@ inline int calculate_end_padding(int start_padding, int dst_size, int src_size,
         int spatial_stride, int dilated_filter_size) {
     return (dst_size - 1) * spatial_stride + dilated_filter_size
             - (src_size + start_padding);
+}
+
+inline int calculate_end_padding_log(int start_padding, int dst_size, int src_size,
+        int spatial_stride, int dilated_filter_size, int end_pad) {
+    return (dst_size - 1) * spatial_stride + dilated_filter_size
+            - (src_size + start_padding + end_pad);
 }
 
 inline status_t init_tag(format_tag_t &tag, const memory_desc_wrapper &mdw,
@@ -488,6 +506,18 @@ struct jit_conv_call_s {
     int oc_flag;
     size_t last_ic_block;
     size_t last_oc_block;
+
+    size_t oc_off;
+    size_t ic_off;
+    size_t oc_off_prf;
+    size_t oh_blocks;
+
+    const void *input_zp;
+
+    size_t oc_work;
+    const void *src_row0; /* hack, non-const for backward_data */
+    const void *src_row1; /* hack, non-const for backward_data */
+    const void *src_row2; /* hack, non-const for backward_data */
 };
 
 struct jit_deconv_call_s {
@@ -520,6 +550,7 @@ struct jit_deconv_call_s {
     size_t kh_padding;
     size_t kd_padding;
     size_t oc_blocks;
+    size_t oc_off;
 };
 
 struct jit_dw_conv_call_s {
@@ -567,6 +598,8 @@ struct jit_1x1_conv_conf_t {
     bool with_sum;
     bool with_eltwise;
     bool with_binary;
+    bool with_depthwise;
+    bool with_quantization;
     bool with_dw_conv;
 
     post_ops_t post_ops;
@@ -603,6 +636,7 @@ struct jit_1x1_conv_conf_t {
     int tr_is;
     int nthr, nthr_mb, nthr_g, nthr_oc_b, nthr_ic_b;
     int is_oc_scale;
+    data_type_t src_dt;
     data_type_t bia_dt;
     data_type_t dst_dt;
     data_type_t sum_dt;
@@ -615,6 +649,12 @@ struct jit_1x1_conv_conf_t {
 
     cpu_isa_t isa;
     bool uses_permw_transposition;
+
+    bool with_input_zp;
+    bool with_weights_zp;
+
+    int dw_conv_oh, dw_conv_ow;
+    data_type_t dw_conv_dst_dt;
 };
 
 struct jit_1x1_conv_call_s {
@@ -648,6 +688,8 @@ struct jit_1x1_conv_call_s {
     size_t output_stride; // used in backward_weights only
 
     size_t first_last_flag;
+
+    size_t oc_off;
 };
 
 struct jit_pool_conf_t {
@@ -656,7 +698,7 @@ struct jit_pool_conf_t {
     int id, ih, iw, od, oh, ow;
     int stride_d, stride_h, stride_w;
     int kd, kh, kw;
-    int f_pad, t_pad, l_pad;
+    int f_pad, t_pad, l_pad, b_pad, r_pad, back_pad;
     alg_kind_t alg;
     bool is_training;
     bool pad_w_is_null;
@@ -687,6 +729,8 @@ struct jit_pool_conf_t {
     bool with_postops;
     bool with_eltwise;
     bool with_binary;
+    bool with_depthwise;
+    bool with_quantization;
     int nthr;
 };
 
@@ -1012,6 +1056,26 @@ struct jit_reduction_conf_t {
 struct jit_reduction_call_s {
     const void *src = nullptr;
     void *dst = nullptr;
+};
+
+/* softmax */
+struct jit_softmax_conf_t {
+    size_t outer_size;
+    size_t channels;
+    size_t inner_size;
+    size_t ur_channel;
+    size_t ur_inner;
+    size_t outer_block;
+    size_t dt_size;
+    data_type_t dt;
+};
+
+struct jit_softmax_call_s {
+    const uint8_t* src;
+    uint8_t* dst;
+
+    size_t channels;
+    size_t work;
 };
 
 } // namespace x64

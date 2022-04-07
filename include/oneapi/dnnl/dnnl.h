@@ -23,6 +23,7 @@
 #include "oneapi/dnnl/dnnl_config.h"
 #include "oneapi/dnnl/dnnl_types.h"
 #include "oneapi/dnnl/dnnl_version.h"
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -532,6 +533,15 @@ dnnl_status_t DNNL_API dnnl_primitive_attr_set_zero_points(
         dnnl_primitive_attr_t attr, int arg, dnnl_dim_t count, int mask,
         const int32_t *zero_points);
 
+dnnl_status_t DNNL_API dnnl_primitive_attr_set_output_compensations(
+        dnnl_primitive_attr_t attr, int count, int mask);
+
+dnnl_status_t DNNL_API dnnl_primitive_attr_set_input_zero_points(
+        dnnl_primitive_attr_t attr, int count, int mask);
+
+dnnl_status_t DNNL_API dnnl_primitive_attr_set_weights_zero_points(
+        dnnl_primitive_attr_t attr, int count, int mask);
+
 /// Returns primitive attributes post-ops.
 ///
 /// @warning
@@ -765,6 +775,14 @@ dnnl_status_t DNNL_API dnnl_post_ops_get_params_eltwise(
         const_dnnl_post_ops_t post_ops, int index, float *scale,
         dnnl_alg_kind_t *alg_kind, float *alpha, float *beta);
 
+/** Appends DW convolution post operation to the @p post_ops with given parameters
+ * @p weights and @p bias.
+ *
+ * The kind of this post operation is #dnnl_convolution.
+ */
+dnnl_status_t DNNL_API dnnl_post_ops_append_dw_conv(
+        dnnl_post_ops_t post_ops, int in_h, int in_w, int ker_h, int ker_w, int str_h, int str_w, dnnl_data_type_t in_dt);
+
 /// Appends a depthwise post-op convolution with stride 1.
 ///
 /// This post-op can only be fused with a 2D 1x1 convolution (convolution with
@@ -955,6 +973,18 @@ dnnl_status_t DNNL_API dnnl_post_ops_append_prelu(
 /// @param mask Mask of the prelu post-op.
 dnnl_status_t DNNL_API dnnl_post_ops_get_params_prelu(
         const_dnnl_post_ops_t post_ops, int index, int *mask);
+
+dnnl_status_t DNNL_API dnnl_post_ops_append_depthwise(
+        dnnl_post_ops_t post_ops, dnnl_alg_kind_t alg, size_t offset_size, const size_t* offset);
+
+dnnl_status_t DNNL_API dnnl_post_ops_append_quantization(
+        dnnl_post_ops_t post_ops, dnnl_alg_kind_t alg,
+        size_t per_channel_size, const bool* per_channel,
+        size_t all_default_size, const bool* all_default,
+        size_t offset_size, const size_t* offset);
+
+dnnl_status_t DNNL_API dnnl_post_ops_append_binarization(
+        dnnl_post_ops_t post_ops, dnnl_alg_kind_t alg, const float* weights_data, const float* output_mask);
 
 /// @} dnnl_api_attributes
 
@@ -1244,6 +1274,9 @@ dnnl_status_t DNNL_API dnnl_memory_get_data_handle(
 dnnl_status_t DNNL_API dnnl_memory_set_data_handle(
         dnnl_memory_t memory, void *handle);
 
+dnnl_status_t DNNL_API dnnl_memory_set_data_handle_no_pads_proc(
+        dnnl_memory_t memory, void *handle);
+
 /// Sets the underlying memory buffer.
 ///
 /// @param memory Memory object.
@@ -1253,6 +1286,9 @@ dnnl_status_t DNNL_API dnnl_memory_set_data_handle(
 /// @returns #dnnl_success on success and a status describing the error
 ///     otherwise.
 dnnl_status_t DNNL_API dnnl_memory_set_data_handle_v2(
+        dnnl_memory_t memory, void *handle, dnnl_stream_t stream);
+
+dnnl_status_t DNNL_API dnnl_memory_set_data_handle_v2_no_pads_proc(
         dnnl_memory_t memory, void *handle, dnnl_stream_t stream);
 
 /// Destroys a memory object.

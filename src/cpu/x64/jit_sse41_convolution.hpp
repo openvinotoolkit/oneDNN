@@ -56,6 +56,9 @@ struct jit_sse41_convolution_fwd_t : public primitive_t {
                     *src_md(), *weights_md(), *dst_md(), *attr(),
                     dnnl_get_max_threads()));
 
+            auto scratchpad = scratchpad_registry().registrar();
+            jit_sse41_conv_fwd_kernel_f32::init_scratchpad(scratchpad, jcp_);
+
             return status::success;
         }
 
@@ -65,7 +68,7 @@ struct jit_sse41_convolution_fwd_t : public primitive_t {
         bool set_default_formats() {
             using namespace format_tag;
 
-            const bool flat = IC() == 3;
+            const bool flat = utils::one_of(IC(), 1, 2, 3);
             auto src_tag = flat
                     ? utils::pick(ndims() - 3, ncw, nchw, ncdhw)
                     : utils::pick(ndims() - 3, nCw8c, nChw8c, nCdhw8c);

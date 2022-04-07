@@ -77,7 +77,7 @@ status_t simple_concat_t<data_type>::execute(const exec_ctx_t &ctx) const {
         for (int a = 0; a < num_arrs; ++a) {
             const data_t *i = &iptrs[a][0];
             data_t *o = &optrs[a][0];
-            parallel_nd(nelems_to_copy[a], [&](dim_t e) { o[e] = i[e]; });
+            parallel_nd_legacy(nelems_to_copy[a], [&](dim_t e) { o[e] = i[e]; });
         }
         return status::success;
     }
@@ -94,7 +94,7 @@ status_t simple_concat_t<data_type>::execute(const exec_ctx_t &ctx) const {
     const auto L1_size = platform::get_per_core_cache_size(1);
     UNUSED(L1_size); // for Windows
 
-    parallel_nd(phys_dims[0], phys_dims[1], phys_dims[2], phys_dims[3],
+    parallel_nd_legacy(phys_dims[0], phys_dims[1], phys_dims[2], phys_dims[3],
             phys_dims[4], num_arrs,
             [&](dim_t n0, dim_t n1, dim_t n2, dim_t n3, dim_t n4, dim_t a) {
                 // check if zero memory

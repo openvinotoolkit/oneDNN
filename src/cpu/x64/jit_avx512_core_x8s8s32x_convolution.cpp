@@ -52,6 +52,11 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_1d(
     DEFINE_ZERO_POINTS_BUFFER(src_zero_point, DNNL_ARG_SRC);
     DEFINE_ZERO_POINTS_BUFFER(dst_zero_point, DNNL_ARG_DST);
 
+    DEFINE_INPUT_ZERO_POINTS_BUFFER(input_zp, jcp);
+    DEFINE_OUTPUT_COMPENSATION_BUFFER(output_compensation, jcp);
+
+    auto MB = CTX_IN_BATCH(DNNL_ARG_SRC);
+
     const memory_desc_wrapper src_d(pd()->src_md());
     const memory_desc_wrapper dst_d(pd()->dst_md());
     const memory_desc_wrapper weights_d(pd()->weights_md(0));
@@ -84,9 +89,8 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_1d(
     size_t ch_offset = jcp.is_depthwise ? jcp.nb_ch * jcp.ch_block
                                         : jcp.ngroups * jcp.oc;
     auto w = const_cast<char *>(weights);
-    int32_t *compensation = (jcp.signed_input)
-            ? reinterpret_cast<int32_t *>(&w[extra_data_offset])
-            : nullptr;
+    const int32_t *compensation = (jcp.signed_input) ? reinterpret_cast<int32_t *>(&w[extra_data_offset]) :
+                                  (jcp.with_input_zp) ? output_compensation : nullptr;
     int32_t *zp_compensation = jcp.src_zero_point
             ? reinterpret_cast<int32_t *>(&w[extra_data_offset])
                     + (jcp.signed_input ? ch_offset : 0)
@@ -95,7 +99,7 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_1d(
     int oc_chunks = jcp.nb_oc / jcp.nb_oc_blocking;
     int nb_groups = jcp.nb_ch / jcp.nb_ch_blocking;
     int group_block = jcp.ch_block;
-    int work_amount = jcp.mb * nb_groups * oc_chunks * jcp.nb_ow;
+    int work_amount = MB * nb_groups * oc_chunks * jcp.nb_ow;
 
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
         int start {0}, end {0};
@@ -107,18 +111,18 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_1d(
         switch (jcp.loop_order) {
             case loop_cwgn:
                 nd_iterator_init(start, occ, oc_chunks, owb, jcp.nb_ow, gg,
-                        nb_groups, n, jcp.mb);
+                        nb_groups, n, MB);
                 break;
             case loop_gncw:
-                nd_iterator_init(start, gg, nb_groups, n, jcp.mb, occ,
+                nd_iterator_init(start, gg, nb_groups, n, MB, occ,
                         oc_chunks, owb, jcp.nb_ow);
                 break;
             case loop_ngcw:
-                nd_iterator_init(start, n, jcp.mb, gg, nb_groups, occ,
+                nd_iterator_init(start, n, MB, gg, nb_groups, occ,
                         oc_chunks, owb, jcp.nb_ow);
                 break;
             case loop_nwcg:
-                nd_iterator_init(start, n, jcp.mb, owb, jcp.nb_ow, occ,
+                nd_iterator_init(start, n, MB, owb, jcp.nb_ow, occ,
                         oc_chunks, gg, nb_groups);
                 break;
             default: assert(!"unsupported loop order");
@@ -134,7 +138,7 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_1d(
 
             p.bias = bias ? bias + (bias_d.blk_off(g_oc) * bia_dt_size)
                           : nullptr;
-            p.compensation = (jcp.signed_input) ? compensation + g_oc : nullptr;
+            p.compensation = (jcp.signed_input || jcp.with_input_zp) ? compensation + g_oc : nullptr;
             p.zp_compensation
                     = jcp.src_zero_point ? zp_compensation + g_oc : nullptr;
             p.src_zero_point = jcp.src_zero_point ? src_zero_point : nullptr;
@@ -152,24 +156,28 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_1d(
             p.oc_l_off = (g * jcp.nb_oc + ocb) * jcp.oc_block;
             p.post_ops_binary_rhs_arg_vec = post_ops_binary_rhs_arg_vec.data();
             p.dst_orig = dst;
+            p.oc_off = g_oc * sizeof(float);
+            if (jcp.with_input_zp)
+                p.input_zp = input_zp + g_ic;
+
             (*kernel_)(&p);
 
             ++start;
             switch (jcp.loop_order) {
                 case loop_cwgn:
                     nd_iterator_step(occ, oc_chunks, owb, jcp.nb_ow, gg,
-                            nb_groups, n, jcp.mb);
+                            nb_groups, n, MB);
                     break;
                 case loop_gncw:
-                    nd_iterator_step(gg, nb_groups, n, jcp.mb, occ, oc_chunks,
+                    nd_iterator_step(gg, nb_groups, n, MB, occ, oc_chunks,
                             owb, jcp.nb_ow);
                     break;
                 case loop_ngcw:
-                    nd_iterator_step(n, jcp.mb, gg, nb_groups, occ, oc_chunks,
+                    nd_iterator_step(n, MB, gg, nb_groups, occ, oc_chunks,
                             owb, jcp.nb_ow);
                     break;
                 case loop_nwcg:
-                    nd_iterator_step(n, jcp.mb, owb, jcp.nb_ow, occ, oc_chunks,
+                    nd_iterator_step(n, MB, owb, jcp.nb_ow, occ, oc_chunks,
                             gg, nb_groups);
                     break;
                 default: assert(!"unsupported loop order");
@@ -191,6 +199,11 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_2d(
 
     DEFINE_ZERO_POINTS_BUFFER(src_zero_point, DNNL_ARG_SRC);
     DEFINE_ZERO_POINTS_BUFFER(dst_zero_point, DNNL_ARG_DST);
+
+    DEFINE_INPUT_ZERO_POINTS_BUFFER(input_zp, jcp);
+    DEFINE_OUTPUT_COMPENSATION_BUFFER(output_compensation, jcp);
+
+    auto MB = CTX_IN_BATCH(DNNL_ARG_SRC);
 
     const memory_desc_wrapper src_d(pd()->src_md());
     const memory_desc_wrapper dst_d(pd()->dst_md());
@@ -223,9 +236,8 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_2d(
 
     size_t offset = weights_d.size() - weights_d.additional_buffer_size();
     auto w = const_cast<char *>(weights);
-    int32_t *compensation = (jcp.signed_input)
-            ? reinterpret_cast<int32_t *>(&w[offset])
-            : nullptr;
+    const int32_t *compensation = (jcp.signed_input) ? reinterpret_cast<int32_t *>(&w[offset]) :
+                            (jcp.with_input_zp) ? output_compensation : nullptr;
     int32_t *zp_compensation = jcp.src_zero_point
             ? reinterpret_cast<int32_t *>(&w[offset])
                     + (jcp.signed_input ? jcp.ngroups * jcp.oc : 0)
@@ -233,7 +245,7 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_2d(
 
     int oc_chunks = jcp.nb_oc / jcp.nb_oc_blocking_thr_chunk;
     int nb_groups = jcp.nb_ch;
-    int work_amount = jcp.mb * nb_groups * oc_chunks * jcp.oh * jcp.nb_ow;
+    int work_amount = MB * nb_groups * oc_chunks * jcp.oh * jcp.nb_ow;
 
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
         int start {0}, end {0};
@@ -249,14 +261,14 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_2d(
         switch (jcp.loop_order) {
             case loop_cwgn:
                 nd_iterator_init(start, occ, oc_chunks, owb, jcp.nb_ow, g,
-                        nb_groups, n, jcp.mb, oh_s, jcp.oh);
+                        nb_groups, n, MB, oh_s, jcp.oh);
                 break;
             case loop_ngcw:
-                nd_iterator_init(start, n, jcp.mb, g, nb_groups, occ, oc_chunks,
+                nd_iterator_init(start, n, MB, g, nb_groups, occ, oc_chunks,
                         owb, jcp.nb_ow, oh_s, jcp.oh);
                 break;
             case loop_nhwcg:
-                nd_iterator_init(start, n, jcp.mb, oh_s, jcp.oh, owb, jcp.nb_ow,
+                nd_iterator_init(start, n, MB, oh_s, jcp.oh, owb, jcp.nb_ow,
                         occ, oc_chunks, g, nb_groups);
                 break;
             default: assert(!"unsupported loop order");
@@ -279,8 +291,8 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_2d(
 
                 auto bias_w = bias ? bias + (bias_d.blk_off(g_oc) * bia_dt_size)
                                    : nullptr;
-                int32_t *compensation_w
-                        = (jcp.signed_input) ? compensation + g_oc : nullptr;
+                const int32_t *compensation_w
+                        = (jcp.signed_input || jcp.with_input_zp) ? compensation + g_oc : nullptr;
 
                 auto dst_w = dst
                         + dst_dt_size * dst_d.blk_off(n, g_oc, oh_s, ow_s);
@@ -302,7 +314,7 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_2d(
                     int kh_padding = nstl::max(
                             0, jcp.kh - i_t_overflow - i_b_overflow);
 
-                    size_t wei_stride = (jcp.signed_input || jcp.src_zero_point)
+                    size_t wei_stride = (jcp.signed_input || jcp.src_zero_point || jcp.with_input_zp)
                             ? 0
                             : i_t_overflow * wht_h_stride;
                     p.src = src_w + i_t_overflow * dilate_h * src_h_stride;
@@ -328,6 +340,10 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_2d(
                     p.post_ops_binary_rhs_arg_vec
                             = post_ops_binary_rhs_arg_vec.data();
                     p.dst_orig = dst;
+                    p.oc_off = g_oc * sizeof(float);
+                    if (jcp.with_input_zp)
+                        p.input_zp = input_zp + g_ic;
+
                     (*kernel_)(&p);
 
                     src_w += src_h_stride * jcp.stride_h;
@@ -337,15 +353,15 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_2d(
             switch (jcp.loop_order) {
                 case loop_cwgn:
                     nd_iterator_jump(start, end, occ, oc_chunks, owb, jcp.nb_ow,
-                            g, nb_groups, n, jcp.mb, oh_s, jcp.oh);
+                            g, nb_groups, n, MB, oh_s, jcp.oh);
                     break;
                 case loop_ngcw:
-                    nd_iterator_jump(start, end, n, jcp.mb, g, nb_groups, occ,
+                    nd_iterator_jump(start, end, n, MB, g, nb_groups, occ,
                             oc_chunks, owb, jcp.nb_ow, oh_s, jcp.oh);
                     break;
                 case loop_nhwcg:
                     ++start;
-                    nd_iterator_step(n, jcp.mb, oh_s, jcp.oh, owb, jcp.nb_ow,
+                    nd_iterator_step(n, MB, oh_s, jcp.oh, owb, jcp.nb_ow,
                             occ, oc_chunks, g, nb_groups);
                     break;
                 default: assert(!"unsupported loop order");
@@ -367,6 +383,11 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_2d_dw(
 
     DEFINE_ZERO_POINTS_BUFFER(src_zero_point, DNNL_ARG_SRC);
     DEFINE_ZERO_POINTS_BUFFER(dst_zero_point, DNNL_ARG_DST);
+
+    DEFINE_INPUT_ZERO_POINTS_BUFFER(input_zp, jcp);
+    DEFINE_OUTPUT_COMPENSATION_BUFFER(output_compensation, jcp);
+
+    auto MB = CTX_IN_BATCH(DNNL_ARG_SRC);
 
     const memory_desc_wrapper src_d(pd()->src_md());
     const memory_desc_wrapper dst_d(pd()->dst_md());
@@ -401,9 +422,8 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_2d_dw(
 
     size_t offset = weights_d.size() - weights_d.additional_buffer_size();
     auto w = const_cast<char *>(weights);
-    int32_t *compensation = (jcp.signed_input)
-            ? reinterpret_cast<int32_t *>(&w[offset])
-            : nullptr;
+    const int32_t *compensation = (jcp.signed_input) ? reinterpret_cast<int32_t *>(&w[offset]) :
+                                  (jcp.with_input_zp) ? output_compensation : nullptr;
     int32_t *zp_compensation = jcp.src_zero_point
             ? reinterpret_cast<int32_t *>(&w[offset])
                     + (jcp.signed_input ? jcp.nb_ch * jcp.ch_block : 0)
@@ -411,7 +431,7 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_2d_dw(
     int nb_groups = jcp.nb_ch / jcp.nb_ch_blocking;
     int group_block = jcp.ch_block;
 
-    parallel_nd(jcp.mb, jcp.oh, jcp.nb_ow, nb_groups,
+    parallel_nd(MB, jcp.oh, jcp.nb_ow, nb_groups,
             [&](dim_t n, dim_t oh_s, dim_t owb, dim_t gg) {
                 auto p = jit_conv_call_s();
 
@@ -427,8 +447,8 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_2d_dw(
 
                 auto bias_w = bias ? bias + (bias_d.blk_off(g) * bia_dt_size)
                                    : nullptr;
-                int32_t *compensation_w
-                        = jcp.signed_input ? compensation + g : nullptr;
+                const int32_t *compensation_w
+                        = (jcp.signed_input || jcp.with_input_zp) ? compensation + g : nullptr;
 
                 auto dst_w
                         = dst + dst_dt_size * dst_d.blk_off(n, g, oh_s, ow_s);
@@ -448,7 +468,7 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_2d_dw(
                 int kh_padding
                         = nstl::max(0, jcp.kh - i_t_overflow - i_b_overflow);
 
-                size_t wei_stride = (jcp.signed_input || jcp.src_zero_point)
+                size_t wei_stride = (jcp.signed_input || jcp.src_zero_point || jcp.with_input_zp)
                         ? 0
                         : i_t_overflow * wht_h_stride;
                 p.src = src_w + i_t_overflow * dilate_h * src_h_stride;
@@ -473,6 +493,9 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_2d_dw(
                 p.post_ops_binary_rhs_arg_vec
                         = post_ops_binary_rhs_arg_vec.data();
                 p.dst_orig = dst;
+                p.oc_off = g * sizeof(float);
+                if (jcp.with_input_zp)
+                    p.input_zp = input_zp + g;
 
                 (*kernel_)(&p);
             });
@@ -491,6 +514,11 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_3d(
 
     DEFINE_ZERO_POINTS_BUFFER(src_zero_point, DNNL_ARG_SRC);
     DEFINE_ZERO_POINTS_BUFFER(dst_zero_point, DNNL_ARG_DST);
+
+    DEFINE_INPUT_ZERO_POINTS_BUFFER(input_zp, jcp);
+    DEFINE_OUTPUT_COMPENSATION_BUFFER(output_compensation, jcp);
+
+    auto MB = CTX_IN_BATCH(DNNL_ARG_SRC);
 
     const memory_desc_wrapper src_d(pd()->src_md());
     const memory_desc_wrapper dst_d(pd()->dst_md());
@@ -523,9 +551,8 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_3d(
 
     size_t offset = weights_d.size() - weights_d.additional_buffer_size();
     auto w = const_cast<char *>(weights);
-    int32_t *compensation = (jcp.signed_input)
-            ? reinterpret_cast<int32_t *>(&w[offset])
-            : nullptr;
+    const int32_t *compensation = (jcp.signed_input) ? reinterpret_cast<int32_t *>(&w[offset]) :
+                            (jcp.with_input_zp) ? output_compensation : nullptr;
     int32_t *zp_compensation = jcp.src_zero_point
             ? reinterpret_cast<int32_t *>(&w[offset])
                     + (jcp.signed_input ? jcp.ngroups * jcp.oc : 0)
@@ -533,7 +560,7 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_3d(
     int oc_chunks = jcp.nb_oc / jcp.nb_oc_blocking_thr_chunk;
     int nb_groups = jcp.nb_ch;
     int work_amount
-            = jcp.mb * nb_groups * oc_chunks * jcp.od * jcp.oh * jcp.nb_ow;
+            = MB * nb_groups * oc_chunks * jcp.od * jcp.oh * jcp.nb_ow;
 
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
         int start {0}, end {0};
@@ -551,14 +578,14 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_3d(
         switch (jcp.loop_order) {
             case loop_cwgn:
                 nd_iterator_init(start, occ, oc_chunks, owb, jcp.nb_ow, g,
-                        nb_groups, n, jcp.mb, od_s, jcp.od, oh_s, jcp.oh);
+                        nb_groups, n, MB, od_s, jcp.od, oh_s, jcp.oh);
                 break;
             case loop_ngcw:
-                nd_iterator_init(start, n, jcp.mb, g, nb_groups, occ, oc_chunks,
+                nd_iterator_init(start, n, MB, g, nb_groups, occ, oc_chunks,
                         owb, jcp.nb_ow, od_s, jcp.od, oh_s, jcp.oh);
                 break;
             case loop_nhwcg:
-                nd_iterator_init(start, n, jcp.mb, od_s, jcp.od, oh_s, jcp.oh,
+                nd_iterator_init(start, n, MB, od_s, jcp.od, oh_s, jcp.oh,
                         owb, jcp.nb_ow, occ, oc_chunks, g, nb_groups);
                 break;
             default: assert(!"unsupported loop order");
@@ -593,8 +620,8 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_3d(
 
                 auto bias_w = bias ? bias + (bias_d.blk_off(g_oc) * bia_dt_size)
                                    : nullptr;
-                int32_t *compensation_w
-                        = (jcp.signed_input) ? compensation + g_oc : nullptr;
+                const int32_t *compensation_w
+                        = (jcp.signed_input || jcp.with_input_zp) ? compensation + g_oc : nullptr;
 
                 auto dst_w = dst
                         + dst_dt_size
@@ -602,7 +629,7 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_3d(
                 auto src_w = src + src_d.blk_off(n, g_ic, id_s, ih_s, iw_s)
                         + d_f_overflow * dilate_d * src_d_stride;
                 auto wht_w = weights + wht_blk_off(weights_d, g, ocb, 0)
-                        + ((jcp.signed_input || jcp.src_zero_point)
+                        + ((jcp.signed_input || jcp.src_zero_point || jcp.with_input_zp)
                                           ? 0
                                           : d_f_overflow)
                                 * wht_d_stride;
@@ -622,7 +649,7 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_3d(
                     int kh_padding = nstl::max(
                             0, jcp.kh - i_t_overflow - i_b_overflow);
 
-                    size_t wei_stride = (jcp.signed_input || jcp.src_zero_point)
+                    size_t wei_stride = (jcp.signed_input || jcp.src_zero_point || jcp.with_input_zp)
                             ? 0
                             : wht_h_stride * i_t_overflow;
                     p.src = src_w + i_t_overflow * dilate_h * src_h_stride;
@@ -651,6 +678,10 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_3d(
                     p.post_ops_binary_rhs_arg_vec
                             = post_ops_binary_rhs_arg_vec.data();
                     p.dst_orig = dst;
+                    p.oc_off = g_oc * sizeof(float);
+                    if (jcp.with_input_zp)
+                        p.input_zp = input_zp + g_ic;
+
                     (*kernel_)(&p);
 
                     src_w += src_h_stride * jcp.stride_h;
@@ -660,22 +691,146 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_3d(
             switch (jcp.loop_order) {
                 case loop_cwgn:
                     nd_iterator_jump(start, end, occ, oc_chunks, owb, jcp.nb_ow,
-                            g, nb_groups, n, jcp.mb, od_s, jcp.od, oh_s,
+                            g, nb_groups, n, MB, od_s, jcp.od, oh_s,
                             jcp.oh);
                     break;
                 case loop_ngcw:
-                    nd_iterator_jump(start, end, n, jcp.mb, g, nb_groups, occ,
+                    nd_iterator_jump(start, end, n, MB, g, nb_groups, occ,
                             oc_chunks, owb, jcp.nb_ow, od_s, jcp.od, oh_s,
                             jcp.oh);
                     break;
                 case loop_nhwcg:
                     ++start;
-                    nd_iterator_step(n, jcp.mb, od_s, jcp.od, oh_s, jcp.oh, owb,
+                    nd_iterator_step(n, MB, od_s, jcp.od, oh_s, jcp.oh, owb,
                             jcp.nb_ow, occ, oc_chunks, g, nb_groups);
                     break;
                 default: assert(!"unsupported loop order");
             }
         }
+    });
+    return status::success;
+}
+
+status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_3d_dw(const exec_ctx_t &ctx) const {
+    auto src = CTX_IN_MEM(const char *, DNNL_ARG_SRC);
+    auto weights = CTX_IN_MEM(const char *, DNNL_ARG_WEIGHTS);
+    auto bias = CTX_IN_MEM(const char *, DNNL_ARG_BIAS);
+    auto dst = CTX_OUT_MEM(char *, DNNL_ARG_DST);
+
+    const auto &jcp = pd()->jcp_;
+    const auto post_ops_binary_rhs_arg_vec
+            = binary_injector::prepare_binary_args(jcp.post_ops, ctx);
+
+    DEFINE_INPUT_ZERO_POINTS_BUFFER(input_zp, jcp);
+    DEFINE_OUTPUT_COMPENSATION_BUFFER(output_compensation, jcp);
+
+    auto MB = CTX_IN_BATCH(DNNL_ARG_SRC);
+
+    const memory_desc_wrapper src_d(pd()->src_md());
+    const memory_desc_wrapper dst_d(pd()->dst_md());
+    const memory_desc_wrapper weights_d(pd()->weights_md(0));
+    const memory_desc_wrapper bias_d(pd()->weights_md(1));
+
+    const size_t bia_dt_size
+            = pd()->with_bias() ? types::data_type_size(bias_d.data_type()) : 0;
+    const size_t dst_dt_size = types::data_type_size(dst_d.data_type());
+
+    assert(jcp.ic_block == 1);
+    assert(jcp.oc_block == 1);
+    assert(jcp.nb_ic == 1);
+    assert(jcp.nb_oc == 1);
+    assert(jcp.nb_oc_blocking == 1);
+    assert(jcp.nb_ch % jcp.nb_ch_blocking == 0);
+
+    const float *oscales = pd()->attr()->output_scales_.scales_;
+    if (jcp.signed_input && jcp.ver != ver_vnni) {
+        auto local_scales = ctx.get_scratchpad_grantor().template get<float>(
+                key_conv_adjusted_scales);
+        size_t count = pd()->attr()->output_scales_.count_;
+        float factor = 1.f / pd()->jcp_.wei_adj_scale;
+        if (count == 1) {
+            utils::array_set(local_scales, oscales[0] * factor, 16);
+        } else {
+            for (size_t c = 0; c < count; c++)
+                local_scales[c] = oscales[c] * factor;
+        }
+        oscales = local_scales;
+    }
+
+    size_t offset = weights_d.size() - weights_d.additional_buffer_size();
+    auto w = const_cast<char *>(weights);
+    const int32_t* compensation = (jcp.signed_input) ? reinterpret_cast<int32_t *>(&w[offset]) :
+                            (jcp.with_input_zp) ? output_compensation : 0;
+    int nb_groups = jcp.nb_ch / jcp.nb_ch_blocking;
+    int group_block = jcp.ch_block;
+
+    parallel_nd(MB, jcp.od, jcp.oh, jcp.nb_ow, nb_groups, [&](int n, int od_s, int oh_s, int owb, int gg) {
+        auto p = jit_conv_call_s();
+
+        size_t src_d_stride = src_d.blk_off(0, 0, 1);
+        size_t wht_d_stride = wht_blk_off(weights_d, 0, 0, 0, 1);
+
+        size_t src_h_stride = src_d.blk_off(0, 0, 0, 1);
+        size_t wht_h_stride = wht_blk_off(weights_d, 0, 0, 0, 0, 1);
+
+        int gb = gg * jcp.nb_ch_blocking;
+        int g = gb * group_block;
+
+        int id_s = -jcp.f_pad + od_s * jcp.stride_d;
+
+        int ih_s = -jcp.t_pad + oh_s * jcp.stride_h;
+        int ow_s = owb * jcp.ow_block;
+        int iw_s = ow_s * jcp.stride_w;
+
+        auto bias_w = bias ? bias + (bias_d.blk_off(g) * bia_dt_size) : 0;
+        const int32_t *compensation_w = (jcp.signed_input || jcp.with_input_zp) ? compensation + g : 0;
+
+        auto dst_w = dst + dst_dt_size * dst_d.blk_off(n, g, od_s, oh_s, ow_s);
+        auto src_w = src + src_d.blk_off(n, g, id_s, ih_s, iw_s);
+        auto wht_w = weights + wht_blk_off(weights_d, gb, 0);
+
+        auto scales = &oscales[jcp.is_oc_scale * g];
+
+        int dilate_d = jcp.dilate_d + 1;
+        int i_f_overflow = nstl::min(jcp.kd, div_up(max(0, -id_s), dilate_d));
+        int i_back_overflow = nstl::min(jcp.kd,
+                                        div_up(max(0, id_s - jcp.id + (jcp.kd - 1) * dilate_d + 1),
+                                               dilate_d));
+        int kd_padding = nstl::max(0, jcp.kd - i_f_overflow - i_back_overflow);
+
+        size_t wei_d_stride = (jcp.signed_input || jcp.with_input_zp) ? 0 : i_f_overflow * wht_d_stride;
+
+        int dilate_h = jcp.dilate_h + 1;
+        int i_t_overflow = nstl::min(jcp.kh, div_up(max(0, -ih_s), dilate_h));
+        int i_b_overflow = nstl::min(jcp.kh,
+                                     div_up(max(0, ih_s - jcp.ih + (jcp.kh - 1) * dilate_h + 1),
+                                            dilate_h));
+        int kh_padding = nstl::max(0, jcp.kh - i_t_overflow - i_b_overflow);
+
+        size_t wei_h_stride = (jcp.signed_input || jcp.with_input_zp) ? 0 : i_t_overflow * wht_h_stride;
+        p.src = src_w + i_t_overflow * dilate_h * src_h_stride
+                + i_f_overflow * dilate_d * src_d_stride;
+        p.dst = dst_w;
+        p.filt = wht_w + wei_d_stride + wei_h_stride;
+        p.bias = bias_w;
+        p.compensation = compensation_w;
+        p.oc_blocks = gb;
+        p.kd_padding = kd_padding;
+        p.kh_padding = kh_padding;
+        p.scales = scales;
+        p.f_overflow = i_f_overflow;
+        p.back_overflow = i_back_overflow;
+        p.t_overflow = i_t_overflow;
+        p.b_overflow = i_b_overflow;
+        p.owb = owb;
+        p.post_ops_binary_rhs_arg_vec
+                = post_ops_binary_rhs_arg_vec.data();
+
+        p.oc_off = g * sizeof(float);
+        if (jcp.with_input_zp)
+            p.input_zp = input_zp + g;
+
+        (*kernel_)(&p);
     });
     return status::success;
 }

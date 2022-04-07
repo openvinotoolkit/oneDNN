@@ -36,9 +36,10 @@ struct jit_uni_dw_conv_fwd_kernel_f32 : public jit_generator {
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_uni_dw_conv_fwd_kernel_f32)
 
     jit_uni_dw_conv_fwd_kernel_f32(
-            const jit_conv_conf_t &ajcp, const memory_desc_t &dst_md);
+            const jit_conv_conf_t &ajcp, const memory_desc_t &dst_md, const primitive_attr_t &attr);
 
     jit_conv_conf_t jcp;
+    const primitive_attr_t &attr_;
 
 private:
     using Vmm = typename utils::conditional3<isa == sse41, Xbyak::Xmm,
@@ -69,6 +70,16 @@ private:
     reg64_t reg_tmp = reg_ch_blocks;
     reg64_t reg_tail = rax;
     mask_t k_oc_tail_mask = Xbyak::Opmask(2);
+
+    reg64_t reg_d_weights = aux_reg_input_buffer_ptr;
+    reg64_t reg_d_bias = iter_kh;
+    int base_post_ops_data_offset = 0;
+    constexpr static int reg64_size = 8;
+
+    reg64_t aux_reg_blocks_offset = abi_not_param1;
+
+    Vmm vmm_d_weights = Vmm(0);
+    Vmm vmm_d_bias = Vmm(1);
 
     inline void load_src(int ur_ch_blocks, int ur_w, bool is_ch_tail);
     inline void compute_loop(int ur_w, int ur_ch_blocks, int pad_l, int pad_r);
@@ -129,9 +140,17 @@ template <cpu_isa_t isa>
 struct jit_uni_dw_conv_bwd_data_kernel_f32 : public jit_generator {
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_uni_dw_conv_bwd_data_kernel_f32)
 
-    jit_uni_dw_conv_bwd_data_kernel_f32(const jit_conv_conf_t &ajcp)
-        : jcp(ajcp) {}
+    jit_uni_dw_conv_bwd_data_kernel_f32(const jit_conv_conf_t &ajcp, const primitive_attr_t &attr)
+        : jcp(ajcp), attr_(attr) {}
+
+    ~jit_uni_dw_conv_bwd_data_kernel_f32() {
+        for (auto inj : depthwise_injectors)
+            delete inj;
+        depthwise_injectors.clear();
+    }
+
     jit_conv_conf_t jcp;
+    const primitive_attr_t &attr_;
 
 private:
     using Vmm = typename utils::conditional3<isa == sse41, Xbyak::Xmm,
@@ -164,6 +183,13 @@ private:
     reg64_t reg_tmp = r15;
     Xbyak::Opmask k_ch_tail_mask = Xbyak::Opmask(1);
 
+    reg64_t reg_d_weights = r15;
+    reg64_t reg_d_bias = iter_kh;
+    int base_post_ops_data_offset = 0;
+    constexpr static int reg64_size = 8;
+
+    nstl::vector<jit_uni_depthwise_injector_f32<isa>*> depthwise_injectors;
+
     void load_vmm(Vmm &vmm, const Xbyak::Address &addr, bool tail);
     void store_vmm(Vmm &vmm, const Xbyak::Address &addr, bool tail);
 
@@ -171,6 +197,7 @@ private:
     inline void unroll_width_body(int ur_ch_blocks);
     inline void load_ddst(int ur_ch_blocks, int ur_str_w);
     inline void apply_filter(int ur_ch_blocks, int ur_str_w, bool is_last_ch);
+    inline void apply_postprocess(int ur_ch_blocks, int ur_str_w);
     inline void store_dsrc(int ur_ch_blocks, int ur_str_w, bool is_last_ch);
 
     void generate() override;

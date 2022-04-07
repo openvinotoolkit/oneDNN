@@ -26,6 +26,8 @@
 #include "cpu/gemm_convolution_utils.hpp"
 #include "cpu/primitive_attr_postops.hpp"
 
+#include "ref_depthwise_injector.hpp"
+
 namespace dnnl {
 namespace impl {
 namespace cpu {
@@ -50,7 +52,6 @@ struct gemm_convolution_fwd_t : public primitive_t {
                             primitive_attr_t::skip_mask_t::post_ops, f32)
                     && post_ops_ok();
             if (!ok) return status::unimplemented;
-
             auto scratchpad = scratchpad_registry().registrar();
             return jit_gemm_convolution_utils::init_conf(jcp_, scratchpad,
                     *desc(), src_md_, weights_md_, dst_md_, bias_md_, attr_,
@@ -61,21 +62,24 @@ struct gemm_convolution_fwd_t : public primitive_t {
 
     protected:
         bool post_ops_ok() const {
+            using namespace dnnl::impl::primitive_kind;
             auto const &po = attr()->post_ops_;
-            auto is_eltwise
-                    = [&](int idx) { return po.entry_[idx].is_eltwise(); };
-            auto is_sum = [&](int idx) { return po.entry_[idx].is_sum(); };
-            auto is_binary
-                    = [&](int idx) { return po.entry_[idx].is_binary(); };
 
-            for (int idx = 0; idx < po.len(); idx++) {
-                bool ok = utils::one_of(true, is_sum(idx), is_binary(idx),
-                                  is_eltwise(idx))
-                        && IMPLICATION(is_sum(idx), idx == 0);
-                if (!ok) return false;
-            }
+            auto all_post_ops_supported = [&]() {
+                bool ok = true;
 
-            return true;
+                for (int i = 0; i < po.len(); i++) {
+                    ok = ok && utils::one_of(po.entry_[i].kind, sum, eltwise, depthwise, quantization);
+                }
+                return ok;
+            };
+            auto contain = [&](dnnl::impl::primitive_kind_t kind) { return po.find(kind) != -1; };
+            auto position = [&](dnnl::impl::primitive_kind_t kind) { return po.find(kind); };
+            auto count = [&](dnnl::impl::primitive_kind_t kind) { return po.count(kind); };
+
+            return all_post_ops_supported() &&
+                   count(primitive_kind::sum) <= 1 &&
+                   IMPLICATION(contain(primitive_kind::sum), position(primitive_kind::sum) == 0);
         }
     };
 
@@ -83,13 +87,18 @@ struct gemm_convolution_fwd_t : public primitive_t {
         : primitive_t(apd), post_ops_(nullptr) {}
 
     status_t init(engine_t *engine) override {
+        const auto &post_ops = pd()->attr()->post_ops_;
         const data_t one = 1.0, zero = 0.0;
         const auto &jcp = pd()->jcp_;
         beta_ = jcp.with_sum ? one : zero;
 
-        if (jcp.with_eltwise || jcp.with_binary)
-            CHECK(safe_ptr_assign(post_ops_, new ref_post_ops_t(jcp.post_ops)));
-        return status::success;
+        bool has_bias = pd()->with_bias();
+        bool has_post_ops = post_ops.len() > 0;
+        bool has_scale = !pd()->attr()->output_scales_.has_default_values();
+        postops_in_ip_ = has_bias || has_post_ops || has_scale;
+
+        CHECK(safe_ptr_assign(pp_kernel_, pp_kernel_t::create(pd(), pd()->jcp_)));
+        return (pp_kernel_) ? pp_kernel_->create_kernel() : status::success;
     }
 
     typedef typename prec_traits<data_type::f32>::type data_t;
@@ -105,9 +114,13 @@ private:
     status_t execute_forward_thr_nspc(const exec_ctx_t &ctx, const int ithr,
             const int nthr, const data_t *src_base, const data_t *wei_base,
             const data_t *bia_base, data_t *dst_base,
-            const memory_tracking::grantor_t &scratchpad) const;
+            const memory_tracking::grantor_t &scratchpad, int MB,
+            const std::vector<const void *>& post_ops_binary_rhs_arg_vec) const;
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 
+    using pp_kernel_t = gemm_convolution_utils::pp_kernel_t;
+    std::unique_ptr<pp_kernel_t> pp_kernel_;
+    bool postops_in_ip_;
     data_t beta_;
 
     std::unique_ptr<ref_post_ops_t> post_ops_;
@@ -127,7 +140,8 @@ struct gemm_convolution_bwd_data_t : public primitive_t {
                     && set_default_alg_kind(alg_kind::convolution_direct)
                     && expect_data_types(data_type::f32, data_type::f32,
                             data_type::undef, data_type::f32, data_type::f32)
-                    && !has_zero_dim_memory() && attr()->has_default_values();
+                    && !has_zero_dim_memory()
+                    && is_supported_post_ops();
             if (!ok) return status::unimplemented;
 
             auto scratchpad = scratchpad_registry().registrar();
@@ -137,9 +151,42 @@ struct gemm_convolution_bwd_data_t : public primitive_t {
         }
 
         conv_gemm_conf_t jcp_;
+
+    protected:
+        virtual bool is_supported_post_ops() const {
+            const auto &p = this->attr()->post_ops_;
+            if (p.len() > 1)
+                return false;
+
+            auto all_post_ops_supported = [&]() {
+                bool ok = true;
+
+                for (int i = 0; i < p.len(); i++) {
+                    ok = ok && utils::one_of(p.entry_[i].kind, primitive_kind::depthwise);
+                }
+                return ok;
+            };
+
+            return all_post_ops_supported();
+        }
     };
 
-    gemm_convolution_bwd_data_t(const pd_t *apd) : primitive_t(apd) {}
+
+    gemm_convolution_bwd_data_t(const pd_t *apd) : primitive_t(apd) {
+        const auto &post_ops = pd()->attr()->post_ops_;
+        for (int i = 0; i < post_ops.len(); i++) {
+            auto &post_op = post_ops.entry_[i];
+            if (post_op.is_depthwise()) {
+                depthwise_injectors.push_back(new ref_depthwise_scalar_fwd_t(post_op.depthwise.alg));
+            }
+        }
+    }
+
+    ~gemm_convolution_bwd_data_t() {
+        for (auto inj : depthwise_injectors)
+            delete inj;
+        depthwise_injectors.clear();
+    }
 
     typedef typename prec_traits<data_type::f32>::type data_t;
 
@@ -155,9 +202,12 @@ private:
     status_t execute_backward_data_thr_nspc(const int ithr, const int nthr,
             const data_t *diff_dst_base, const data_t *wei_base,
             const data_t *bia_base, data_t *diff_src_base,
-            const memory_tracking::grantor_t &scratchpad) const;
+            const memory_tracking::grantor_t &scratchpad, int MB,
+            const std::vector<const void *>& post_ops_binary_rhs_arg_vec) const;
 
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
+
+    nstl::vector<ref_depthwise_scalar_fwd_t*> depthwise_injectors;
 };
 
 struct gemm_convolution_bwd_weights_t : public primitive_t {

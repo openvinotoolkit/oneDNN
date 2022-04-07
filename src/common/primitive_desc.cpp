@@ -43,6 +43,12 @@ int primitive_desc_t::n_binary_po_inputs() const {
 int primitive_desc_t::n_prelu_po_inputs() const {
     return po_inputs(attr()->post_ops_, primitive_kind::prelu);
 }
+int primitive_desc_t::n_depthwise_po_inputs() const {
+    return po_inputs(attr()->post_ops_, primitive_kind::depthwise);
+}
+int primitive_desc_t::n_quantization_po_inputs() const {
+    return po_inputs(attr()->post_ops_, primitive_kind::quantization);
+}
 
 status_t dnnl_primitive_desc::create_primitive_iface(
         std::pair<primitive_iface_t *, bool> &primitive_iface) const {

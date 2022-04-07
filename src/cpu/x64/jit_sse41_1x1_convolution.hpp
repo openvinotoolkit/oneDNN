@@ -65,7 +65,14 @@ struct jit_sse41_1x1_convolution_fwd_t : public primitive_t {
             CHECK(jit_sse41_1x1_conv_kernel_f32::init_conf(jcp_, *desc(),
                     *src_md(), *weights_md(), *dst_md(), *attr(),
                     dnnl_get_max_threads()));
-            if (jcp_.with_dw_conv) CHECK(depthwise_po_init(engine));
+            if (jcp_.with_dw_conv) {
+                // todo: [antonvor] enable when new behavior of dw convolution fusing from oneDNN 1.6 will be supported
+                return status::unimplemented;
+                CHECK(depthwise_po_init(engine));
+            }
+
+            auto scratchpad = scratchpad_registry().registrar();
+            jit_sse41_1x1_conv_kernel_f32::init_scratchpad(scratchpad, jcp_);
 
             return status::success;
         }
@@ -225,7 +232,7 @@ struct jit_sse41_1x1_convolution_fwd_t : public primitive_t {
         if (pd()->jcp_.with_dw_conv) {
             CHECK(safe_ptr_assign(kernel_dw_,
                     new dw_conv_kernel_t(
-                            pd()->dw_conv_pd_->jcp_, *pd()->dst_md(0))));
+                            pd()->dw_conv_pd_->jcp_, *pd()->dst_md(0), *pd()->dw_conv_pd_->attr())));
             return kernel_dw_->create_kernel();
         }
 
@@ -244,7 +251,7 @@ private:
             const data_t *bias_dw, data_t *dst,
             const memory_tracking::grantor_t &scratchpad,
             const void *post_ops_binary_rhs_arg_vec,
-            const void *post_ops_binary_rhs_arg_vec_dw) const;
+            const void *post_ops_binary_rhs_arg_vec_dw, int MB) const;
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
     std::unique_ptr<jit_sse41_1x1_conv_kernel_f32> kernel_;
     using dw_conv_kernel_t = jit_uni_dw_conv_fwd_kernel_f32<sse41>;

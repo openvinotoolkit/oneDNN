@@ -175,6 +175,58 @@ private:
     DNNL_DISALLOW_COPY_AND_ASSIGN(scales_t);
 };
 
+template <typename T>
+struct shifts_t: public c_compatible {
+    shifts_t(): count_(1), mask_(0), shifts_(shifts_buf_)
+    { set(0); }
+
+    ~shifts_t() { cleanup(); }
+
+    bool operator==(const shifts_t<T> &rhs) const {
+        bool ret = count_ == rhs.count_ && mask_ == rhs.mask_
+                   && !utils::any_null(shifts_, rhs.shifts_)
+                   && defined() == rhs.defined()
+                   && IMPLICATION(defined(),
+                                  utils::array_cmp(shifts_, rhs.shifts_, count_));
+        return ret;
+    }
+
+    bool has_default_values() const {
+        for (int c = 0; c < count_; ++c) {
+            if(shifts_[c] != 0) return false;
+        }
+        return true;
+    }
+
+    bool defined() const { return !is_runtime_value(shifts_[0]); }
+
+    status_t set(int count, int mask, const T *zero_points);
+    status_t set(T single_zero_point) { return this->set(1, 0, &single_zero_point); }
+
+    status_t copy_from(const shifts_t &other) {
+        return set(other.count_, other.mask_, other.shifts_);
+    }
+
+    dim_t count_;
+    int mask_;
+    T *shifts_;
+
+private:
+    enum { shifts_buf_size = 16 };
+    T shifts_buf_[shifts_buf_size];
+
+    void cleanup() {
+        if (shifts_ != shifts_buf_ && shifts_ != nullptr)
+            impl::free(shifts_);
+
+        count_ = 1;
+        mask_ = 0;
+        shifts_ = shifts_buf_;
+    }
+
+    DNNL_DISALLOW_COPY_AND_ASSIGN(shifts_t);
+};
+
 struct arg_scales_t : public c_compatible {
     arg_scales_t() {
         for (const auto &sa : {DNNL_ARG_SRC_0, DNNL_ARG_SRC_1}) {
@@ -326,6 +378,26 @@ private:
     }
 };
 
+struct legacy_zero_points_t : public c_compatible {
+    bool operator==(const legacy_zero_points_t &rhs) const {
+        return count_ == rhs.count_ && mask_ == rhs.mask_;
+    }
+
+    bool has_default_values() const {
+        return count_ == 0 && mask_ == 0;
+    }
+
+    status_t set(dim_t count, int mask) {
+        count_ = count;
+        mask_ = mask;
+
+        return status::success;
+    }
+
+    dim_t count_ = 0;
+    int mask_ = 0;
+};
+
 } // namespace impl
 } // namespace dnnl
 
@@ -379,6 +451,52 @@ struct dnnl_post_ops : public dnnl::impl::c_compatible {
             int mask;
         };
 
+        struct depthwise_t {
+            enum depthwise_fields {
+                scales,
+                shifts,
+
+                fields_count
+            };
+
+            dnnl::impl::alg_kind_t alg;
+            size_t offset[fields_count];
+        };
+
+        struct quantization_t {
+            enum quantization_fields {
+                crop_low,
+                crop_high,
+                inp_scale,
+                inp_shift,
+                output_scale,
+                output_shift,
+
+                fields_count
+            };
+
+            dnnl::impl::alg_kind_t alg;
+            bool per_channel[fields_count];
+            bool all_default[fields_count];
+            size_t offset[fields_count];
+        };
+
+        struct binarization_t {
+            dnnl::impl::alg_kind_t alg;
+            const float* weights_data;
+            const float* output_mask_data;
+        };
+
+        struct depthwise_conv_old_t {
+            int in_h;
+            int in_w;
+            int ker_h;
+            int ker_w;
+            int str_h;
+            int str_w;
+            dnnl::impl::data_type_t in_dt;
+        };
+
         dnnl::impl::primitive_kind_t kind
                 = dnnl::impl::primitive_kind::undefined;
         union {
@@ -389,8 +507,12 @@ struct dnnl_post_ops : public dnnl::impl::c_compatible {
             } sum;
             eltwise_t eltwise;
             depthwise_conv_t depthwise_conv;
+            depthwise_conv_old_t depthwise_conv_old;
             binary_t binary;
             prelu_t prelu;
+            depthwise_t depthwise;
+            quantization_t quantization;
+            binarization_t binarization;
         };
 
         bool is_eltwise(bool require_scale_one = false) const {
@@ -428,6 +550,21 @@ struct dnnl_post_ops : public dnnl::impl::c_compatible {
             return kind == dnnl::impl::primitive_kind::prelu;
         }
 
+        bool is_depthwise() const {
+            using namespace dnnl::impl;
+            return kind == primitive_kind::depthwise;
+        }
+
+        bool is_quantization() const {
+            using namespace dnnl::impl;
+            return kind == primitive_kind::quantization;
+        }
+
+        bool is_binarization() const {
+            using namespace dnnl::impl;
+            return kind == primitive_kind::binarization;
+        }
+
         dnnl::impl::status_t set_depthwise_scales(const float *scales);
 
         bool operator==(const entry_t &rhs) const {
@@ -448,25 +585,33 @@ struct dnnl_post_ops : public dnnl::impl::c_compatible {
                             && sum.dt == rhs.sum.dt;
                     break;
                 case primitive_kind::convolution:
-                    // Depthwise Only
-                    ret = depthwise_conv.stride == rhs.depthwise_conv.stride
-                            && depthwise_conv.wei_dt
-                                    == rhs.depthwise_conv.wei_dt
-                            && depthwise_conv.bias_dt
-                                    == rhs.depthwise_conv.bias_dt
-                            && depthwise_conv.dst_dt
-                                    == rhs.depthwise_conv.dst_dt
-                            && depthwise_conv.count == rhs.depthwise_conv.count
-                            && depthwise_conv.mask == rhs.depthwise_conv.mask;
-                    if (!ret) break;
-
-                    // only call memcmp with valid pointers
-                    if (depthwise_conv.count == 0) break;
-                    ret = !utils::any_null(depthwise_conv.scales,
-                                  rhs.depthwise_conv.scales)
-                            && !std::memcmp(depthwise_conv.scales,
-                                    rhs.depthwise_conv.scales,
-                                    sizeof(float) * depthwise_conv.count);
+                    // todo: [antonvor] uncomment when new behavior of dw convolution fusing from oneDNN 1.6 will be supported
+//                    // Depthwise Only
+//                    ret = depthwise_conv.stride == rhs.depthwise_conv.stride
+//                            && depthwise_conv.wei_dt
+//                                    == rhs.depthwise_conv.wei_dt
+//                            && depthwise_conv.bias_dt
+//                                    == rhs.depthwise_conv.bias_dt
+//                            && depthwise_conv.dst_dt
+//                                    == rhs.depthwise_conv.dst_dt
+//                            && depthwise_conv.count == rhs.depthwise_conv.count
+//                            && depthwise_conv.mask == rhs.depthwise_conv.mask;
+//                    if (!ret) break;
+//
+//                    // only call memcmp with valid pointers
+//                    if (depthwise_conv.count == 0) break;
+//                    ret = !utils::any_null(depthwise_conv.scales,
+//                                  rhs.depthwise_conv.scales)
+//                            && !std::memcmp(depthwise_conv.scales,
+//                                    rhs.depthwise_conv.scales,
+//                                    sizeof(float) * depthwise_conv.count);
+                    ret = depthwise_conv_old.in_h == rhs.depthwise_conv_old.in_h
+                            && depthwise_conv_old.in_w == rhs.depthwise_conv_old.in_w
+                            && depthwise_conv_old.ker_h == rhs.depthwise_conv_old.ker_h
+                            && depthwise_conv_old.ker_w == rhs.depthwise_conv_old.ker_w
+                            && depthwise_conv_old.str_h == rhs.depthwise_conv_old.str_h
+                            && depthwise_conv_old.str_w == rhs.depthwise_conv_old.str_w
+                            && depthwise_conv_old.in_dt == rhs.depthwise_conv_old.in_dt;
                     break;
                 case primitive_kind::binary:
                     ret = binary.alg == rhs.binary.alg
@@ -475,6 +620,21 @@ struct dnnl_post_ops : public dnnl::impl::c_compatible {
                     break;
                 case primitive_kind::prelu:
                     ret = prelu.mask == rhs.prelu.mask;
+                    break;
+                case primitive_kind::depthwise:
+                    ret = depthwise.alg == rhs.depthwise.alg
+                          && array_cmp(depthwise.offset, rhs.depthwise.offset, depthwise.fields_count);
+                    break;
+                case primitive_kind::quantization:
+                    ret = quantization.alg == rhs.quantization.alg
+                          && array_cmp(quantization.per_channel, rhs.quantization.per_channel, quantization.fields_count)
+                          && array_cmp(quantization.all_default, rhs.quantization.all_default, quantization.fields_count)
+                          && array_cmp(quantization.offset, rhs.quantization.offset, quantization.fields_count);
+                    break;
+                case primitive_kind::binarization:
+                    ret = depthwise.alg == rhs.depthwise.alg
+                          && binarization.weights_data == rhs.binarization.weights_data
+                          && binarization.output_mask_data == rhs.binarization.output_mask_data;
                     break;
                 default: assert(!"unsupported post_op");
             }
@@ -489,9 +649,10 @@ struct dnnl_post_ops : public dnnl::impl::c_compatible {
 
     private:
         void clear() {
-            if (is_convolution() && depthwise_conv.count
-                    && depthwise_conv.scales)
-                dnnl::impl::free(depthwise_conv.scales);
+            // todo: [antonvor] uncomment when new behavior of dw convolution fusing from oneDNN 1.6 will be supported
+//            if (is_convolution() && depthwise_conv.count
+//                    && depthwise_conv.scales)
+//                dnnl::impl::free(depthwise_conv.scales);
             depthwise_conv.scales = nullptr;
             return;
         }
@@ -502,9 +663,10 @@ struct dnnl_post_ops : public dnnl::impl::c_compatible {
             // else if(is_relu()) {} seems to be unreliable. memcpying for now.
             dnnl::impl::utils::array_copy(
                     (char *)this, (char *)&other, sizeof(*this));
-            if (other.is_convolution()) {
-                return set_depthwise_scales(other.depthwise_conv.scales);
-            }
+            // todo: [antonvor] uncomment when new behavior of dw convolution fusing from oneDNN 1.6 will be supported
+//            if (other.is_convolution()) {
+//                return set_depthwise_scales(other.depthwise_conv.scales);
+//            }
             return dnnl::impl::status::success;
         }
     };
@@ -524,6 +686,15 @@ struct dnnl_post_ops : public dnnl::impl::c_compatible {
     dnnl::impl::status_t append_binary(dnnl::impl::alg_kind_t alg,
             const dnnl::impl::memory_desc_t *user_src1_desc);
     dnnl::impl::status_t append_prelu(int mask);
+    dnnl::impl::status_t append_depthwise(dnnl::impl::alg_kind_t alg, size_t offset_size, const size_t* offset);
+    dnnl::impl::status_t append_quantization(dnnl::impl::alg_kind_t alg,
+            size_t per_channel_size, const bool* per_channel,
+            size_t all_default_size, const bool* all_default,
+            size_t offset_size, const size_t* offset);
+    dnnl::impl::status_t append_binarization(dnnl::impl::alg_kind_t alg, const float* weights_data,
+            const float* output_mask_data);
+    dnnl::impl::status_t append_dw_conv(int in_h, int in_w, int ker_h, int ker_w, int str_h, int str_w,
+            dnnl::impl::data_type_t in_dt);
 
     int find(dnnl::impl::primitive_kind_t kind, int start = 0,
             int stop = -1) const {
@@ -541,6 +712,16 @@ struct dnnl_post_ops : public dnnl::impl::c_compatible {
         const auto sum_dt = entry_[sum_ind].sum.dt;
         if (sum_dt != dnnl::impl::data_type::undef) return sum_dt;
         return dst_dt;
+    }
+
+    int count(dnnl::impl::primitive_kind_t kind, int start = 0,
+              int stop = -1) const {
+        if (stop == -1) stop = len();
+        stop = dnnl::impl::nstl::min(stop, len());
+        int cnt = 0;
+        for (int idx = start; idx < stop; ++idx)
+            if (entry_[idx].kind == kind) cnt++;
+        return cnt;
     }
 
     bool defined() const;
@@ -621,6 +802,9 @@ struct dnnl_primitive_attr : public dnnl::impl::c_compatible {
         CHECK(rnn_weights_projection_qparams_.copy_from(
                 other.rnn_weights_projection_qparams_));
         CHECK(rnn_tparams_.copy_from(other.rnn_tparams_));
+        input_zero_points_ = (other.input_zero_points_);
+        weights_zero_points_ = (other.weights_zero_points_);
+        output_compensations_ = (other.output_compensations_);
 
         return status::success;
     }
@@ -640,7 +824,10 @@ struct dnnl_primitive_attr : public dnnl::impl::c_compatible {
         rnn_weights_qparams = 1u << 8,
         rnn_tparams = 1u << 9,
         sum_dt = 1u << 10,
-        rnn_weights_projection_qparams = 1u << 11
+        rnn_weights_projection_qparams = 1u << 11,
+        input_zero_points = 1 << 12,
+        weights_zero_points = 1 << 13,
+        output_compensations = 1 << 14
     };
 
     /** Returns true if the attributes have default values.
@@ -662,7 +849,10 @@ struct dnnl_primitive_attr : public dnnl::impl::c_compatible {
                 && rnn_weights_qparams_ == rhs.rnn_weights_qparams_
                 && rnn_weights_projection_qparams_
                         == rhs.rnn_weights_projection_qparams_
-                && rnn_tparams_ == rhs.rnn_tparams_;
+                && rnn_tparams_ == rhs.rnn_tparams_
+                && input_zero_points_ == rhs.input_zero_points_
+                && weights_zero_points_ == rhs.weights_zero_points_
+                && output_compensations_ == rhs.output_compensations_;
         return ret;
     }
 
@@ -704,6 +894,10 @@ struct dnnl_primitive_attr : public dnnl::impl::c_compatible {
     dnnl::impl::scales_t rnn_weights_qparams_;
     dnnl::impl::scales_t rnn_weights_projection_qparams_;
     dnnl::impl::rnn_tparams_t rnn_tparams_;
+
+    dnnl::impl::legacy_zero_points_t input_zero_points_;
+    dnnl::impl::legacy_zero_points_t weights_zero_points_;
+    dnnl::impl::legacy_zero_points_t output_compensations_;
 
     dnnl_primitive_attr &operator=(const dnnl_primitive_attr &other) = delete;
 };

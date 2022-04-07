@@ -213,6 +213,12 @@ inline void array_set(T *arr, const U &val, size_t size) {
         arr[i] = static_cast<T>(val);
 }
 
+inline bool array_cmp_weak(const dnnl_dim_t *a1, const dnnl_dim_t *a2, size_t size) {
+    for (size_t i = 0; i < size; ++i)
+        if (a1[i] != a2[i] && a1[i] != DNNL_RUNTIME_DIM_VAL && a2[i] != DNNL_RUNTIME_DIM_VAL) return false;
+    return true;
+}
+
 namespace product_impl {
 template <size_t>
 struct int2type {};
@@ -629,9 +635,15 @@ public:
 // Copyright 2005-2014 Daniel James.
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE or copy at http://www.boost.org/LICENSE_1_0.txt)
-template <typename T>
+template <typename T, typename std::enable_if<!std::is_enum<T>::value , int>::type = 0>
 static size_t hash_combine(size_t seed, const T &v) {
     return seed ^= std::hash<T> {}(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+
+template <typename T, typename std::enable_if<std::is_enum<T>::value , int>::type = 0>
+static size_t hash_combine(size_t seed, const T &v) {
+    using underlying_t = typename std::underlying_type<T>::type;
+    return hash_combine(seed, static_cast<underlying_t>(v));
 }
 
 inline int float2int(float x) {
@@ -709,7 +721,7 @@ public:
 
 inline bool is_native_runtime(runtime_kind_t kind) {
     return utils::one_of(kind, runtime_kind::seq, runtime_kind::omp,
-            runtime_kind::tbb, runtime_kind::threadpool);
+            runtime_kind::tbb, runtime_kind::tbb_auto, runtime_kind::threadpool);
 }
 
 } // namespace impl

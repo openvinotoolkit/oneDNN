@@ -27,6 +27,8 @@
 #include "cpu/x64/injectors/injector_utils.hpp"
 #include "cpu/x64/injectors/jit_uni_binary_injector.hpp"
 #include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
+#include "cpu/x64/injectors/jit_uni_depthwise_injector.hpp"
+#include "cpu/x64/injectors/jit_uni_quantization_injector.hpp"
 #include "cpu/x64/jit_generator.hpp"
 #include <initializer_list>
 
@@ -81,7 +83,18 @@ public:
             const eltwise_injector::static_params_t &eltwise_static_params);
     jit_uni_postops_injector_t(jit_generator *host, const post_ops_t &post_ops,
             const binary_injector::static_params_t &binary_static_params,
+            const quantization_injector::static_params_t &quantization_static_params);
+    jit_uni_postops_injector_t(jit_generator *host, const post_ops_t &post_ops,
             const eltwise_injector::static_params_t &eltwise_static_params,
+            const quantization_injector::static_params_t &quantization_static_params);
+    jit_uni_postops_injector_t(jit_generator *host, const post_ops_t &post_ops,
+            const binary_injector::static_params_t &binary_static_params,
+            const eltwise_injector::static_params_t &eltwise_static_params,
+            const quantization_injector::static_params_t &quantization_static_params);
+    jit_uni_postops_injector_t(jit_generator *host, const post_ops_t &post_ops,
+            const binary_injector::static_params_t &binary_static_params,
+            const eltwise_injector::static_params_t &eltwise_static_params,
+            const quantization_injector::static_params_t &quantization_static_params,
             const lambda_jit_injectors_t &lambda_jit_injectors);
 
     /*
@@ -91,7 +104,18 @@ public:
      * @rhs_arg_params: see jit_uni_binary_injector description
      */
     void compute_vector_range(const injector_utils::vmm_index_set_t &vmm_idxs,
+            const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
+            const depthwise_injector::dynamic_params_t &ddp,
+            const quantization_injector::dynamic_params_t &qdp, bool is_broadcast = false);
+
+    void compute_vector_range(const injector_utils::vmm_index_set_t &vmm_idxs,
             const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params);
+
+    void compute_vector_range(
+            size_t start_idx, size_t end_idx,
+            const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
+            const depthwise_injector::dynamic_params_t &ddp,
+            const quantization_injector::dynamic_params_t &qdp);
 
     void compute_vector_range(const injector_utils::vmm_index_set_t &vmm_idxs);
 
@@ -115,6 +139,13 @@ public:
     void compute_vector(size_t idx,
             const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params);
     void compute_vector(size_t idx);
+    void compute_vector(size_t idx,
+                        const depthwise_injector::dynamic_params_t &ddp,
+                        const quantization_injector::dynamic_params_t &qdp, bool is_broadcast = false);
+    void compute_vector(size_t idx,
+            const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
+            const depthwise_injector::dynamic_params_t &ddp,
+            const quantization_injector::dynamic_params_t &qdp);
 
     /*
      * Thin wrapper for eltwise injector specific function
@@ -122,6 +153,10 @@ public:
     void prepare_table(bool gen_table = true);
     void set_lambda_injector(lambda_jit_injectors_t::key_type,
             const lambda_jit_injectors_t::mapped_type &jit_injector);
+
+    void push_post_ops_data_on_stack(const Xbyak::Reg64& post_ops_data_reg, std::size_t post_ops_data_offset,
+                                     const Xbyak::Reg64& aux_reg0, const Xbyak::Reg64& aux_reg1);
+    void reset_stack_pointer();
 
 private:
     post_ops_t post_ops_;
@@ -131,9 +166,12 @@ private:
     std::unique_ptr<binary_injector::jit_uni_binary_injector_t<isa, Vmm>>
             binary_injector_;
     lambda_jit_injectors_t lambda_jit_injectors_;
+    nstl::vector<std::unique_ptr<jit_uni_depthwise_injector_f32<isa>>> depthwise_injectors;
+    nstl::vector<std::unique_ptr<jit_uni_quantization_injector_f32<isa, Vmm>>> quantization_injectors;
+    std::size_t post_ops_pointers_count = 0;
 };
 
-enum post_op_type { sum = 0, eltwise, binary };
+enum post_op_type { sum = 0, eltwise, binary, depthwise, quantization };
 
 struct post_ops_ok_args_t {
     post_ops_ok_args_t(const cpu_isa_t isa,

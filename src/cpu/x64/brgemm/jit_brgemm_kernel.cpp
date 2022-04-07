@@ -921,17 +921,10 @@ void jit_brgemm_kernel_t::store_accumulators_apply_post_ops(
     const bool dq2ps_required = brg.is_int8
             && IMPLICATION(alpha_or_beta_applicable, beta_uses_vadd);
 
-    if (brg.with_bias) { mov(reg_aux_bias, ptr[rsp + reg_aux_bias_offs_]); }
     for_(int bd = 0; bd < bd_block; bd++)
     for (int ld = 0; ld < ld_block2; ld++) {
         auto zmm = accm(ld_block2, bd, ld);
         if (dq2ps_required) vcvtdq2ps(zmm, zmm);
-        if (brg.with_bias) {
-            auto zmm_bias = zmm_tmp_1();
-            auto ptr_bias = ptr[reg_aux_bias + bias_offset(ld)];
-            cvt2ps(brg.dt_bias, zmm_bias, ptr_bias, true, false, k_mask);
-            vaddps(zmm, zmm, zmm_bias);
-        }
     }
 
     if (brg.zp_type_a != brgemm_broadcast_t::none) {
@@ -980,6 +973,19 @@ void jit_brgemm_kernel_t::store_accumulators_apply_post_ops(
             }
         }
     }
+
+    if (brg.with_bias) { mov(reg_aux_bias, ptr[rsp + reg_aux_bias_offs_]); }
+    for_(int bd = 0; bd < bd_block; bd++)
+    for (int ld = 0; ld < ld_block2; ld++) {
+        auto zmm = accm(ld_block2, bd, ld);
+        if (brg.with_bias) {
+            auto zmm_bias = zmm_tmp_1();
+            auto ptr_bias = ptr[reg_aux_bias + bias_offset(ld)];
+            cvt2ps(brg.dt_bias, zmm_bias, ptr_bias, true, false, k_mask);
+            vaddps(zmm, zmm, zmm_bias);
+        }
+    }
+
     if (brg.with_scales) {
         mov(reg_aux_scales, ptr[rsp + reg_aux_scales_offs_]);
         for (int bd = 0; bd < bd_block; bd++) {

@@ -38,6 +38,8 @@ status_t ref_convolution_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
     auto dst = CTX_OUT_CLEAN_MEM(void *, DNNL_ARG_DST, status);
     CHECK(status);
 
+    auto MB = CTX_IN_BATCH(DNNL_ARG_SRC);
+
     const memory_desc_wrapper src_d(pd()->src_md());
     const memory_desc_wrapper dst_d(pd()->dst_md());
     const memory_desc_wrapper weights_d(pd()->weights_md(0));
@@ -46,7 +48,6 @@ status_t ref_convolution_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
     const bool with_groups = pd()->with_groups();
 
     const auto G = pd()->G();
-    const auto MB = pd()->MB();
     const auto OD = pd()->OD();
     const auto OH = pd()->OH();
     const auto OW = pd()->OW();
@@ -227,6 +228,8 @@ status_t ref_convolution_bwd_data_t::execute_backward_data(
     auto diff_src = CTX_OUT_CLEAN_MEM(void *, DNNL_ARG_DIFF_SRC, status);
     CHECK(status);
 
+    auto MB = CTX_IN_BATCH(DNNL_ARG_DIFF_DST);
+
     const memory_desc_wrapper diff_dst_d(pd()->diff_dst_md());
     const memory_desc_wrapper diff_src_d(pd()->diff_src_md());
     const memory_desc_wrapper weights_d(pd()->weights_md(0));
@@ -234,7 +237,6 @@ status_t ref_convolution_bwd_data_t::execute_backward_data(
     const bool with_groups = pd()->with_groups();
 
     const auto G = pd()->G();
-    const auto MB = pd()->MB();
     const auto OD = pd()->OD();
     const auto OH = pd()->OH();
     const auto OW = pd()->OW();
@@ -387,6 +389,8 @@ status_t ref_convolution_bwd_data_t::execute_backward_data(
         return ds;
     };
 
+    const auto &p = pd()->attr()->post_ops_;
+
     parallel_nd(G, MB, IC, ID, IH, IW,
             [&](dim_t g, dim_t mb, dim_t ic, dim_t id, dim_t ih, dim_t iw) {
                 float ds = 0;
@@ -395,6 +399,21 @@ status_t ref_convolution_bwd_data_t::execute_backward_data(
                     ds += ker_plain(g, mb, ic, id, ih, iw);
                 else
                     ds += ker(g, mb, ic, id, ih, iw);
+
+                size_t post_ops_data_idx = 0;
+                int depthwise_inj_idx = 0;
+                for (int i = 0; i < p.len(); i++) {
+                    auto &post_op = p.entry_[i];
+                    if (post_op.is_depthwise()) {
+                        auto depthwise_base = CTX_IN_MEM(const float *, (DNNL_ARG_ATTR_MULTIPLE_POST_OP(i) | DNNL_ARG_SRC_1));
+                        auto depthwise_weights = depthwise_base + post_op.depthwise.offset[post_op.depthwise.scales];
+                        auto depthwise_bias = depthwise_base + post_op.depthwise.offset[post_op.depthwise.shifts];
+
+                        ds = depthwise_injectors[depthwise_inj_idx]->compute_scalar(ds, depthwise_weights + g * IC + ic, depthwise_bias + g * IC + ic);
+                        post_ops_data_idx++;
+                        depthwise_inj_idx++;
+                    }
+                }
 
                 const auto diff_src_off = ref_conv_utils::get_data_off(
                         diff_src_d, ndims, mb, g * IC + ic, id, ih, iw);
