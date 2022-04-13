@@ -38,14 +38,20 @@ const impl_list_map_t regular_f32_s8_impl_list_map {
 
         DNNL_AARCH64_ONLY(CPU_REORDER_INSTANCE(aarch64_jit_uni_reorder_t))
 
+#ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR_BIDIR(f32, any, s8, nCw16c))
+#endif
         REG_REORDER_P(REG_SR_BIDIR(f32, any, s8, nChw16c))
+#ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR_BIDIR(f32, any, s8, nCw8c))
+#endif
         REG_REORDER_P(REG_SR_BIDIR(f32, any, s8, nChw8c))
+#ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR_BIDIR(f32, any, s8, OIhw4i16o4i))
         REG_REORDER_P(REG_SR_BIDIR(f32, any, s8, gOIhw4i16o4i))
 
         REG_REORDER_P(REG_SR(f32, any, s8, any, fmt_order_any, spec_reference))
+#endif
 
         nullptr,
     }},

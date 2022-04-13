@@ -29,20 +29,26 @@ const impl_list_map_t regular_bf16_impl_list_map {
         REG_REORDER_P(DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64_jit_blk_reorder_t)))
         REG_REORDER_P(DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64_jit_uni_reorder_t)))
 
-        REG_REORDER_P(REG_SR_BIDIR(bf16, any, f32, nCw16c))
+#ifdef ENABLE_UNUSED_PRIM
+        REG_REORDER_P(REG_SR(bf16, any, f32, nCw16c, fmt_order_keep))
+#endif
+        REG_REORDER_P(REG_SR(bf16, any, f32, nCw16c, fmt_order_reverse))
         REG_REORDER_P(REG_SR_BIDIR(bf16, any, f32, nChw16c))
         REG_REORDER_P(REG_SR_BIDIR(bf16, any, f32, nCdhw16c))
-
+#ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR_BIDIR(bf16, any, s8, nChw16c))
         REG_REORDER_P(REG_SR_BIDIR(bf16, any, s8, nCdhw16c))
 
         REG_REORDER_P(REG_SR_BIDIR(bf16, any, u8, nChw16c))
         REG_REORDER_P(REG_SR_BIDIR(bf16, any, u8, nCdhw16c))
-
-        REG_REORDER_P(REG_SR_BIDIR(bf16, any, bf16, nCw16c))
+#endif
+        REG_REORDER_P(REG_SR(bf16, any, bf16, nCw16c, fmt_order_keep))
+#ifdef ENABLE_UNUSED_PRIM
+        REG_REORDER_P(REG_SR(bf16, any, bf16, nCw16c, fmt_order_reverse))
+#endif
         REG_REORDER_P(REG_SR_BIDIR(bf16, any, bf16, nChw16c))
         REG_REORDER_P(REG_SR_BIDIR(bf16, any, bf16, nCdhw16c))
-
+#ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR_BIDIR(bf16, any, f32, OIdhw16o16i))
         REG_REORDER_P(REG_SR_BIDIR(bf16, any, f32, OIdhw16i16o))
 
@@ -51,11 +57,13 @@ const impl_list_map_t regular_bf16_impl_list_map {
 
         REG_REORDER_P(REG_SR_BIDIR(bf16, any, u8, OIdhw16o16i))
         REG_REORDER_P(REG_SR_BIDIR(bf16, any, u8, OIdhw16i16o))
-
+#endif
         REG_REORDER_P(REG_SR(bf16, any, bf16, any, fmt_order_any, spec_reference))
         REG_REORDER_P(REG_SR(bf16, any, f32, any, fmt_order_any, spec_reference))
+#ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR(bf16, any, s8, any, fmt_order_any, spec_reference))
         REG_REORDER_P(REG_SR(bf16, any, u8, any, fmt_order_any, spec_reference))
+#endif
 
         nullptr,
     }},

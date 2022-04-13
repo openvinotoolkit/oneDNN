@@ -35,12 +35,23 @@ const impl_list_map_t regular_s32_impl_list_map {
 
         DNNL_AARCH64_ONLY(CPU_REORDER_INSTANCE(aarch64_jit_uni_reorder_t))
 
-        REG_REORDER_P(REG_SR_BIDIR(s32, any, f32, nChw16c))
-        REG_REORDER_P(REG_SR_BIDIR(s32, any, s32, nChw16c))
+        REG_REORDER_P(REG_SR(s32, any, f32, nChw16c, fmt_order_keep))
+#ifdef ENABLE_UNUSED_PRIM
+        REG_REORDER_P(REG_SR(s32, any, f32, nChw16c, fmt_order_reverse))
+        REG_REORDER_P(REG_SR(s32, any, s32, nChw16c, fmt_order_keep))
+#endif
+        REG_REORDER_P(REG_SR(s32, any, s32, nChw16c, fmt_order_reverse))
+#ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR_BIDIR(s32, any, s8, nChw16c))
         REG_REORDER_P(REG_SR_BIDIR(s32, any, u8, nChw16c))
-        REG_REORDER_P(REG_SR_BIDIR(s32, any, f32, nChw8c))
-        REG_REORDER_P(REG_SR_BIDIR(s32, any, s32, nChw8c))
+#endif
+        REG_REORDER_P(REG_SR(s32, any, f32, nChw8c, fmt_order_keep))
+#ifdef ENABLE_UNUSED_PRIM
+        REG_REORDER_P(REG_SR(s32, any, f32, nChw8c, fmt_order_reverse))
+        REG_REORDER_P(REG_SR(s32, any, s32, nChw8c, fmt_order_keep))
+#endif
+        REG_REORDER_P(REG_SR(s32, any, s32, nChw8c, fmt_order_reverse))
+#ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR_BIDIR(s32, any, s8, nChw8c))
         REG_REORDER_P(REG_SR_BIDIR(s32, any, u8, nChw8c))
 
@@ -48,6 +59,7 @@ const impl_list_map_t regular_s32_impl_list_map {
         REG_REORDER_P(REG_SR(s32, any, s32, any, fmt_order_any, spec_reference))
         REG_REORDER_P(REG_SR(s32, any, s8, any, fmt_order_any, spec_reference))
         REG_REORDER_P(REG_SR(s32, any, u8, any, fmt_order_any, spec_reference))
+#endif
 
         nullptr,
     }},

@@ -25,13 +25,15 @@ namespace cpu {
 const impl_list_map_t regular_bin_impl_list_map {
     // bin ->
     {{bin, data_type::undef, 4}, {
+#ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR_DIRECT_COPY(bin, bin))
-
+#endif
         REG_REORDER_P(REG_SR(bin, any, bin, OIhw8o32i, fmt_order_keep))
 
         REG_REORDER_P(REG_SR(bin, any, bin, OIhw16o32i, fmt_order_keep))
-
+#ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR_BIDIR(u8, any, u8, nChw8c))
+#endif
 
         nullptr,
     }},

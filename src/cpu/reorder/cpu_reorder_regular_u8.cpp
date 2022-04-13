@@ -50,21 +50,35 @@ const impl_list_map_t regular_u8_impl_list_map {
         REG_REORDER_P(REG_FAST_DIRECT_COPY_AFTER_JIT(u8, s8))
         REG_REORDER_P(REG_FAST_DIRECT_COPY_AFTER_JIT(u8, u8))
 
-        REG_REORDER_P(REG_SR_BIDIR(u8, any, f32, nChw16c))
+        REG_REORDER_P(REG_SR(u8, any, f32, nChw16c, fmt_order_keep))
+#ifdef ENABLE_UNUSED_PRIM
+        REG_REORDER_P(REG_SR(u8, any, f32, nChw16c, fmt_order_reverse))
+
         REG_REORDER_P(REG_SR_BIDIR(u8, any, s32, nChw16c))
         REG_REORDER_P(REG_SR_BIDIR(u8, any, bf16, nChw16c))
         REG_REORDER_P(REG_SR_BIDIR(u8, any, s8, nChw16c))
+#endif
         REG_REORDER_P(REG_SR_BIDIR(u8, any, u8, nChw16c))
-        REG_REORDER_P(REG_SR_BIDIR(u8, any, f32, nChw8c))
+        REG_REORDER_P(REG_SR(u8, any, f32, nChw8c, fmt_order_keep))
+#ifdef ENABLE_UNUSED_PRIM
+        REG_REORDER_P(REG_SR(u8, any, f32, nChw8c, fmt_order_reverse))
+
         REG_REORDER_P(REG_SR_BIDIR(u8, any, s32, nChw8c))
         REG_REORDER_P(REG_SR_BIDIR(u8, any, s8, nChw8c))
-        REG_REORDER_P(REG_SR_BIDIR(u8, any, u8, nChw8c))
+
+        REG_REORDER_P(REG_SR(u8, any, u8, nChw8c, fmt_order_keep))
+#endif
+        REG_REORDER_P(REG_SR(u8, any, u8, nChw8c, fmt_order_reverse))
 
         REG_REORDER_P(REG_SR(u8, any, f32, any, fmt_order_any, spec_reference))
+#ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR(u8, any, s32, any, fmt_order_any, spec_reference))
         REG_REORDER_P(REG_SR(u8, any, bf16, any, fmt_order_any, spec_reference))
+#endif
         REG_REORDER_P(REG_SR(u8, any, u8, any, fmt_order_any, spec_reference))
+#ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR(u8, any, s8, any, fmt_order_any, spec_reference))
+#endif
 
         nullptr,
     }},

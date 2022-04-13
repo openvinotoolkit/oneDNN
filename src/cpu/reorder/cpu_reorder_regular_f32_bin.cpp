@@ -25,9 +25,11 @@ namespace cpu {
 const impl_list_map_t regular_f32_bin_impl_list_map {
     // f32 -> bin
     {{f32, bin, 4}, {
+#ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR_BIDIR(f32, nchw, bin, nhwc))
 
         REG_REORDER_P(REG_SR_BIDIR(f32, nhwc, bin, nhwc))
+#endif
 
         nullptr,
     }},

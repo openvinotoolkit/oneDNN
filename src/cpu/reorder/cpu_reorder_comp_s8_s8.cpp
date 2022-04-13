@@ -27,10 +27,15 @@ const impl_list_map_t comp_s8_s8_impl_list_map {
     {{s8, s8, 2}, {
         REG_REORDER_P(DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64_jit_uni_reorder_t)))
         REG_REORDER_P(REG_SR(s8, oi, s8, OI4i16o4i, fmt_order_keep, spec_conv_req_comp))
+#ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR(s8, io, s8, OI4i16o4i, fmt_order_keep, spec_conv_req_comp))
+#endif
         REG_REORDER_P(REG_SR(s8, oi, s8, OI4i32o4i, fmt_order_keep, spec_conv_req_comp))
+#ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR(s8, io, s8, OI4i32o4i, fmt_order_keep, spec_conv_req_comp))
+#endif
         REG_REORDER_P(REG_SR(s8, oi, s8, OI4i64o4i, fmt_order_keep, spec_conv_req_comp))
+#ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR(s8, io, s8, OI4i64o4i, fmt_order_keep, spec_conv_req_comp))
 #ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR(s8, ab, s8, BA16a16b4a, fmt_order_keep, spec_conv_req_comp))
@@ -47,6 +52,7 @@ const impl_list_map_t comp_s8_s8_impl_list_map {
     // s8 -> s8
     {{s8, s8, 3}, {
         REG_REORDER_P(DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64_jit_uni_reorder_t)))
+#ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR(s8, any, s8, wio, fmt_order_keep, spec_conv_req_comp))
         REG_REORDER_P(REG_SR(s8, iwo, s8, OIw4i16o4i, fmt_order_keep, spec_conv_req_comp))
         REG_REORDER_P(REG_SR(s8, iwo, s8, OIw4i32o4i, fmt_order_keep, spec_conv_req_comp))
@@ -129,8 +135,10 @@ const impl_list_map_t comp_s8_s8_impl_list_map {
         REG_REORDER_P(REG_SR(s8, hwio, s8, OIhw16i16o4i, fmt_order_keep, spec_conv_req_comp))
 #endif
         REG_REORDER_P(REG_SR(s8, iohw, s8, OIhw4i16o4i, fmt_order_keep, spec_conv_req_comp))
+#ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR(s8, iohw, s8, OIhw2i8o4i, fmt_order_keep, spec_conv_req_comp))
         REG_REORDER_P(REG_SR(s8, iohw, s8, OIhw4o4i, fmt_order_keep, spec_conv_req_comp))
+#endif
 
         nullptr,
     }},
@@ -178,13 +186,13 @@ const impl_list_map_t comp_s8_s8_impl_list_map {
         REG_REORDER_P(REG_SR(s8, idhwo, s8, OIdhw16i16o4i, fmt_order_keep, spec_conv_req_comp))
         REG_REORDER_P(REG_SR(s8, oidhw, s8, OIdhw16i16o4i, fmt_order_keep, spec_conv_req_comp))
         REG_REORDER_P(REG_SR(s8, dhwio, s8, OIdhw16i16o4i, fmt_order_keep, spec_conv_req_comp))
-#endif
         REG_REORDER_P(REG_SR(s8, giohw, s8, gOIhw4i16o4i, fmt_order_keep, spec_conv_req_comp))
         REG_REORDER_P(REG_SR(s8, giohw, s8, gOIhw2i8o4i, fmt_order_keep, spec_conv_req_comp))
         REG_REORDER_P(REG_SR(s8, giohw, s8, gOIhw4o4i, fmt_order_keep, spec_conv_req_comp))
         REG_REORDER_P(REG_SR(s8, iodhw, s8, OIdhw4i16o4i, fmt_order_keep, spec_conv_req_comp))
         REG_REORDER_P(REG_SR(s8, iodhw, s8, OIdhw2i8o4i, fmt_order_keep, spec_conv_req_comp))
         REG_REORDER_P(REG_SR(s8, iodhw, s8, OIdhw4o4i, fmt_order_keep, spec_conv_req_comp))
+#endif
 
         nullptr,
     }},
@@ -197,10 +205,10 @@ const impl_list_map_t comp_s8_s8_impl_list_map {
         REG_REORDER_P(REG_SR(s8, goidhw, s8, gOIdhw4o4i, fmt_order_keep, spec_conv_req_comp))
         REG_REORDER_P(REG_SR(s8, goidhw, s8, gOdhwI16o4i, fmt_order_keep, spec_conv_req_comp))
         REG_REORDER_P(REG_SR(s8, goidhw, s8, gOIdhw16i16o4i, fmt_order_keep, spec_conv_req_comp))
-#endif
         REG_REORDER_P(REG_SR(s8, giodhw, s8, gOIdhw4i16o4i, fmt_order_keep, spec_conv_req_comp))
         REG_REORDER_P(REG_SR(s8, giodhw, s8, gOIdhw2i8o4i, fmt_order_keep, spec_conv_req_comp))
         REG_REORDER_P(REG_SR(s8, giodhw, s8, gOIdhw4o4i, fmt_order_keep, spec_conv_req_comp))
+#endif
 
         nullptr,
     }},

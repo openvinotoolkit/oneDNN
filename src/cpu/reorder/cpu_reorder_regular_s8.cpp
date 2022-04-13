@@ -40,28 +40,46 @@ const impl_list_map_t regular_s8_impl_list_map {
 
         DNNL_AARCH64_ONLY(CPU_REORDER_INSTANCE(aarch64_jit_uni_reorder_t))
 
+#ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR_BIDIR(s8, any, f32, nChw16c))
         REG_REORDER_P(REG_SR_BIDIR(s8, any, s32, nChw16c))
         REG_REORDER_P(REG_SR_BIDIR(s8, any, bf16, nChw16c))
-        REG_REORDER_P(REG_SR_BIDIR(s8, any, s8, nChw16c))
+
+        REG_REORDER_P(REG_SR(s8, any, s8, nChw16c, fmt_order_keep))
+#endif
+        REG_REORDER_P(REG_SR(s8, any, s8, nChw16c, fmt_order_reverse))
+#ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR_BIDIR(s8, any, u8, nChw16c))
-        REG_REORDER_P(REG_SR_BIDIR(s8, any, f32, nChw8c))
+#endif
+        REG_REORDER_P(REG_SR(s8, any, f32, nChw8c, fmt_order_keep))
+#ifdef ENABLE_UNUSED_PRIM
+        REG_REORDER_P(REG_SR(s8, any, f32, nChw8c, fmt_order_reverse))
+
         REG_REORDER_P(REG_SR_BIDIR(s8, any, s32, nChw8c))
         REG_REORDER_P(REG_SR_BIDIR(s8, any, s8, nChw8c))
         REG_REORDER_P(REG_SR_BIDIR(s8, any, u8, nChw8c))
 
         REG_REORDER_P(REG_SR_BIDIR(s8, any, f32, OIhw4i16o4i))
         REG_REORDER_P(REG_SR_BIDIR(s8, any, bf16, OIhw4i16o4i))
-        REG_REORDER_P(REG_SR_BIDIR(s8, any, s8, OIhw4i16o4i))
+#endif
+        REG_REORDER_P(REG_SR(s8, any, s8, OIhw4i16o4i, fmt_order_keep))
+#ifdef ENABLE_UNUSED_PRIM
+        REG_REORDER_P(REG_SR(s8, any, s8, OIhw4i16o4i, fmt_order_reverse))
+
         REG_REORDER_P(REG_SR_BIDIR(s8, any, f32, gOIhw4i16o4i))
         REG_REORDER_P(REG_SR_BIDIR(s8, any, bf16, gOIhw4i16o4i))
         REG_REORDER_P(REG_SR_BIDIR(s8, any, s8, gOIhw4i16o4i))
 
+#endif
         REG_REORDER_P(REG_SR(s8, any, f32, any, fmt_order_any, spec_reference))
+#ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR(s8, any, s32, any, fmt_order_any, spec_reference))
         REG_REORDER_P(REG_SR(s8, any, bf16, any, fmt_order_any, spec_reference))
+#endif
         REG_REORDER_P(REG_SR(s8, any, s8, any, fmt_order_any, spec_reference))
+#ifdef ENABLE_UNUSED_PRIM
         REG_REORDER_P(REG_SR(s8, any, u8, any, fmt_order_any, spec_reference))
+#endif
 
         nullptr,
     }},
