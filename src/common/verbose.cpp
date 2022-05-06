@@ -293,8 +293,9 @@ uint32_t get_verbose(verbose_t::flag_kind verbosity_kind,
     bool filter_result = flags & filter_kind;
     return filter_result ? result : 0;
 }
-
+#if !defined(DISABLE_VERBOSE)
 static setting_t<bool> verbose_timestamp {false};
+#endif
 bool get_verbose_timestamp() {
 #if defined(DISABLE_VERBOSE)
     return false;
