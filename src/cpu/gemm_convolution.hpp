@@ -33,6 +33,10 @@
 
 #include "ref_depthwise_injector.hpp"
 
+#if DNNL_X64
+#include "cpu/x64/cpu_isa_traits.hpp"
+#include "cpu/x64/injectors/jit_uni_binary_injector.hpp"
+#endif
 namespace dnnl {
 namespace impl {
 namespace cpu {
@@ -80,23 +84,24 @@ struct gemm_convolution_fwd_t : public primitive_t {
             auto const &po = attr()->post_ops_;
 
             auto all_post_ops_supported = [&]() {
-                bool ok = true;
-
                 for (int i = 0; i < po.len(); i++) {
                     const auto &entry = po.entry_[i];
-                    ok = ok && utils::one_of(entry.kind, sum, eltwise, binary,
-                            prelu, depthwise, quantization);
+                                        if (!utils::one_of(entry.kind, sum, eltwise, binary,
+                                                                prelu, depthwise, quantization))
+                                                return false;
                     if (entry.is_binary() || entry.is_prelu())
-                        ok = ok && dnnl::impl::get_rhs_arg_broadcasting_strategy(
+                                                if (dnnl::impl::get_rhs_arg_broadcasting_strategy(
                                            binary_injector_utils::get_src1_desc(
                                                    entry, dst_md_),
                                            dst_md_,
                                            {broadcasting_strategy_t::scalar,
                                                    broadcasting_strategy_t::per_oc})
-                                != broadcasting_strategy_t::unsupported;
-                    if (entry.kind == sum) ok = ok && i == 0 && entry.is_sum();
+                                                                == broadcasting_strategy_t::unsupported)
+                            return false;
+                                        if (entry.kind == sum && (i != 0 || !entry.is_sum()))
+                                                return false;
                 }
-                return ok;
+                return true;
             };
             auto contain = [&](dnnl::impl::primitive_kind_t kind) { return po.find(kind) != -1; };
             auto position = [&](dnnl::impl::primitive_kind_t kind) { return po.find(kind); };
@@ -121,10 +126,12 @@ struct gemm_convolution_fwd_t : public primitive_t {
         bool has_post_ops = post_ops.len() > 0;
         postops_in_ip_ = has_bias || has_post_ops;
 
-                if (jcp.with_binary) {
+                if (jcp.with_binary && !jcp.is_nspc)
+                        pp_kernel_.reset(pp_kernel_t::create(pd(), jcp));
+                if (jcp.with_binary && !pp_kernel_) {
                         CHECK(safe_ptr_assign(post_ops_, new ref_post_ops_t(jcp.post_ops)));
                         CHECK(post_ops_->init(pd()->dst_md()));
-                } else {
+                } else if (!jcp.with_binary) {
                         CHECK(safe_ptr_assign(pp_kernel_, pp_kernel_t::create(pd(), jcp)));
                 }
         return (pp_kernel_) ? pp_kernel_->create_kernel() : status::success;

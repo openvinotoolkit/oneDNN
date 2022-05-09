@@ -82,7 +82,7 @@ struct ref_pp_kernel_t : pp_kernel_t {
         ref_depthwise_injectors_.clear();
     }
 
-    void operator()(float *dst, const float *bias, dim_t len, dim_t oc_start,
+        void operator()(float *dst, float *dst_orig, const float *bias, dim_t len, dim_t oc_start,
                         dim_t oc_work, dim_t oc_stride,
                         const std::vector<const void *> &post_ops_binary_rhs_arg_vec) const override;
 
@@ -102,7 +102,7 @@ private:
         std::vector<ref_depthwise_scalar_fwd_t*> ref_depthwise_injectors_;
 };
 
-void ref_pp_kernel_t::operator()(float *dst, const float *bias, dim_t len,
+void ref_pp_kernel_t::operator()(float *dst, float *dst_orig, const float *bias, dim_t len,
         dim_t oc_start, dim_t oc_work, dim_t oc_stride,
         const std::vector<const void *> &post_ops_binary_rhs_arg_vec) const {
     // TODO: for "outer threading" we have parallel section within

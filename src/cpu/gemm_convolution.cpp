@@ -185,7 +185,7 @@ status_t gemm_convolution_fwd_t::execute_forward_thr_nspc(const exec_ctx_t &ctx,
 
                 for (size_t os = first_os; os < last_os; ++os) {
                     data_t* dst_local = dst + os * dst_os_stride;
-                    (*pp_kernel_)(dst_local, bia_base, 1, first_oc, last_oc, 1, post_ops_binary_rhs_arg_vec);
+                    (*pp_kernel_)(dst_local, dst_base, bia_base, 1, first_oc, last_oc, 1, post_ops_binary_rhs_arg_vec);
                 }
             }
         }
@@ -292,7 +292,7 @@ status_t gemm_convolution_fwd_t::execute_forward_ncsp(
 
             if (curr.ic == jcp.ic - step.ic) {
                 if (pp_kernel_) {
-                    (*pp_kernel_)(_dst, bias, m, curr.g * jcp.oc + curr.oc,
+                    (*pp_kernel_)(_dst, dst, bias, m, curr.g * jcp.oc + curr.oc,
                             step.oc, M, post_ops_binary_rhs_arg_vec);
                 } else {
                 // TODO: for "outer threading" we have parallel section within

@@ -96,7 +96,7 @@ struct pp_kernel_t {
 
     virtual ~pp_kernel_t() = default;
 
-    virtual void operator()(float *dst, const float *bias, dim_t len,
+        virtual void operator()(float *dst, float *dst_orig, const float *bias, dim_t len,
                         dim_t oc_start, dim_t oc_work, dim_t oc_stride,
                         const std::vector<const void *> &post_ops_binary_rhs_arg_vec) const = 0;
 
