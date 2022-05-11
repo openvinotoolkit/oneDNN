@@ -14,12 +14,13 @@
 * limitations under the License.
 *******************************************************************************/
 
-#ifndef CPU_X64_JIT_UNI_FORK_DW_CONV_KERNEL_HPP
-#define CPU_X64_JIT_UNI_FORK_DW_CONV_KERNEL_HPP
+#ifndef CPU_X64_JIT_UNI_FORK_DW_CONV_KERNEL_F32_HPP
+#define CPU_X64_JIT_UNI_FORK_DW_CONV_KERNEL_F32_HPP
 
 #include "common/c_types_map.hpp"
 #include "common/memory_tracking.hpp"
 
+#include "cpu/x64/injectors/jit_uni_binary_injector.hpp"
 #include "cpu/x64/injectors/jit_uni_depthwise_injector.hpp"
 #include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
 #include "cpu/x64/injectors/jit_uni_quantization_injector.hpp"
@@ -37,7 +38,10 @@ struct jit_uni_fork_dw_conv_fwd_kernel_f32 : public jit_generator_t {
 
     jit_uni_fork_dw_conv_fwd_kernel_f32(const jit_conv_conf_t &ajcp,
             const memory_desc_t &dst_md, const primitive_attr_t &attr)
-        : jit_generator_t(jit_name()), jcp(ajcp), attr_(attr) {}
+        : jit_generator_t(jit_name())
+        , jcp(ajcp)
+        , attr_(attr)
+        , dst_md_(dst_md) {}
 
     ~jit_uni_fork_dw_conv_fwd_kernel_f32() {
         for (auto inj : eltwise_injectors)
@@ -55,6 +59,7 @@ struct jit_uni_fork_dw_conv_fwd_kernel_f32 : public jit_generator_t {
 
     jit_conv_conf_t jcp;
     const primitive_attr_t &attr_;
+    memory_desc_t dst_md_;
 
 private:
     using Vmm = typename utils::conditional3<isa == sse41, Xbyak::Xmm,
@@ -118,7 +123,7 @@ private:
     inline void apply_filter(int ur_ch_blocks, int ur_w, bool is_ch_tail);
     inline void apply_filter_unrolled(
             int ur_ch_blocks, int ur_w, bool is_ch_tail);
-    inline void apply_postprocess(int ur_ch_blocks, int ur_w);
+    inline void apply_postprocess(int ur_ch_blocks, int ur_w, bool is_ch_tail);
     inline void store_dst(int ur_ch_blocks, int ur_w, bool is_ch_tail);
     inline void loop_body(int ur_ch_blocks);
 
@@ -135,6 +140,8 @@ private:
     nstl::vector<jit_uni_depthwise_injector_f32<isa> *> depthwise_injectors;
     nstl::vector<jit_uni_quantization_injector_f32<isa> *>
             quantization_injectors;
+    std::unique_ptr<binary_injector::jit_uni_binary_injector_t<isa>>
+            binary_injector;
 };
 
 template <cpu_isa_t isa>

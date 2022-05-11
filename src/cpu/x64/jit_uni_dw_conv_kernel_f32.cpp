@@ -44,7 +44,7 @@ jit_uni_dw_conv_fwd_kernel_f32_t<isa>::jit_uni_dw_conv_fwd_kernel_f32_t(
         using namespace binary_injector;
         static constexpr bool preserve_gpr = true;
         static constexpr bool preserve_vmm = false;
-        static constexpr size_t helper_vmm_idx = 31;
+        static constexpr size_t helper_vmm_idx = 2;
         static constexpr bool use_exact_tail_scalar_bcast = true;
         const auto tail_size = static_cast<int>(jcp.oc_without_padding
                 % (cpu_isa_traits_t<isa>::vlen / sizeof(float)));

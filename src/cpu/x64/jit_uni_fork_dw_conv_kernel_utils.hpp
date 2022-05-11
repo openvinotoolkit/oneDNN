@@ -79,7 +79,8 @@ bool jit_uni_fork_dw_conv_fwd_kernel<isa, kernel_dt>::post_ops_ok(
         for (int i = 0; i < p.len(); i++) {
             ok = ok
                     && utils::one_of(p.entry_[i].kind, primitive_kind::sum,
-                            primitive_kind::eltwise, primitive_kind::depthwise,
+                            primitive_kind::binary, primitive_kind::eltwise,
+                            primitive_kind::depthwise,
                             primitive_kind::quantization);
         }
         return ok;
@@ -446,4 +447,4 @@ template struct jit_uni_fork_dw_conv_bwd_data_kernel<sse41, data_type::f32>;
 } // namespace impl
 } // namespace dnnl
 
-#endif /* CPU_X64_JIT_uni_fork_dw_CONV_KERNEL_UTILS_HPP */
+#endif /* CPU_X64_JIT_UNI_FORK_DW_CONV_KERNEL_UTILS_HPP */

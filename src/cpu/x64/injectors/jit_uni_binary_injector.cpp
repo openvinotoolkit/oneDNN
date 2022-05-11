@@ -3977,18 +3977,27 @@ jit_uni_binary_injector_t<isa, Vmm>::execute_prelu_binary(
         const Vmm &dst, const Vmm &lhs, const T &rhs) const {
     int aux0_idx
             = static_cast<int>(rhs_arg_static_params_.rhs_prelu_helper_vmm_idx);
-    bool changed;
-    do {
-        changed = false;
-        if (aux0_idx == lhs.getIdx()) {
-            aux0_idx = (aux0_idx + 1) % 16;
-            changed = true;
-        }
-        if (aux0_idx == rhs.getIdx()) {
-            aux0_idx = (aux0_idx + 1) % 16;
-            changed = true;
-        }
-    } while (changed);
+
+    if (isa == sse41) {
+        assert(dst.getIdx() != aux0_idx && "conflict mask register");
+    } else {
+        bool changed;
+        do {
+            changed = false;
+            if (aux0_idx == dst.getIdx()) {
+                aux0_idx = (aux0_idx + 1) % 16;
+                changed = true;
+            }
+            if (aux0_idx == lhs.getIdx()) {
+                aux0_idx = (aux0_idx + 1) % 16;
+                changed = true;
+            }
+            if (aux0_idx == rhs.getIdx()) {
+                aux0_idx = (aux0_idx + 1) % 16;
+                changed = true;
+            }
+        } while (changed);
+    }
     const Vmm vmm_aux0 = Vmm(aux0_idx);
 
     push_vmm(host_, vmm_aux0);
