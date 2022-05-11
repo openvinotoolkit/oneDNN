@@ -46,7 +46,8 @@ struct jit_uni_fork_dw_conv_fwd_kernel {
     status_t create_kernel() { return ker_->create_kernel(); }
     ~jit_uni_fork_dw_conv_fwd_kernel() { delete ker_; }
 
-    static bool post_ops_ok(jit_conv_conf_t &jcp, const primitive_attr_t &attr);
+        static bool post_ops_ok(jit_conv_conf_t &jcp, const primitive_attr_t &attr,
+            const memory_desc_wrapper &dst_d);
 
     static status_t init_conf(jit_conv_conf_t &jcp,
             const convolution_desc_t &cd, memory_desc_t &src_md,
@@ -69,13 +70,21 @@ private:
 
 template <cpu_isa_t isa, data_type_t kernel_dt>
 bool jit_uni_fork_dw_conv_fwd_kernel<isa, kernel_dt>::post_ops_ok(
-        jit_conv_conf_t &jcp, const primitive_attr_t &attr) {
+    jit_conv_conf_t &jcp, const primitive_attr_t &attr,
+    const memory_desc_wrapper &dst_d) {
     const auto &p = attr.post_ops_;
     auto all_post_ops_supported = [&]() {
         bool ok = true;
 
         for (int i = 0; i < p.len(); i++) {
-            ok = ok && utils::one_of(p.entry_[i].kind, primitive_kind::sum, primitive_kind::eltwise, primitive_kind::depthwise, primitive_kind::quantization);
+            ok = ok && utils::one_of(p.entry_[i].kind, primitive_kind::sum, primitive_kind::binary, primitive_kind::eltwise, primitive_kind::depthwise, primitive_kind::quantization);
+            if (p.entry_[i].is_binary()) {
+                ok = ok && kernel_dt == data_type::f32
+                        && !p.entry_[i].is_binary_with_ternary_op()
+                        && binary_injector::is_supported(isa,
+                                binary_injector::get_src1_desc(p.entry_[i], dst_d),
+                                dst_d, default_strategies());
+            }
         }
         return ok;
     };
@@ -203,7 +212,7 @@ status_t jit_uni_fork_dw_conv_fwd_kernel<isa, kernel_dt>::init_conf(
         jcp.loop_order = loop_nhwcg;
     }
 
-    if (!post_ops_ok(jcp, attr))
+    if (!post_ops_ok(jcp, attr, dst_d))
             return status::unimplemented;
 
     const auto &p = attr.post_ops_;
