@@ -79,8 +79,7 @@ bool jit_uni_fork_dw_conv_fwd_kernel<isa, kernel_dt>::post_ops_ok(
         for (int i = 0; i < p.len(); i++) {
             ok = ok && utils::one_of(p.entry_[i].kind, primitive_kind::sum, primitive_kind::binary, primitive_kind::eltwise, primitive_kind::depthwise, primitive_kind::quantization);
             if (p.entry_[i].is_binary()) {
-                ok = ok && kernel_dt == data_type::f32
-                        && !p.entry_[i].is_binary_with_ternary_op()
+                ok = ok && !p.entry_[i].is_binary_with_ternary_op()
                         && binary_injector::is_supported(isa,
                                 binary_injector::get_src1_desc(p.entry_[i], dst_d),
                                 dst_d, default_strategies());
