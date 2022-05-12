@@ -24,6 +24,7 @@
 #include "cpu/x64/jit_generator.hpp"
 #include "cpu/x64/jit_primitive_conf.hpp"
 
+#include "cpu/x64/injectors/jit_uni_binary_injector.hpp"
 #include "cpu/x64/injectors/jit_uni_depthwise_injector.hpp"
 #include "cpu/x64/jit_avx512_core_bf16cvt.hpp"
 
@@ -40,7 +41,8 @@ struct jit_avx512_fork_dw_conv_fwd_kernel_bf16 : public jit_generator_t {
         : jit_generator_t(jit_name())
         , jcp(ajcp)
         , attr_(attr)
-        , bf16_emu_(nullptr) {
+        , bf16_emu_(nullptr)
+        , dst_md_(dst_md) {
         if (!isa_has_bf16(jcp.isa))
             bf16_emu_ = new bf16_emulation_t(this, bf16_emu_reserv_1,
                     bf16_emu_reserv_2, bf16_emu_reserv_3, bf16_emu_reserv_4,
@@ -131,15 +133,19 @@ private:
             int ur_ch_blocks, int ur_w, bool last_ch_block_flag);
     inline void apply_filter_unrolled(
             int ur_ch_blocks, int ur_w, bool last_ch_block_flag);
-    inline void apply_postprocess(int ur_ch_blocks, int ur_w);
+    inline void apply_postprocess(
+            int ur_ch_blocks, int ur_w, bool last_ch_block_flag);
     inline void store_dst(int ur_ch_blocks, int ur_w, bool last_ch_block_flag);
     inline void loop_ow(int ur_ch_blocks);
 
     nstl::vector<jit_uni_eltwise_injector_t<avx512_core> *> eltwise_injectors;
     nstl::vector<jit_uni_depthwise_injector_f32<avx512_core> *>
             depthwise_injectors;
+    std::unique_ptr<binary_injector::jit_uni_binary_injector_t<avx512_core>>
+            binary_injector;
 
     bf16_emulation_t *bf16_emu_;
+    memory_desc_t dst_md_;
 
     void generate() override;
 };
