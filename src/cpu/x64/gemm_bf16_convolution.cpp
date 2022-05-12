@@ -131,7 +131,24 @@ gemm_bf16_convolution_fwd_t<dst_data_type>::pp_ker_t::pp_ker_t(const pd_t *pd)
                 /* inject_sum = */ false);
 #undef PARAM_OFF
     }
-
+    if (do_depthwise_ && post_ops_.find(primitive_kind::binary) != -1) {
+#define PARAM_OFF(field) offsetof(ker_args_t, field)
+        static constexpr bool preserve_gpr = true;
+        static constexpr bool preserve_vmm = true;
+        static constexpr size_t helper_vmm_idx = 31;
+        static constexpr size_t tail_size = 1;
+        static constexpr bool use_exact_tail_scalar_bcast = false;
+        const binary_injector::rhs_arg_static_params_t rhs_sp {
+            helper_vmm_idx, reserved_eltwise_gpr, r14, r15, preserve_gpr,
+            preserve_vmm, PARAM_OFF(post_ops_binary_rhs_arg_vec),
+            PARAM_OFF(dst_orig), memory_desc_wrapper(pd->dst_md()),
+            tail_size, kreg_rem_mask, use_exact_tail_scalar_bcast};
+#undef PARAM_OFF
+        const binary_injector::static_params_t bsp {this->reg_param, rhs_sp};
+        jit_binary_injector_ = utils::make_unique<
+            binary_injector::jit_uni_binary_injector_t<Xbyak::Zmm>>(
+            this, bsp);
+    }
     if (do_sum_) {
         compute_reg_step_ = 2;
         vreg_sum_scale = Zmm(data_reg_base_idx_++);
@@ -241,6 +258,7 @@ void gemm_bf16_convolution_fwd_t<dst_data_type>::pp_ker_t::generate() {
             push(reg_post_ops_data);
             mov(reg_post_ops_data, ptr[reg_param + PARAM_OFF(post_ops_binary_rhs_arg_vec)]);
         int eltwise_inj_idx = 0;
+        int binary_inj_idx = 0;
     std::size_t post_ops_data_offset = 0;
         const auto& p = post_ops_;
         for (int i = 0; i < p.len(); i++) {
@@ -248,6 +266,19 @@ void gemm_bf16_convolution_fwd_t<dst_data_type>::pp_ker_t::generate() {
             if (post_op.is_eltwise()) {
                 jit_eltwise_injectors_[eltwise_inj_idx]->compute_vector(vreg_dst_idx(idx));
                 eltwise_inj_idx++;
+            } else if (post_op.is_binary()) {
+                binary_injector::rhs_arg_dynamic_params_t rhs_arg_params;
+                const int vmm_idx = vreg_dst_idx(idx);
+                rhs_arg_params.vmm_idx_to_out_reg.emplace(vmm_idx, reg_dst);
+                rhs_arg_params.vmm_idx_to_out_elem_off_val.emplace(
+                        vmm_idx, offset * sizeof(dst_data_t));
+                if (apply_mask)
+                    rhs_arg_params.vmm_tail_idx_.emplace(vmm_idx);
+                jit_binary_injector_->compute_vector(
+                        vmm_idx, binary_inj_idx, post_op, rhs_arg_params);
+
+                binary_inj_idx++;
+                post_ops_data_offset += sizeof(float *);
             } else if (post_op.is_depthwise()) {
                 mov(reg_dw, ptr[reg_post_ops_data + post_ops_data_offset]);
                 lea(reg_dw, ptr[reg_dw + reg_oc_offset]);
@@ -270,6 +301,7 @@ void gemm_bf16_convolution_fwd_t<dst_data_type>::pp_ker_t::generate() {
                     default: assert(!"unsupported depthwise algorithm");
                 }
 
+                binary_inj_idx++;
                 post_ops_data_offset += sizeof(float*);
             }
         }
