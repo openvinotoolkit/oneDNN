@@ -27,6 +27,7 @@
 #include "cpu/gemm_convolution_utils.hpp"
 #include "cpu/ref_depthwise_injector.hpp"
 #include "cpu/x64/cpu_reducer.hpp"
+#include "cpu/x64/injectors/jit_uni_binary_injector.hpp"
 #include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
 #include "cpu/x64/injectors/jit_uni_postops_injector.hpp"
 #include "cpu/x64/jit_avx512_core_bf16cvt.hpp"
@@ -106,7 +107,7 @@ struct gemm_bf16_convolution_fwd_t : public primitive_t {
                 for (int i = 0; i < po.len(); i++) {
                     ok = ok
                             && utils::one_of(po.entry_[i].kind,
-                                    primitive_kind::sum,
+                                    primitive_kind::sum, primitive_kind::binary,
                                     primitive_kind::eltwise,
                                     primitive_kind::depthwise);
                 }
@@ -255,6 +256,8 @@ private:
         const primitive_attr_t *attr_;
         nstl::vector<jit_uni_eltwise_injector_t<avx512_core> *>
                 jit_eltwise_injectors_;
+        std::unique_ptr<binary_injector::jit_uni_binary_injector_t<avx512_core>>
+                jit_binary_injector_;
 
         void apply_postops(const bool apply_mask, const size_t out_offset,
                 const int vmm_idx);
