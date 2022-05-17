@@ -117,8 +117,8 @@ struct gemm_x8s8s32x_convolution_fwd_t : public primitive_t {
 
                 for (int i = 0; i < po.len(); i++) {
                     ok = ok
-                            && utils::one_of(po.entry_[i].kind, sum, eltwise,
-                                    depthwise, quantization);
+                            && utils::one_of(po.entry_[i].kind, sum, binary,
+                                    eltwise, depthwise, quantization);
                 }
                 return ok;
             };
