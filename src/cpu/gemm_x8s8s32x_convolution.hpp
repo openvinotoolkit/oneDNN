@@ -119,13 +119,17 @@ struct gemm_x8s8s32x_convolution_fwd_t : public primitive_t {
                 for (int i = 0; i < po.len(); i++) {
                     ok = ok && utils::one_of(po.entry_[i].kind, sum, eltwise,
                             binary, prelu, depthwise, quantization);
-                                        if (po.entry_[i].kind == sum) ok = ok && i == 0;
+                    if (po.entry_[i].kind == sum) ok = ok && i == 0;
                 }
                 const bool legacy = po.find(depthwise) != -1
                         || po.find(quantization) != -1;
-                const bool binary_postop = po.find(binary) != -1
-                        || po.find(prelu) != -1;
-                ok = ok && !(legacy && binary_postop);
+                if (legacy) {
+                    ok = ok && po.find(prelu) == -1;
+                    for (const auto &post_op : po.entry_)
+                        if (post_op.is_binary())
+                            ok = ok && !post_op.is_binary_with_ternary_op()
+                                    && gemm_x8s8s32x_convolution_utils::mayiuse_jit_pp_kernel(dst_md()->data_type);
+                }
                 return ok;
             };
 

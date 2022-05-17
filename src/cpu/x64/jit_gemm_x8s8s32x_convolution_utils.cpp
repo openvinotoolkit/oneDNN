@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "cpu/x64/injectors/jit_uni_postops_injector.hpp"
+#include "cpu/x64/injectors/jit_uni_binary_injector.hpp"
 #include "cpu/x64/jit_gemm_x8s8s32x_conv_zp_src_pad_comp.hpp"
 #include "cpu/x64/jit_gemm_x8s8s32x_convolution_utils.hpp"
 #include "cpu/x64/jit_generator.hpp"
@@ -94,6 +95,8 @@ private:
 
     std::unique_ptr<injector::jit_uni_postops_injector_t<Xbyak::Zmm>>
             postops_injector_;
+        std::unique_ptr<binary_injector::jit_uni_binary_injector_t<Xbyak::Zmm>>
+            legacy_binary_injector_;
         std::vector<std::unique_ptr<jit_uni_eltwise_injector_t<Xbyak::Zmm>>>
             legacy_eltwise_injectors_;
         std::vector<std::unique_ptr<jit_uni_depthwise_injector_f32<avx512_core>>>
@@ -194,7 +197,8 @@ jit_pp_ker_t::jit_pp_ker_t(
                         new jit_uni_depthwise_injector_f32<avx512_core>(this,
                                 post_op, pd->dst_md()->dims[1], k2));
         }
-    } else if (jcp.with_eltwise || jcp.with_binary) {
+    }
+    if (jcp.with_eltwise || jcp.with_binary) {
         using namespace binary_injector;
         static constexpr bool preserve_gpr = true;
         static constexpr bool preserve_vmm = true;
@@ -214,10 +218,16 @@ jit_pp_ker_t::jit_pp_ker_t(
 
         const static_params_t static_params {reg_param_, rhs_arg_static_params};
 
-        postops_injector_ = utils::make_unique<
+        if (with_legacy_postops_) {
+            if (jcp.with_binary)
+            legacy_binary_injector_ = utils::make_unique<
+                binary_injector::jit_uni_binary_injector_t<Xbyak::Zmm>>(
+                this, static_params);
+        } else {
+            postops_injector_ = utils::make_unique<
                 injector::jit_uni_postops_injector_t<Xbyak::Zmm>>(
-                // Sum is applied in the kernel's own store sequence.
                 this, jcp_.post_ops, static_params, /* inject_sum = */ false);
+        }
     }
 }
 
@@ -349,6 +359,15 @@ void jit_pp_ker_t::apply_postops(const Xbyak::Reg64 &reg_dst, const int idx,
             if (post_op.is_eltwise()) {
                 legacy_eltwise_injectors_[eltwise_index++]->compute_vector(
                         dst.getIdx());
+                } else if (post_op.is_binary()) {
+                binary_injector::rhs_arg_dynamic_params_t rhs_arg_params;
+                rhs_arg_params.vmm_idx_to_out_reg.emplace(dst.getIdx(), reg_dst);
+                rhs_arg_params.vmm_idx_to_out_elem_off_val.emplace(
+                    dst.getIdx(), offset * dst_data_type_size_);
+                rhs_arg_params.vmm_tail_idx_.emplace(dst.getIdx());
+                kmovq(opmask_binary, mask);
+                legacy_binary_injector_->compute_vector(dst.getIdx(),
+                    post_ops_data_index++, post_op, rhs_arg_params);
             } else if (post_op.is_depthwise()) {
                 mov(weights, ptr[reg_param_ + PARAM_OFF(post_ops_binary_rhs_arg_vec)]);
                 mov(weights, ptr[weights + post_ops_data_index * sizeof(void *)]);
