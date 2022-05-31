@@ -38,7 +38,7 @@ struct jit_avx512_core_x8s8s32x_convolution_fwd_t : public primitive_t {
                 const typename pd_t::base_class *hint_fwd_pd)
             : cpu_convolution_fwd_pd_t(adesc, attr, hint_fwd_pd), jcp_() {}
 
-        DECLARE_COMMON_PD_T(JIT_IMPL_NAME_HELPER("jit_int8:",
+        DECLARE_COMMON_PD_T(JIT_IMPL_NAME_HELPER("jit:",
                                     ((jcp_.ver == ver_vnni) ? avx512_core_vnni
                                                             : avx512_core),
                                     ""),

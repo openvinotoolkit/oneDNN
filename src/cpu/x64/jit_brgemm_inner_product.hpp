@@ -76,11 +76,25 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
                                                     bias_md_.data_type, f32))))
                     && attr()->has_default_values(skip_mask)
                     && !has_zero_dim_memory();
-            if (!ok) return status::unimplemented;
-
-            CHECK(brgemm_inner_product_utils::init_ip_conf(isa, jbgp_, *desc(),
+            
+            if (!ok) {
+//                printf("!!!! FullyConnected create %s failed 1 , attr=%d, zero=%d, ok=%d\n", name(), 
+//                       attr()->has_default_values(skip_mask), has_zero_dim_memory(), ok);
+                return status::unimplemented;
+            }
+            do { 
+                 status_t _status_ = brgemm_inner_product_utils::init_ip_conf(isa, jbgp_, *desc(),
                     src_md_, weights_md_, dst_md_, bias_md_, attr_,
-                    dnnl_get_max_threads()));
+                    dnnl_get_max_threads()); 
+                if (_status_ != status::success) {
+  //                  printf("!!!! FullyConnected create %s failed 2 \n", name());
+                    return _status_;
+                } 
+            } while (0);
+
+            // CHECK(brgemm_inner_product_utils::init_ip_conf(isa, jbgp_, *desc(),
+            //         src_md_, weights_md_, dst_md_, bias_md_, attr_,
+            //         dnnl_get_max_threads()));
 
             bool are_post_ops_applicable = one_of(true, jbgp_.with_sum,
                     jbgp_.with_bias, jbgp_.with_scales, jbgp_.with_eltwise,
@@ -102,13 +116,15 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
                 int idx = get_brg_kernel_idx(i_init, i_M, i_N, i_K);
                 if (idx < 0) continue;
                 brgemm_t &brg = brg_descs_[idx];
-                CHECK(brgemm_desc_init(&brg, isa, jbgp_.brg_type, jbgp_.src_dt,
-                        jbgp_.wei_dt, false, false, brgemm_row_major, alpha,
-                        vbeta, jbgp_.LDA, jbgp_.LDB, jbgp_.LDC, vM, vN, vK));
+                 CHECK(brgemm_desc_init(&brg, isa, jbgp_.brg_type, jbgp_.src_dt,
+                         jbgp_.wei_dt, false, false, brgemm_row_major, alpha,
+                         vbeta, jbgp_.LDA, jbgp_.LDB, jbgp_.LDC, vM, vN, vK));
+
+
 
                 auto LDD = jbgp_.oc_without_padding;
-                CHECK(brgemm_desc_set_postops(
-                        &brg, attr(), &dst_md_, LDD, jbgp_.bia_dt));
+                 CHECK(brgemm_desc_set_postops(
+                         &brg, attr(), &dst_md_, LDD, jbgp_.bia_dt));
 
                 if (are_post_ops_applicable && jbgp_.nthr_ic_b > 1) {
                     brgemm_attr_t brgattr;

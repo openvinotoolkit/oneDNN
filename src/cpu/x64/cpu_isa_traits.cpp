@@ -17,7 +17,7 @@
 #include <cstring>
 #include <mutex>
 #include <string>
-
+#include <iostream>
 #include "common/utils.hpp"
 
 #include "cpu/x64/cpu_isa_traits.hpp"
@@ -32,6 +32,7 @@ namespace {
 cpu_isa_t init_max_cpu_isa() {
     cpu_isa_t max_cpu_isa_val = isa_all;
     static std::string isa_val = getenv_string_user("MAX_CPU_ISA");
+    std::cout << "sgui isa_val=" << isa_val << ", max_cpu_isa_val=" << max_cpu_isa_val << std::endl;
     if (!isa_val.empty()) {
 
 #define IF_HANDLE_CASE(cpu_isa) \

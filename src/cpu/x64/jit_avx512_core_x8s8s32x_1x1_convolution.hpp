@@ -51,7 +51,7 @@ struct jit_avx512_core_x8s8s32x_1x1_convolution_fwd_t : public primitive_t {
             if (copy(other) != status::success) is_initialized_ = false;
         }
 
-        DECLARE_COMMON_PD_T(JIT_IMPL_NAME_HELPER("jit_int8_1x1:",
+        DECLARE_COMMON_PD_T(JIT_IMPL_NAME_HELPER("jit_1x1:",
                                     ((jcp_.ver == ver_vnni) ? avx512_core_vnni
                                                             : avx512_core),
                                     ""),

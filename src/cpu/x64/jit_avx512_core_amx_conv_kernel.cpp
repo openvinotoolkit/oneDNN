@@ -2302,21 +2302,19 @@ status_t jit_avx512_core_amx_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
             || jcp.b_pad >= gen_kh || jcp.f_pad >= gen_kd
             || jcp.back_pad >= gen_kd)
         return status::unimplemented;
-
     const int max_pad = 28; // akin to maximum jcp.ur_w value in other jits
     if (jcp.l_pad > max_pad || jcp.r_pad > max_pad)
         return status::unimplemented; // TODO: relax this restriction
-
     jcp.bia_dt = jcp.with_bias ? cd.bias_desc.data_type : data_type::undef;
     jcp.dst_dt = cd.dst_desc.data_type;
     jcp.src_dt = cd.src_desc.data_type;
     jcp.wei_dt = cd.weights_desc.data_type;
 
     jcp.is_depthwise = true && with_groups && everyone_is(1, jcp.ic, jcp.oc);
-
-    if (jcp.is_depthwise)
+    if (jcp.is_depthwise) {
+        //printf("!!!!create jit_avx512_core_amx_fwd_kernel_t 4   is_depthwise=false\n");
         return status::unimplemented; // TODO: add support of DW convolution
-
+    }
     const auto zp = attr.zero_points_;
     jcp.dst_zero_point = !zp.has_default_values(DNNL_ARG_DST);
     jcp.src_zero_point = !zp.has_default_values(DNNL_ARG_SRC);
@@ -2327,7 +2325,6 @@ status_t jit_avx512_core_amx_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
             || !IMPLICATION(jcp.dst_zero_point || jcp.src_zero_point,
                     is_int8_convolution))
         return status::unimplemented;
-
     // Calculate zero-point padding values outside of the main JIT-kernel
     // and store the results in an auxiliary buffer.
     jcp.req_zero_point_buffer = jcp.src_zero_point
@@ -2355,13 +2352,11 @@ status_t jit_avx512_core_amx_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
 
     if (!one_of(jcp.src_tag, dat_tag_alt, dat_tag_opt))
         return status::unimplemented;
-
     jcp.is_nspc = jcp.src_tag == dat_tag_nspc;
     assert(IMPLICATION(is_int8_convolution, jcp.is_nspc));
 
     // TODO: remove all support for nChw16c from this implementation
     if (!jcp.is_nspc) return status::unimplemented;
-
     if (dst_d.format_kind() == format_kind::any) {
         CHECK(memory_desc_init_by_tag(dst_md, jcp.src_tag));
         jcp.dst_tag = jcp.src_tag;
@@ -2369,7 +2364,6 @@ status_t jit_avx512_core_amx_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
         jcp.dst_tag = dst_d.matches_one_of_tag(jcp.src_tag);
 
     if (jcp.dst_tag != jcp.src_tag) return status::unimplemented;
-
     if (jcp.with_bias && bias_d.format_kind() == format_kind::any)
         CHECK(memory_desc_init_by_tag(bias_md, format_tag::x));
 
@@ -2384,15 +2378,16 @@ status_t jit_avx512_core_amx_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
     }
     bool args_ok = jcp.oc % jcp.oc_block == 0 && jcp.ic % jcp.ic_block == 0;
     if (!args_ok) return status::unimplemented;
-
     const int vnni_width = is_bf16_convolution ? 2 : 4;
     jcp.ic_block_int = jcp.ic_block * vnni_width; // 32 for bf16, 64 for int8
 
     // fallback to non-amx impl when accumulation is too small
     const dim_t total_k = jcp.ic_without_padding * jcp.kd * jcp.kh * jcp.kw;
     const bool is_tiny_k = total_k < jcp.ic_block_int / 2;
-    if (is_tiny_k) return status::unimplemented;
-
+    if (is_tiny_k) {
+        ///printf("!!!!create jit_avx512_core_amx_fwd_kernel_t fallback to non-amx impl when accumulation is too small  total_k=%ld\n",total_k);
+        return status::unimplemented;
+    }
     // small-ic parameters
     jcp.ic_block_int_np = jcp.is_nspc
             ? nstl::min(jcp.ic_block_int, jcp.ic_without_padding)
@@ -2433,7 +2428,6 @@ status_t jit_avx512_core_amx_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
 
     if (attr.set_default_formats(&dst_md) != status::success)
         return status::unimplemented;
-
     const auto &p = attr.post_ops_;
 
     const int sum_ind = p.find(primitive_kind::sum);
@@ -2458,7 +2452,6 @@ status_t jit_avx512_core_amx_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
             jcp.post_ops, &dst_d, sum_at_pos_0_only, sum_requires_scale_one,
             sum_requires_zp_zero});
     if (!post_ops_ok_) return status::unimplemented;
-
     auto set_or_check_wei_format = [&]() {
         using namespace format_tag;
         using namespace memory_extra_flags;
@@ -2493,7 +2486,6 @@ status_t jit_avx512_core_amx_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
     };
 
     if (!set_or_check_wei_format()) return status::unimplemented;
-
     jcp.typesize_in = types::data_type_size(src_d.data_type());
     jcp.typesize_out = types::data_type_size(dst_d.data_type());
     jcp.typesize_bia
@@ -2511,7 +2503,6 @@ status_t jit_avx512_core_amx_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
     jcp.full_tile_width = 16;//amx::get_max_rows(max_palette);
     if (jcp.max_tiles != 8 || jcp.full_tile_width != 16)
         return status::unimplemented;
-
     // Pack n rows per tile, such that:
     // ow + (ow + gen_kw - 1) * (n - 1) <= jcp.full_tile_width
     auto calculate_tile_width = [&](int n) {
@@ -2609,7 +2600,6 @@ status_t jit_avx512_core_amx_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
     const int l_pad_output = nstl::min(jcp.ow, div_up(jcp.l_pad, jcp.stride_w));
     if (!jcp.is_relo && (l_pad_output > jcp.ow_block))
         return status::unimplemented;
-
     // Relevant to 'zero_point padding buffer' (pbuff) jit kernel
     if (jcp.req_zero_point_buffer) {
         auto calculate_output_padding_dims = [=](int o_dim, int s_pad,
@@ -2660,7 +2650,6 @@ status_t jit_avx512_core_amx_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
     // 'zero_point padding buffer' (pbuff) accumulation over output tensor
     set_oh_blk_limits(jcp);
     set_ow_blk_limits(jcp);
-
     return status::success;
 }
 

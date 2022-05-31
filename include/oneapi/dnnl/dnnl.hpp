@@ -340,6 +340,18 @@ struct primitive : public handle<dnnl_primitive_t> {
     /// @returns The underlying C API primitive descriptor.
     inline const_dnnl_primitive_desc_t get_primitive_desc() const;
 
+    /// Returns implementation name.
+    /// @returns The implementation name.
+    const char *impl_info() const {
+        const char *res;
+        const_dnnl_primitive_desc_t pd = get_primitive_desc();
+        error::wrap_c_api(dnnl_primitive_desc_query(
+                                  pd, dnnl_query_impl_info_str, 0, &res),
+                "could not retrieve implementation info string from a "
+                "primitive descriptor");
+        return res;
+    }
+
     /// Returns the kind of the primitive.
     ///
     /// @returns The primitive kind.
