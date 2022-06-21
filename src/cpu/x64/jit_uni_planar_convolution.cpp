@@ -58,27 +58,34 @@ void _jit_uni_planar_convolution_fwd_t<isa>::execute_forward(const exec_ctx_t &c
 
     const auto &jcp = pd()->jcp_;
 
-    std::vector<int> od_indexes(jcp.od);
+    std::vector<int> oh_indexes(jcp.oh);
 
     int idx = 0;
-    for (int i = 0; i < (jcp.dilate_d + 1); i++) {
-        for (int ib = 0; ib < jcp.od; ib += (jcp.dilate_d + 1)) {
-            if (ib + i >= jcp.od)
+    for (int i = 0; i < (jcp.dilate_h + 1); i++) {
+        for (int ib = 0; ib < jcp.oh; ib += (jcp.dilate_h + 1)) {
+            if (ib + i >= jcp.oh)
                 continue;
 
-            od_indexes[idx++] = ib + i;
-            if (idx >= jcp.od)
+            oh_indexes[idx++] = ib + i;
+            if (idx >= jcp.oh)
                 break;
         }
-        if (idx >= jcp.od)
+        if (idx >= jcp.oh)
             break;
     }
 
     int threads_count = dnnl_get_max_threads();
-    int odb_size = div_up(jcp.od, threads_count);
+    int ohb_size = div_up(jcp.oh, threads_count);
 
-    auto kernel_params = [&](int n, int g, int icb, int oc, int od, int oh, int oh_blocks, int id, int wd, int kd_padding) {
+    auto kernel_params = [&](int n, int g, int icb, int oc, int od, int oh, int oh_blocks) {
         auto par_conv = jit_conv_call_s();
+
+        const int dj = od * jcp.stride_d;
+        const int d_t_overflow = nstl::max(0, jcp.f_pad - dj);
+        const int d_b_overflow = nstl::max(jcp.id, dj + (jcp.kd - 1) * (jcp.dilate_d + 1) - jcp.f_pad + 1) - jcp.id;
+        const int id = nstl::max(dj - jcp.f_pad + div_up(d_t_overflow, (jcp.dilate_d + 1)) * (jcp.dilate_d + 1), 0);
+        const int wd = div_up(d_t_overflow, (jcp.dilate_d + 1));
+        const int kd_padding = jcp.kd - div_up(d_t_overflow, (jcp.dilate_d + 1)) - div_up(d_b_overflow, (jcp.dilate_d + 1));
 
         const int hj = oh * jcp.stride_h;
         const int i_t_overflow = nstl::max(0, jcp.t_pad - hj);
@@ -126,27 +133,15 @@ void _jit_uni_planar_convolution_fwd_t<isa>::execute_forward(const exec_ctx_t &c
                     icb_step = icb_step_rem;
 
                 for (int icb = icbb; icb < icbb + icb_step; ++icb) {
-                    for (int ohb = 0; ohb < (jcp.dilate_h + 1); ohb++) {
-                        for (int oh = ohb; oh < jcp.oh; oh += (jcp.dilate_h + 1)) {
-                            int od_idx_off = ithr * odb_size;
-                            for (int od_idx = 0; od_idx < odb_size; od_idx++) {
-                                if ((od_idx_off + od_idx) >= jcp.od || od_indexes[od_idx_off + od_idx] >= jcp.od)
+                    for (int odb = 0; odb < (jcp.dilate_d + 1); odb++) {
+                        for (int od = odb; od < jcp.od; od += (jcp.dilate_d + 1)) {
+                            int oh_idx_off = ithr * ohb_size;
+                            for (int oh_idx = 0; oh_idx < ohb_size; oh_idx++) {
+                                if ((oh_idx_off + oh_idx) >= jcp.oh || oh_indexes[oh_idx_off + oh_idx] >= jcp.oh)
                                     continue;
-                                int od = od_indexes[od_idx_off + od_idx];
+                                int oh = oh_indexes[oh_idx_off + oh_idx];
 
-                                const int dj = od * jcp.stride_d;
-                                const int d_t_overflow = nstl::max(0, jcp.f_pad - dj);
-                                const int d_b_overflow =
-                                        nstl::max(jcp.id, dj + (jcp.kd - 1) * (jcp.dilate_d + 1) - jcp.f_pad + 1) -
-                                        jcp.id;
-                                const int id = nstl::max(dj - jcp.f_pad +
-                                                         div_up(d_t_overflow, (jcp.dilate_d + 1)) * (jcp.dilate_d + 1),
-                                                         0);
-                                const int wd = div_up(d_t_overflow, (jcp.dilate_d + 1));
-                                const int kd_padding = jcp.kd - div_up(d_t_overflow, (jcp.dilate_d + 1)) -
-                                                       div_up(d_b_overflow, (jcp.dilate_d + 1));
-
-                                jit_conv_call_s par_conv = kernel_params(n, g, icb, oc, od, oh, 1, id, wd, kd_padding);
+                                jit_conv_call_s par_conv = kernel_params(n, g, icb, oc, od, oh, 1);
 
                                 (*kernel_)(&par_conv);
                             }

@@ -723,7 +723,7 @@ status_t jit_uni_planar_conv_fwd_kernel_f32<isa>::init_conf(jit_conv_conf_t &jcp
     const auto &p = attr.post_ops_;
     jcp.with_sum = p.find(primitive_kind::sum) != -1;
 
-    const int simd_w = isa == avx512_core ? 16 : 8;
+    const int simd_w = isa == avx512_core ? 16 : isa == avx2 ? 8 : 4;
 
     auto set_or_check_wei_format = [&]() {
         using namespace format_tag;
