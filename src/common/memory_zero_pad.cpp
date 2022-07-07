@@ -19,6 +19,7 @@
 
 #include "dnnl_thread.hpp"
 #include "dnnl_traits.hpp"
+#include "dnnl_sel_build.hpp"
 #include "stream.hpp"
 #include "type_helpers.hpp"
 #include "utils.hpp"
@@ -26,6 +27,7 @@
 #include "memory.hpp"
 #include "primitive_exec_types.hpp"
 
+using namespace dnnl;
 using namespace dnnl::impl;
 using namespace dnnl::impl::data_type;
 using namespace dnnl::impl::status;
@@ -286,18 +288,22 @@ status_t typed_zero_pad(
     };
     const dim_t blksize = get_blksize(blk.inner_idxs[0]);
 
-    // Blocked tail handling is only valid for these block sizes; any other
-    // value falls through to the generic implementation below.
-    const bool supported_blksize = utils::one_of(blksize, 4, 8, 16);
-
+#define CASE_SIZE(blksize_, blk_kind) \
+    do { \
+        if (blksize == (blksize_)) { \
+            DNNL_CSCOPE(DNNL_MACRO_CAT3(typed_zero_pad_blk_, blksize_, blk_kind)) { \
+                typed_zero_pad_blk<blk_kind>(mdw, data, element_size, blksize); \
+                ctx.unmap_memory_storage( \
+                        memory_storage, mapped_ptr, ctx.stream()); \
+                return success; \
+            } \
+        } \
+    } while (0)
 #define CASE(blk_kind) \
     do { \
-        if (supported_blksize) { \
-            typed_zero_pad_blk<blk_kind>(mdw, data, element_size, blksize); \
-            ctx.unmap_memory_storage( \
-                    memory_storage, mapped_ptr, ctx.stream()); \
-            return success; \
-        } \
+        CASE_SIZE(4, blk_kind); \
+        CASE_SIZE(8, blk_kind); \
+        CASE_SIZE(16, blk_kind); \
     } while (0)
 
     switch (blk.inner_nblks) {
@@ -329,6 +335,7 @@ status_t typed_zero_pad(
     }
 
 #undef CASE
+#undef CASE_SIZE
 
     // the last line of defence
     typed_zero_pad_generic_blocked(mdw, data, element_size);

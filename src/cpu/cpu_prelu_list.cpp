@@ -45,8 +45,8 @@ const std::map<pk_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map() {
     static const std::map<pk_impl_key_t, std::vector<impl_list_item_t>> the_map = REG_PRELU_P({
         {{forward}, {
             CPU_INSTANCE_X64(jit_prelu_fwd_t)
-            CPU_INSTANCE_AARCH64(jit_uni_prelu_fwd_t<sve>)
-            CPU_INSTANCE_AARCH64(jit_uni_prelu_fwd_t<asimd>)
+            CPU_INSTANCE_AARCH64(jit_uni_prelu_fwd_t, sve)
+            CPU_INSTANCE_AARCH64(jit_uni_prelu_fwd_t, asimd)
             CPU_INSTANCE_RV64(jit_uni_prelu_fwd_t)
             CPU_INSTANCE(ref_prelu_fwd_t)
             nullptr,

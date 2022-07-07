@@ -110,3 +110,4 @@ endif()
 
 set_property(GLOBAL APPEND PROPERTY DNNL_LIB_DEPS
     $<TARGET_OBJECTS:${OBJ_LIB}>)
+enable_conditional_compilation4(${OBJ_LIB})

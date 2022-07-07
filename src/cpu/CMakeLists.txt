@@ -167,6 +167,7 @@ if (DNNL_X64_USE_ZEN)
 endif()
 set_property(GLOBAL APPEND PROPERTY DNNL_LIB_DEPS
     $<TARGET_OBJECTS:${OBJ_LIB}>)
+enable_conditional_compilation4(${OBJ_LIB})
 
 if (DNNL_TARGET_ARCH STREQUAL "X64")
     add_subdirectory(x64)

@@ -54,41 +54,63 @@ namespace cpu {
 using namespace dnnl::impl::data_type;
 using namespace dnnl::impl::format_tag;
 
+#if DNNL_X64
+using x64_brgemm_matmul_copy_reorder_t = x64::brgemm_matmul_copy_reorder_t;
+using x64_jit_uni_reorder_direct_copy_t = x64::jit_uni_reorder_direct_copy_t;
+using x64_jit_blk_reorder_t = x64::jit_blk_reorder_t;
+using x64_jit_uni_reorder_t = x64::jit_uni_reorder_t;
+#if DNNL_X64_USE_ZEN
+using x64_zen_reorder_t = x64::zen::reorder::zen_reorder_t;
+#endif
+#elif DNNL_AARCH64
+using aarch64_brgemm_matmul_copy_reorder_t = aarch64::brgemm_matmul_copy_reorder_t;
+using aarch64_jit_blk_reorder_t = aarch64::jit_blk_reorder_t;
+using aarch64_jit_uni_reorder_t = aarch64::jit_uni_reorder_t;
+#if defined(DNNL_AARCH64_USE_ACL)
+using aarch64_acl_reorder_fwd_t = aarch64::acl_reorder_fwd_t;
+#endif
+#elif DNNL_PPC64
+using ppc64_matrixA_reorder_t = ppc64::ppc64_matrixA_reorder_t;
+#elif DNNL_RV64
+using rv64_jit_blk_reorder_t = rv64::jit_blk_reorder_t;
+using rv64_jit_uni_reorder_t = rv64::jit_uni_reorder_t;
+#endif
+
 const impl_list_item_t *get_reorder_impl_list(const reorder_desc_t *) {
     // clang-format off
     static const impl_list_item_t the_list[] = REG_REORDER_P({
-            CPU_INSTANCE_X64_ZEN(x64::zen::reorder::zen_reorder_t)
-            CPU_INSTANCE_X64(x64::brgemm_matmul_copy_reorder_t)
-            CPU_INSTANCE_X64(x64::jit_uni_reorder_direct_copy_t)
-            CPU_INSTANCE_X64(x64::jit_blk_reorder_t)
-            CPU_INSTANCE_X64(x64::jit_uni_reorder_t)
+            CPU_INSTANCE_X64_ZEN(x64_zen_reorder_t)
+            CPU_INSTANCE_X64(x64_brgemm_matmul_copy_reorder_t)
+            CPU_INSTANCE_X64(x64_jit_uni_reorder_direct_copy_t)
+            CPU_INSTANCE_X64(x64_jit_blk_reorder_t)
+            CPU_INSTANCE_X64(x64_jit_uni_reorder_t)
 
-            CPU_INSTANCE_AARCH64_ACL(aarch64::acl_reorder_fwd_t)
-            CPU_INSTANCE_AARCH64(aarch64::brgemm_matmul_copy_reorder_t)
-            CPU_INSTANCE_AARCH64(aarch64::jit_blk_reorder_t)
-            CPU_INSTANCE_AARCH64(aarch64::jit_uni_reorder_t)
+            CPU_INSTANCE_AARCH64_ACL(aarch64_acl_reorder_fwd_t)
+            CPU_INSTANCE_AARCH64(aarch64_brgemm_matmul_copy_reorder_t)
+            CPU_INSTANCE_AARCH64(aarch64_jit_blk_reorder_t)
+            CPU_INSTANCE_AARCH64(aarch64_jit_uni_reorder_t)
 
-            CPU_INSTANCE_PPC64(ppc64::ppc64_matrixA_reorder_t)
+            CPU_INSTANCE_PPC64(ppc64_matrixA_reorder_t)
 
-            CPU_INSTANCE_RV64(rv64::jit_blk_reorder_t)
-            CPU_INSTANCE_RV64(rv64::jit_uni_reorder_t)
+            CPU_INSTANCE_RV64(rv64_jit_blk_reorder_t)
+            CPU_INSTANCE_RV64(rv64_jit_uni_reorder_t)
 
-            CPU_INSTANCE(rnn_data_reorder_t<f32, s8>)
-            CPU_INSTANCE(rnn_data_reorder_t<f32, u8>)
-            CPU_INSTANCE(rnn_weights_reorder_t<f32, f32>)
-            CPU_INSTANCE(rnn_weights_reorder_t<f32, bf16>)
-            CPU_INSTANCE(rnn_weights_reorder_t<bf16, bf16>)
-            CPU_INSTANCE(rnn_weights_reorder_s8_t<f32>)
-            CPU_INSTANCE(rnn_weights_reorder_s8_t<s8>)
-            CPU_INSTANCE(rnn_brgemm_weights_reorder_s8_t<f32, s8>)
-            CPU_INSTANCE(rnn_brgemm_weights_reorder_s8_t<s8, s8>)
+            CPU_INSTANCE(rnn_data_reorder_t, f32, s8)
+            CPU_INSTANCE(rnn_data_reorder_t, f32, u8)
+            CPU_INSTANCE(rnn_weights_reorder_t, f32, f32)
+            CPU_INSTANCE(rnn_weights_reorder_t, f32, bf16)
+            CPU_INSTANCE(rnn_weights_reorder_t, bf16, bf16)
+            CPU_INSTANCE(rnn_weights_reorder_s8_t, f32)
+            CPU_INSTANCE(rnn_weights_reorder_s8_t, s8)
+            CPU_INSTANCE(rnn_brgemm_weights_reorder_s8_t, f32, s8)
+            CPU_INSTANCE(rnn_brgemm_weights_reorder_s8_t, s8, s8)
 
             CPU_INSTANCE(simple_reorder_t)
 
             CPU_INSTANCE(ref_reorder_t)
 
-            CPU_INSTANCE_X64(simple_sparse_reorder_t<f32, impl::format_tag_t, any, s8, impl::format_tag_t, any>)
-            CPU_INSTANCE_X64(simple_sparse_reorder_t<s8, impl::format_tag_t, any, s8, impl::format_tag_t, any>)
+            CPU_INSTANCE_X64(simple_sparse_reorder_t, f32, format_tag_t, any, s8, format_tag_t, any)
+            CPU_INSTANCE_X64(simple_sparse_reorder_t, s8, format_tag_t, any, s8, format_tag_t, any)
 
             nullptr,
     });

@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2021 Intel Corporation
+* Copyright 2021-2023 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -19,9 +19,11 @@
 
 #include "c_types_map.hpp"
 #include "primitive_desc.hpp"
+#include "dnnl_sel_build.hpp"
 #include "utils.hpp"
 
 #include <string>
+#include <typeinfo>
 #include <type_traits>
 
 namespace dnnl {
@@ -99,16 +101,20 @@ struct impl_list_item_t {
         // An inherited `create` would construct the base `pd_t` instead.
         static_assert(std::is_same<typename pd_t::create_pd_t, pd_t>::value,
                 "pd_t must use its own DECLARE_COMMON_PD_T.");
+        DNNL_PRIMITIVE_NAME_INIT(pd_t);
     }
 
     template <typename pd_t>
     constexpr impl_list_item_t(concat_type_deduction_helper_t<pd_t>)
         : create_concat_pd_func_(
-                  concat_type_deduction_helper_t<pd_t>::type::create) {}
+                  concat_type_deduction_helper_t<pd_t>::type::create) {
+        DNNL_PRIMITIVE_NAME_INIT(pd_t);
+    }
 
     template <typename pd_t>
     constexpr impl_list_item_t(sum_type_deduction_helper_t<pd_t>)
         : create_sum_pd_func_(sum_type_deduction_helper_t<pd_t>::type::create) {
+        DNNL_PRIMITIVE_NAME_INIT(pd_t);
     }
 
     explicit operator bool() const {
@@ -127,6 +133,12 @@ struct impl_list_item_t {
         }
         return -1;
     }
+
+#if defined(SELECTIVE_BUILD_ANALYZER)
+    template <typename pd_t>
+    static const char *pd_name() { return typeid(pd_t).name(); }
+    const char *(*name)() = nullptr;
+#endif
 
 private:
     status_t operator()(primitive_desc_t **pd, const op_desc_t *adesc,
@@ -195,6 +207,15 @@ private:
             const memory_desc_t *, const engine_t *, const memory_desc_t *,
             const engine_t *, const primitive_attr_t *);
 };
+
+#if defined(SELECTIVE_BUILD_ANALYZER)
+inline impl_list_item_t&& move(impl_list_item_t &&t, const char *name) {
+    OV_ITT_SCOPED_TASK(
+        dnnl::FACTORY_DNNL,
+        openvino::itt::handle(std::string("REG$CPUEngine$") + t.name() + "$" + name));
+    return static_cast<impl_list_item_t&&>(t);
+}
+#endif
 
 } // namespace impl
 } // namespace dnnl
