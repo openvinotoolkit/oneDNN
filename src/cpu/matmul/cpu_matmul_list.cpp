@@ -1,7 +1,7 @@
 /*******************************************************************************
-* Copyright 2019 Intel Corporation
+* Copyright 2019-2025 Intel Corporation
 * Copyright 2024-2025 FUJITSU LIMITED
-* Copyright 2021-2026 Arm Ltd. and affiliates
+* Copyright 2021-2025 Arm Ltd. and affiliates
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -21,9 +21,6 @@
 #include "cpu/matmul/gemm_bf16_matmul.hpp"
 #include "cpu/matmul/gemm_f32_matmul.hpp"
 #include "cpu/matmul/gemm_x8s8s32x_matmul.hpp"
-#if DNNL_EXPERIMENTAL_GROUPED_MEMORY
-#include "cpu/matmul/ref_grouped_gemm.hpp"
-#endif
 #include "cpu/matmul/ref_matmul.hpp"
 #include "cpu/matmul/ref_matmul_int8.hpp"
 #include "cpu/matmul/ref_sparse_matmul.hpp"
@@ -46,7 +43,6 @@ using namespace dnnl::impl::cpu::aarch64::matmul;
 using namespace dnnl::impl::cpu::aarch64;
 #elif DNNL_RV64
 #ifdef DNNL_RISCV_USE_RVV_INTRINSICS
-#include "cpu/rv64/rvv_brgemm_matmul.hpp"
 #include "cpu/rv64/rvv_matmul.hpp"
 using namespace dnnl::impl::cpu::rv64::matmul;
 using namespace dnnl::impl::cpu::rv64;
@@ -63,38 +59,34 @@ using namespace dnnl::impl::data_type;
 using namespace dnnl::impl::cpu::matmul;
 
 // clang-format off
-constexpr impl_list_item_t impl_list[] = REG_MATMUL_P({
-        CPU_INSTANCE_AARCH64(brgemm_matmul_t<sme>)
-        CPU_INSTANCE_AARCH64(brgemm_matmul_t<sve_512>)
+const impl_list_item_t impl_list[] = REG_MATMUL_P({
+        CPU_INSTANCE_AARCH64(brgemm_matmul_t, sve_512)
         CPU_INSTANCE_AARCH64_ACL(acl_lowp_matmul_sq_t)
         CPU_INSTANCE_AARCH64_ACL(acl_lowp_matmul_t)
         CPU_INSTANCE_AARCH64_ACL(acl_matmul_t)
         CPU_INSTANCE_AARCH64(jit_bf16_matmul_t)
-        CPU_INSTANCE_AARCH64(jit_int8_matmul_t<sve>)
-        CPU_INSTANCE_AARCH64(brgemm_matmul_t<sve_256>)
-        CPU_INSTANCE_AARCH64(brgemm_matmul_t<sve_128>)
-        CPU_INSTANCE_AMX(brgemm_matmul_t<avx10_2_amx_2>)
-        CPU_INSTANCE_AMX(brgemm_matmul_t<avx512_core_amx_fp16>)
-        CPU_INSTANCE_AMX(brgemm_matmul_t<avx512_core_amx>)
-        CPU_INSTANCE_AVX512(brgemm_matmul_t<avx10_2>)
-        CPU_INSTANCE_AVX512(brgemm_matmul_t<avx512_core_fp16>)
-        CPU_INSTANCE_AVX512(brgemm_matmul_t<avx512_core_bf16>)
-        CPU_INSTANCE_AVX512(brgemm_matmul_t<avx512_core_vnni>)
-        CPU_INSTANCE_AVX512(brgemm_matmul_t<avx512_core>)
-        CPU_INSTANCE_AVX2(brgemm_matmul_t<avx2_vnni_2>)
-        CPU_INSTANCE_AVX2(brgemm_matmul_t<avx2_vnni>)
-        CPU_INSTANCE_AVX2(brgemm_matmul_t<avx2>)
-        CPU_INSTANCE_RV64GCV(rvv_brgemm_matmul_t)
+        CPU_INSTANCE_AARCH64(brgemm_matmul_t, sve_256)
+        CPU_INSTANCE_AARCH64(jit_int8_matmul_t)
+        CPU_INSTANCE_AMX(brgemm_matmul_t, avx10_2_512_amx_2)
+        CPU_INSTANCE_AMX(brgemm_matmul_t, avx512_core_amx_fp16)
+        CPU_INSTANCE_AMX(brgemm_matmul_t, avx512_core_amx)
+        CPU_INSTANCE_AVX512(brgemm_matmul_t, avx10_2_512)
+        CPU_INSTANCE_AVX512(brgemm_matmul_t, avx512_core_fp16)
+        CPU_INSTANCE_AVX512(brgemm_matmul_t, avx512_core_bf16)
+        CPU_INSTANCE_AVX512(brgemm_matmul_t, avx512_core_vnni)
+        CPU_INSTANCE_AVX512(brgemm_matmul_t, avx512_core)
+        CPU_INSTANCE_AVX2(brgemm_matmul_t, avx2_vnni_2)
+        CPU_INSTANCE_AVX2(brgemm_matmul_t, avx2_vnni)
+        CPU_INSTANCE_AVX2(brgemm_matmul_t, avx2)
         CPU_INSTANCE_RV64GCV(rvv_matmul_t)
         CPU_INSTANCE(gemm_f32_matmul_t)
-        CPU_INSTANCE(gemm_bf16_matmul_t<f32>)
-        CPU_INSTANCE(gemm_bf16_matmul_t<bf16>)
+        CPU_INSTANCE(gemm_bf16_matmul_t, f32)
+        CPU_INSTANCE(gemm_bf16_matmul_t, bf16)
         CPU_INSTANCE(gemm_x8s8s32x_matmul_t)
         CPU_INSTANCE(ref_matmul_t)
         CPU_INSTANCE(ref_matmul_int8_t)
         CPU_INSTANCE_X64(jit_uni_sparse_matmul_t)
         CPU_INSTANCE(ref_sparse_matmul_t)
-        CPU_INSTANCE_GROUPED(ref_grouped_t)
         /* eol */
         nullptr,
 });
