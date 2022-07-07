@@ -27,14 +27,14 @@ const impl_list_map_t &regular_u8_impl_list_map() {
     static const impl_list_map_t the_map = REG_REORDER_P({
         // u8 ->
         {{u8, data_type::undef, 0}, {
-            DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64::brgemm_matmul_copy_reorder_t))
+            DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64_brgemm_matmul_copy_reorder_t))
 
             DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64::jit_uni_reorder_direct_copy_t))
-            DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64::jit_blk_reorder_t))
-            DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64::jit_uni_reorder_t))
+            DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64_jit_blk_reorder_t))
+            DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64_jit_uni_reorder_t))
 
-            DNNL_AARCH64_ONLY(CPU_REORDER_INSTANCE(aarch64::jit_blk_reorder_t))
-            DNNL_AARCH64_ONLY(CPU_REORDER_INSTANCE(aarch64::jit_uni_reorder_t))
+            DNNL_AARCH64_ONLY(CPU_REORDER_INSTANCE(aarch64_jit_blk_reorder_t))
+            DNNL_AARCH64_ONLY(CPU_REORDER_INSTANCE(aarch64_jit_uni_reorder_t))
 
             REG_FAST_DIRECT_COPY(u8, f32)
             REG_FAST_DIRECT_COPY(u8, s32)
@@ -48,11 +48,11 @@ const impl_list_map_t &regular_u8_impl_list_map() {
             DNNL_NON_X64_ONLY(REG_SR_BIDIR(u8, any, s8, nChw16c))
             DNNL_NON_X64_ONLY(REG_SR_BIDIR(u8, any, u8, nChw16c))
 
-            REG_SR(u8, any, f32, any, fmt_order::any, spec::reference)
-            REG_SR(u8, any, s32, any, fmt_order::any, spec::reference)
-            REG_SR(u8, any, bf16, any, fmt_order::any, spec::reference)
-            REG_SR(u8, any, u8, any, fmt_order::any, spec::reference)
-            REG_SR(u8, any, s8, any, fmt_order::any, spec::reference)
+            REG_SR(u8, any, f32, any, fmt_order_any, spec_reference)
+            REG_SR(u8, any, s32, any, fmt_order_any, spec_reference)
+            REG_SR(u8, any, bf16, any, fmt_order_any, spec_reference)
+            REG_SR(u8, any, u8, any, fmt_order_any, spec_reference)
+            REG_SR(u8, any, s8, any, fmt_order_any, spec_reference)
 
             nullptr,
         }},
