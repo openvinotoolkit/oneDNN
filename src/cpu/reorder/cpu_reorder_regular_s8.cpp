@@ -28,16 +28,9 @@ const impl_list_map_t &regular_s8_impl_list_map() {
     static const impl_list_map_t the_map = REG_REORDER_P({
         // s8 ->
         {{s8, data_type::undef, 0}, {
-            CPU_REORDER_INSTANCE(rnn_weights_reorder_s8_t<s8>)
-            CPU_REORDER_INSTANCE(rnn_brgemm_weights_reorder_s8_t<s8, s8>)
+            CPU_REORDER_INSTANCE(rnn_weights_reorder_s8_t,s8)
+            CPU_REORDER_INSTANCE(rnn_brgemm_weights_reorder_s8_t,s8, s8)
             DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64::brgemm_matmul_copy_reorder_t))
-
-            DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64::jit_uni_reorder_direct_copy_t))
-            DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64::jit_blk_reorder_t))
-            DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64::jit_uni_reorder_t))
-
-            DNNL_AARCH64_ONLY(CPU_REORDER_INSTANCE(aarch64::jit_blk_reorder_t))
-            DNNL_AARCH64_ONLY(CPU_REORDER_INSTANCE(aarch64::jit_uni_reorder_t))
 
             REG_FAST_DIRECT_COPY(s8, f32)
             REG_FAST_DIRECT_COPY(s8, s32)
@@ -45,6 +38,13 @@ const impl_list_map_t &regular_s8_impl_list_map() {
             REG_FAST_DIRECT_COPY(s8, f16)
             REG_FAST_DIRECT_COPY(s8, s8)
             REG_FAST_DIRECT_COPY(s8, u8)
+
+            DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64::jit_uni_reorder_direct_copy_t))
+            DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64_jit_blk_reorder_t))
+            DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64_jit_uni_reorder_t))
+
+            DNNL_AARCH64_ONLY(CPU_REORDER_INSTANCE(aarch64_jit_blk_reorder_t))
+            DNNL_AARCH64_ONLY(CPU_REORDER_INSTANCE(aarch64_jit_uni_reorder_t))
 
             DNNL_NON_X64_ONLY(REG_SR_BIDIR(s8, any, f32, nChw16c))
             DNNL_NON_X64_ONLY(REG_SR_BIDIR(s8, any, s32, nChw16c))
@@ -59,12 +59,12 @@ const impl_list_map_t &regular_s8_impl_list_map() {
             DNNL_NON_X64_ONLY(REG_SR_BIDIR(s8, any, bf16, gOIhw4i16o4i))
             DNNL_NON_X64_ONLY(REG_SR_BIDIR(s8, any, s8, gOIhw4i16o4i))
 
-            REG_SR(s8, any, f32, any, fmt_order::any, spec::reference)
-            REG_SR(s8, any, s32, any, fmt_order::any, spec::reference)
-            REG_SR(s8, any, bf16, any, fmt_order::any, spec::reference)
-            REG_SR(s8, any, f16, any, fmt_order::any, spec::reference)
-            REG_SR(s8, any, s8, any, fmt_order::any, spec::reference)
-            REG_SR(s8, any, u8, any, fmt_order::any, spec::reference)
+            REG_SR(s8, any, f32, any, fmt_order_any, spec_reference)
+            REG_SR(s8, any, s32, any, fmt_order_any, spec_reference)
+            REG_SR(s8, any, bf16, any, fmt_order_any, spec_reference)
+            REG_SR(s8, any, f16, any, fmt_order_any, spec_reference)
+            REG_SR(s8, any, s8, any, fmt_order_any, spec_reference)
+            REG_SR(s8, any, u8, any, fmt_order_any, spec_reference)
 
             REG_SPARSE_SR_X64(s8, any, s8, any)
 

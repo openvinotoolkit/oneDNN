@@ -25,6 +25,7 @@
 #include "cache_blob.hpp"
 #include "cache_blob_id.hpp"
 #include "cache_hit_types.hpp"
+#include "dnnl_sel_build.hpp"
 #include "memory_tracking.hpp"
 #include "nstl.hpp"
 #include "opdesc.hpp"
@@ -526,6 +527,7 @@ protected:
                     &primitive, \
             dnnl::impl::engine_t *engine, const cache_blob_t &cache_blob) \
             const override { \
+        DNNL_PRIMITIVE_CREATE(pd_t) \
         return primitive_t::create_primitive_common<impl_type, pd_t>( \
                 primitive, this, engine, use_global_scratchpad, cache_blob); \
     } \

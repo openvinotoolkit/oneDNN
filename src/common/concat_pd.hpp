@@ -285,6 +285,7 @@ private:
                     &primitive, \
             dnnl::impl::engine_t *engine, const cache_blob_t &cache_blob) \
             const override { \
+        DNNL_PRIMITIVE_CREATE(pd_t) \
         return primitive_t::create_primitive_common<__VA_ARGS__, pd_t>( \
                 primitive, this, engine, false, cache_blob); \
     } \
