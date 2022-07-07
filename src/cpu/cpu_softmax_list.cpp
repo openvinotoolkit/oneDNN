@@ -1,7 +1,7 @@
 /*******************************************************************************
-* Copyright 2019 Intel Corporation
+* Copyright 2019-2025 Intel Corporation
 * Copyright 2021-2024 FUJITSU LIMITED
-* Copyright 2021-2022, 2025-2026 Arm Ltd. and affiliates
+* Copyright 2021-2022 Arm Ltd. and affiliates
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -30,11 +30,6 @@ using namespace dnnl::impl::cpu::x64;
 #include "cpu/aarch64/acl_softmax.hpp"
 #endif
 using namespace dnnl::impl::cpu::aarch64;
-#elif DNNL_RV64
-#if defined(DNNL_RISCV_USE_RVV_INTRINSICS)
-#include "cpu/rv64/rvv_softmax.hpp"
-using namespace dnnl::impl::cpu::rv64;
-#endif
 #endif
 
 namespace dnnl {
@@ -50,19 +45,21 @@ const std::map<pk_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map() {
     static std::map<pk_impl_key_t, std::vector<impl_list_item_t>> the_map =  REG_SOFTMAX_P({
         {{forward}, {
             CPU_INSTANCE_X64(jit_uni_softmax_fwd_t)
-            CPU_INSTANCE_X64(jit_uni_fork_softmax_fwd_t<avx512_core>)
-            CPU_INSTANCE_X64(jit_uni_fork_softmax_fwd_t<avx2>)
-            CPU_INSTANCE_X64(jit_uni_fork_softmax_fwd_t<sse41>)
-            CPU_INSTANCE_AARCH64(jit_uni_softmax_fwd_t<sve>)
-            CPU_INSTANCE_AARCH64(jit_uni_softmax_fwd_t<asimd>)
+            CPU_INSTANCE_X64(jit_uni_fork_softmax_fwd_t, avx512_core)
+            CPU_INSTANCE_X64(jit_uni_fork_softmax_fwd_t, avx2)
+            CPU_INSTANCE_X64(jit_uni_fork_softmax_fwd_t, sse41)
+            CPU_INSTANCE_AARCH64(jit_uni_softmax_fwd_t, sve_512)
+            CPU_INSTANCE_AARCH64(jit_uni_softmax_fwd_t, sve_256)
+            CPU_INSTANCE_AARCH64(jit_uni_softmax_fwd_t, sve_128)
             CPU_INSTANCE_AARCH64_ACL(acl_softmax_fwd_t)
-            CPU_INSTANCE_RV64GCV(rvv_softmax_fwd_t)
             CPU_INSTANCE(ref_softmax_fwd_t)
             nullptr,
         }},
         {{backward}, REG_BWD_PK({
             CPU_INSTANCE_X64(jit_uni_softmax_bwd_t)
-            CPU_INSTANCE_AARCH64(jit_uni_softmax_bwd_t<sve>)
+            CPU_INSTANCE_AARCH64(jit_uni_softmax_bwd_t, sve_512)
+            CPU_INSTANCE_AARCH64(jit_uni_softmax_bwd_t, sve_256)
+            CPU_INSTANCE_AARCH64(jit_uni_softmax_bwd_t, sve_128)
             CPU_INSTANCE(ref_softmax_bwd_t)
             nullptr,
         })},
