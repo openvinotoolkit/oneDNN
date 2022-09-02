@@ -673,6 +673,16 @@ public:
         }
     }
 
+    void uni_vhsubps(const Xbyak::Xmm &x, const Xbyak::Xmm &x2,
+             const Xbyak::Operand &op) {
+        if (is_valid_isa(avx)) {
+            vhsubps(x, x2, op);
+        } else {
+            assert(x.isEqualIfNotInherited(op));
+            hsubps(x, op);
+        }
+    }
+
     void uni_vpsignd(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
             const Xbyak::Operand &op) {
         if (is_valid_isa(avx))
@@ -759,6 +769,16 @@ public:
     void uni_vsubps(const Xbyak::Ymm &x, const Xbyak::Operand &op1,
             const Xbyak::Operand &op2, const Xbyak::Ymm &buf) {
         vsubps(x, op1, op2);
+    }
+
+    void uni_vaddsubps(const Xbyak::Xmm &x, const Operand& op1,
+             const Xbyak::Operand &op2) {
+        if (is_valid_isa(avx)) {
+            vaddsubps(x, op1, op2);
+        } else {
+            if (!x.isEqualIfNotInherited(op1)) movups(x, op1);
+            addsubps(x, op2);
+        }
     }
 
     void uni_vpmulld(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
