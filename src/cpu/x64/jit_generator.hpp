@@ -771,7 +771,7 @@ public:
         vsubps(x, op1, op2);
     }
 
-    void uni_vaddsubps(const Xbyak::Xmm &x, const Operand& op1,
+    void uni_vaddsubps(const Xbyak::Xmm &x, const Xbyak::Operand& op1,
              const Xbyak::Operand &op2) {
         if (is_valid_isa(avx)) {
             vaddsubps(x, op1, op2);
