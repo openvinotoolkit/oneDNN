@@ -674,7 +674,7 @@ public:
     }
 
     void uni_vhsubps(const Xbyak::Xmm &x, const Xbyak::Xmm &x2,
-            const Xbyak::Operand &op) {
+                     const Xbyak::Operand &op) {
         if (is_valid_isa(avx)) {
             vhsubps(x, x2, op);
         } else {
@@ -772,11 +772,13 @@ public:
     }
 
     void uni_vaddsubps(const Xbyak::Xmm &x, const Xbyak::Operand &op1,
-            const Xbyak::Operand &op2) {
+                       const Xbyak::Operand &op2) {
         if (is_valid_isa(avx)) {
             vaddsubps(x, op1, op2);
         } else {
-            if (!x.isEqualIfNotInherited(op1)) { movups(x, op1); }
+            if (!x.isEqualIfNotInherited(op1)) {
+                movups(x, op1);
+            }
             addsubps(x, op2);
         }
     }
