@@ -469,6 +469,10 @@ public:
         vmovdqu32(x, addr);
     }
 
+    void uni_vmovdqu(const Xbyak::Zmm &x1, const Xbyak::Zmm &x2) {
+        vmovdqu32(x1, x2);
+    }
+
     void uni_vmovups(const Xbyak::Address &addr, const Xbyak::Xmm &x) {
         if (is_valid_isa(avx))
             vmovups(addr, x);
