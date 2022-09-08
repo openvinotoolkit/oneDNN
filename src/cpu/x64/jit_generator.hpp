@@ -1473,6 +1473,14 @@ public:
         vtestps(x1, op);
     }
 
+    void uni_vucomiss(const Xbyak::Xmm &x, const Xbyak::Operand &op) {
+        if (is_valid_isa(avx)) {
+            vucomiss(x, op);
+        } else {
+            ucomiss(x, op);
+        }
+    }
+
     void uni_vblendvps(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
             const Xbyak::Operand &op, const Xbyak::Xmm &msk) {
         if (is_valid_isa(avx))
@@ -1499,6 +1507,22 @@ public:
             blendps(x1, op, imm);
         }
     }
+
+    void uni_vpblendw(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
+                      const Xbyak::Operand &op, const int imm) {
+        assert(!x1.isZMM() && !x2.isZMM());
+
+        if (is_valid_isa(avx))
+            vpblendw(x1, x2, op, imm);
+        else {
+            assert(x1.getIdx() == x2.getIdx());
+            pblendw(x1, op, imm);
+        }
+    }
+
+    // NOTE: Add in future support for Zmm registers if there will be appropriate instruction
+    void uni_vpblendw(const Xbyak::Zmm &x1, const Xbyak::Zmm &x2,
+                      const Xbyak::Operand &op, const int imm) = delete;
 
     void uni_vroundps(
             const Xbyak::Xmm &x, const Xbyak::Operand &op, const int imm) {
