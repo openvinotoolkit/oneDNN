@@ -1320,6 +1320,18 @@ public:
         }
     }
 
+    void uni_vpblendw(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
+                      const Xbyak::Operand &op, const int imm) {
+        assert(!x1.isZMM() && !x2.isZMM());
+
+        if (is_valid_isa(avx))
+            vpblendw(x1, x2, op, imm);
+        else {
+            assert(x1.getIdx() == x2.getIdx());
+            pblendw(x1, op, imm);
+        }
+    }
+
     void uni_vroundps(
             const Xbyak::Xmm &x, const Xbyak::Operand &op, const int imm) {
         if (is_valid_isa(avx))
@@ -1752,6 +1764,14 @@ public:
         else {
             assert(x1.getIdx() == x2.getIdx());
             movhlps(x1, x3);
+        }
+    }
+
+    void uni_vucomiss(const Xbyak::Xmm &x, const Xbyak::Operand &op) {
+        if (is_valid_isa(avx)) {
+            vucomiss(x, op);
+        } else {
+            ucomiss(x, op);
         }
     }
 
