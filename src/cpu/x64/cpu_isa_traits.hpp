@@ -42,7 +42,7 @@
 // #define XBYAK_USE_MMAP_ALLOCATOR
 // #endif
 
-#if defined(NDEBUG) && !defined(XBYAK_NO_EXCEPTION)
+#if defined(NDEBUG) && (!defined(XBYAK_NO_EXCEPTION) || !defined(DNNL_ENABLE_EXCEPTIONS))
 #define XBYAK_NO_EXCEPTION
 #endif
 
