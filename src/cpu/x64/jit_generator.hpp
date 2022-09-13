@@ -1332,6 +1332,10 @@ public:
         }
     }
 
+    // NOTE: Add in future support for Zmm registers if there will be appropriate instruction
+    void uni_vpblendw(const Xbyak::Zmm &x1, const Xbyak::Zmm &x2,
+                      const Xbyak::Operand &op, const int imm) = delete;
+
     void uni_vroundps(
             const Xbyak::Xmm &x, const Xbyak::Operand &op, const int imm) {
         if (is_valid_isa(avx))
