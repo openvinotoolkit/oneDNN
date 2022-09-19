@@ -668,7 +668,9 @@ public:
         if (is_valid_isa(avx)) {
             vhaddps(x, x2, op);
         } else {
-            assert(x.isEqualIfNotInherited(op));
+            if (!x.isEqualIfNotInherited(x2)) {
+                movups(x, x2);
+            }
             haddps(x, op);
         }
     }
@@ -678,7 +680,9 @@ public:
         if (is_valid_isa(avx)) {
             vhsubps(x, x2, op);
         } else {
-            assert(x.isEqualIfNotInherited(op));
+            if (!x.isEqualIfNotInherited(x2)) {
+                movups(x, x2);
+            }
             hsubps(x, op);
         }
     }
