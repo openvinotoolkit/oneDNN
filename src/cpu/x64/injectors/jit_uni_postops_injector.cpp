@@ -72,8 +72,9 @@ jit_uni_postops_injector_t<Vmm>::jit_uni_postops_injector_t(
     bool is_eltwise = false;
     bool is_sum = false;
 
-    for (int i = 0; i < post_ops.len(); i++) {
-        const auto &post_op = post_ops.entry_[i];
+    for (int i = 0; i < post_ops_.len(); i++) {
+        const auto &post_op = post_ops_.entry_[i];
+
         if (post_op.is_eltwise()) {
             is_eltwise = true;
             // Note: `dt` argument for eltwise injector is not propagated from
