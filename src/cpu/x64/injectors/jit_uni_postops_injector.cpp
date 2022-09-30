@@ -63,7 +63,9 @@ jit_uni_postops_injector_t<isa, Vmm>::jit_uni_postops_injector_t(
     const auto &esp = eltwise_static_params;
     const auto &qsp = quantization_static_params;
 
-    for (const auto &post_op : post_ops.entry_) {
+    for (int i = 0; i < post_ops_.len(); i++) {
+        const auto &post_op = post_ops_.entry_[i];
+
         if (post_op.is_eltwise()) {
             alg_to_eltwise_injector_.emplace(post_op.eltwise.alg,
                                              jit_uni_eltwise_injector_t<isa, Vmm>(host_, post_op.eltwise, data_type::f32,
@@ -101,8 +103,9 @@ jit_uni_postops_injector_t<isa, Vmm>::jit_uni_postops_injector_t(
     bool is_like_binary = false;
     bool is_eltwise = false;
 
-    for (int i = 0; i < post_ops.len(); i++) {
-        const auto &post_op = post_ops.entry_[i];
+    for (int i = 0; i < post_ops_.len(); i++) {
+        const auto &post_op = post_ops_.entry_[i];
+
         if (post_op.is_eltwise()) {
             is_eltwise = true;
             // Note: `dt` argument for eltwise injector is not propagated from
