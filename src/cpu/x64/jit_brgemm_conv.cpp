@@ -20,6 +20,7 @@
 #include "common/utils.hpp"
 #include "cpu/cpu_primitive.hpp"
 #include "cpu/x64/injectors/jit_uni_binary_injector.hpp"
+#include <xmmintrin.h>
 
 #include "cpu/x64/amx_tile_configure.hpp"
 #include "cpu/x64/jit_brgemm_conv.hpp"
@@ -855,6 +856,13 @@ status_t brgemm_convolution_fwd_t<isa>::execute(const exec_ctx_t &ctx) const {
 
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
         if (ithr >= work_amount) return;
+        // TODO this is a hot fix for denormals, need refactor
+        unsigned int DENORMALS_ZERO = 0x0040;
+        unsigned int FLUSH_ZERO = 0x8000;
+        unsigned int csr = _mm_getcsr();
+        csr |= DENORMALS_ZERO;
+        csr |= FLUSH_ZERO;
+        _mm_setcsr(csr);
 
         brgemm_batch_element_t *const __restrict brg_batch = brg_batch_global
                 + static_cast<size_t>(ithr) * jcp.adjusted_batch_size;
@@ -1014,6 +1022,13 @@ status_t brgemm_convolution_fwd_t<isa>::cal_compensation(
         const dim_t kd_b {kd_bs[k]}, kd_e {kd_es[k]}, kh_b {kh_bs[k]},
                 kh_e {kh_es[k]};
         assert(kd_e > kd_b && kh_e > kh_b);
+        // TODO this is a hot fix for denormals, need refactor
+        unsigned int DENORMALS_ZERO = 0x0040;
+        unsigned int FLUSH_ZERO = 0x8000;
+        unsigned int csr = _mm_getcsr();
+        csr |= DENORMALS_ZERO;
+        csr |= FLUSH_ZERO;
+        _mm_setcsr(csr);
 
         if (jcp.exec_type == exec_vpad && jcp.max_vpad > 0) {
             const auto ow = owb * jcp.ow_block;

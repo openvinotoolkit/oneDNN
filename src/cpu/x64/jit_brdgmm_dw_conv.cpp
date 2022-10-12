@@ -16,6 +16,7 @@
 
 #include "common/memory_tracking.hpp"
 #include "common/utils.hpp"
+#include <xmmintrin.h>
 
 #include "cpu/x64/injectors/jit_uni_postops_injector.hpp"
 #include "cpu/x64/jit_brdgmm_dw_conv.hpp"
@@ -358,6 +359,13 @@ status_t brdgmm_dw_convolution_fwd_t::execute(const exec_ctx_t &ctx) const {
     const size_t dst_mb_stride = jcp.ngroups * jcp.ow * jcp.oh * jcp.dst_dsz;
 
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
+        // TODO this is a hot fix for denormals, need refactor
+        unsigned int DENORMALS_ZERO = 0x0040;
+        unsigned int FLUSH_ZERO = 0x8000;
+        unsigned int csr = _mm_getcsr();
+        csr |= DENORMALS_ZERO;
+        csr |= FLUSH_ZERO;
+        _mm_setcsr(csr);
         int start {0}, end {0};
         balance211(work_amount, nthr, ithr, start, end);
         int n {0}, chb {0}, oh {0}, owb {0};

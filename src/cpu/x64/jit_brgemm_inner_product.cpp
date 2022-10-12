@@ -18,6 +18,7 @@
 #include "common/dnnl_thread.hpp"
 #include "common/type_helpers.hpp"
 #include "common/utils.hpp"
+#include <xmmintrin.h>
 
 #include "cpu/cpu_primitive.hpp"
 
@@ -297,6 +298,13 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
         bool ok = init_thr_groups(
                 ithr, nthr, nthr_ic, nthr_oc_mb, ithr_ic, ithr_oc_mb);
         if (!ok) return;
+        // TODO this is a hot fix for denormals, need refactor
+        unsigned int DENORMALS_ZERO = 0x0040;
+        unsigned int FLUSH_ZERO = 0x8000;
+        unsigned int csr = _mm_getcsr();
+        csr |= DENORMALS_ZERO;
+        csr |= FLUSH_ZERO;
+        _mm_setcsr(csr);
 
         int start {0}, end {0};
         balance211(work_amount, nthr_oc_mb, ithr_oc_mb, start, end);
@@ -376,6 +384,13 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
             bool ok = init_thr_groups(
                     ithr, nthr, nthr_ic, nthr_oc_mb, ithr_ic, ithr_oc_mb);
             if (!ok) return;
+            // TODO this is a hot fix for denormals, need refactor
+            unsigned int DENORMALS_ZERO = 0x0040;
+            unsigned int FLUSH_ZERO = 0x8000;
+            unsigned int csr = _mm_getcsr();
+            csr |= DENORMALS_ZERO;
+            csr |= FLUSH_ZERO;
+            _mm_setcsr(csr);
 
             int ocmb_start {0}, ocmb_end {0};
             int start {0}, end {0};
