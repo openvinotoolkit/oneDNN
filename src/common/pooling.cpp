@@ -132,17 +132,23 @@ status_t pooling_desc_init(pooling_desc_t *pool_desc, prop_kind_t prop_kind,
                 static_cast<int>(pad_l), static_cast<int>(pad_r),
                 static_cast<int>(str));
 
+        // [fork] Initially this check was also commented and padding handling
+        // was also corrected for nchw_pooling.
+        // after rebase to onednn v2.7 the changes in nchw_pooling led to the
+        // test fails because of accuracy.
+        // With the commented check and without any updates in nchw_pooling no issues found
+
         // It's not allowed for pooling window to be totally placed outside
         // of real source domain for pooling_avg_exclude_padding algorithm
         // due to 0 / 0 ambiguity
-        VCHECK_POOLING(
-                IMPLICATION(alg_kind == pooling_avg_exclude_padding,
-                        (pad_l < ker_range && pad_r < ker_range && dil < src)),
-                "%s: inconsistent padding (%d, %d >= ker_range, %d) or "
-                "dilation (%d >= src, %d)",
-                VERBOSE_INCONSISTENT_PRB, static_cast<int>(pad_l),
-                static_cast<int>(pad_r), static_cast<int>(ker_range),
-                static_cast<int>(dil), static_cast<int>(src));
+        // VCHECK_POOLING(
+        //         IMPLICATION(alg_kind == pooling_avg_exclude_padding,
+        //                 (pad_l < ker_range && pad_r < ker_range && dil < src)),
+        //         "%s: inconsistent padding (%d, %d >= ker_range, %d) or "
+        //         "dilation (%d >= src, %d)",
+        //         VERBOSE_INCONSISTENT_PRB, static_cast<int>(pad_l),
+        //         static_cast<int>(pad_r), static_cast<int>(ker_range),
+        //         static_cast<int>(dil), static_cast<int>(src));
     }
 
     *pool_desc = pd;
