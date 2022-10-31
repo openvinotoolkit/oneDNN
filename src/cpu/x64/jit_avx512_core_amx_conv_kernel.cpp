@@ -3330,7 +3330,9 @@ void jit_avx512_core_amx_bwd_data_kernel_t::store_output_vector_xf16(
     }
 
     const int eltwise_ind = p.find(primitive_kind::eltwise);
-    if (eltwise_ind != -1) eltwise_injector_->compute_vector(zmm_out.getIdx());
+    if (eltwise_ind != -1)
+        idx_to_eltwise_injector_.at(eltwise_ind)
+                .compute_vector(zmm_out.getIdx());
 
     const Ymm ymm_out = Ymm(zmm_out.getIdx());
     const Ymm ymm_out_k = ymm_mask(ymm_out, mask_flag, true);
@@ -3403,7 +3405,8 @@ void jit_avx512_core_amx_bwd_data_kernel_t::store_output_vector_int8(
     if (jcp.with_bias) vaddps(zmm_out, zmm_out, zmm_bias);
 
     /* Do post-ops */
-    if (maybe_eltwise(0)) eltwise_injector_->compute_vector(zmm_out.getIdx());
+    if (maybe_eltwise(0))
+        idx_to_eltwise_injector_.at(0).compute_vector(zmm_out.getIdx());
     if (p_sum_scale) { // post_op: sum
         cvt2ps(jcp.dsrc_dt, zmm_prev_dst, addr, mask_flag);
         if (*p_sum_zp != 0) {
@@ -3415,7 +3418,13 @@ void jit_avx512_core_amx_bwd_data_kernel_t::store_output_vector_int8(
         else
             vfmadd231ps(zmm_out, zmm_prev_dst, zword_b[reg_ptr_sum_scale]);
     }
-    if (maybe_eltwise(1)) eltwise_injector_->compute_vector(zmm_out.getIdx());
+
+    if (maybe_eltwise(1))
+        idx_to_eltwise_injector_.at(1).compute_vector(zmm_out.getIdx());
+    for (auto i = 2; i < jcp.post_ops.len(); i++) {
+        if (idx_to_eltwise_injector_.count(i) != 0)
+            idx_to_eltwise_injector_.at(i).compute_vector(zmm_out.getIdx());
+    }
 
     if (jcp.with_dst_scales) {
         mov(reg_ptr_dst_scales, ptr[param1 + GET_OFF(dst_scales)]);
@@ -3743,7 +3752,10 @@ void jit_avx512_core_amx_bwd_data_kernel_t::generate() {
 
     postamble();
 
-    if (jcp.with_eltwise) eltwise_injector_->prepare_table();
+    if (jcp.with_eltwise) {
+        for (auto &elt_injector : idx_to_eltwise_injector_)
+            elt_injector.second.prepare_table();
+    }
 }
 
 bool jit_avx512_core_amx_bwd_data_kernel_t::post_ops_ok(
@@ -3761,6 +3773,11 @@ bool jit_avx512_core_amx_bwd_data_kernel_t::post_ops_ok(
         else
             return p.contain(sum, idx);
     };
+    //Add more element-wise post-ops supported for int8 deconv.
+    bool all_eltwise = jcp.is_int8_deconvolution;
+    for (auto i = 0; i < p.len(); i++)
+        all_eltwise &= is_eltwise(i);
+    if (all_eltwise) return true;
 
     switch (p.len()) {
         case 0: return true;
@@ -3851,6 +3868,7 @@ status_t jit_avx512_core_amx_bwd_data_kernel_t::init_conf(jit_conv_conf_t &jcp,
 
     jcp = zero<decltype(jcp)>();
     jcp.isa = is_f16 ? avx512_core_amx_fp16 : avx512_core_amx;
+    jcp.is_int8_deconvolution = is_int8_deconvolution;
     jcp.ndims = ndims;
     jcp.prop_kind = cd.prop_kind;
     jcp.ngroups = with_groups ? weights_d.dims()[0] : 1;
@@ -3938,7 +3956,7 @@ status_t jit_avx512_core_amx_bwd_data_kernel_t::init_conf(jit_conv_conf_t &jcp,
             VERBOSE_UNSUPPORTED_TAG_S, "src");
 
     jcp.is_nspc = jcp.src_tag == dat_tag_nspc;
-    assert(IMPLICATION(is_int8_deconvolution, jcp.is_nspc));
+    assert(IMPLICATION(jcp.is_int8_deconvolution, jcp.is_nspc));
 
     // TODO: remove all support for nChw16c from this implementation
     VDISPATCH_CONV_IC(jcp.is_nspc, VERBOSE_UNSUPPORTED_TAG_S, "src");
@@ -3977,7 +3995,7 @@ status_t jit_avx512_core_amx_bwd_data_kernel_t::init_conf(jit_conv_conf_t &jcp,
     const auto &p = attr.post_ops_;
     const int eltwise_ind = p.find(primitive_kind::eltwise);
     jcp.with_eltwise = eltwise_ind != -1;
-    if (jcp.with_eltwise) jcp.eltwise = p.entry_[eltwise_ind].eltwise;
+    jcp.post_ops = p;
 
     auto set_or_check_wei_format = [&]() {
         using namespace format_tag;
@@ -3990,7 +4008,7 @@ status_t jit_avx512_core_amx_bwd_data_kernel_t::init_conf(jit_conv_conf_t &jcp,
             wei_tag = pick(with_groups + 2 * (ndims - 3), OIw16i16o2i,
                     gOIw16i16o2i, OIhw16i16o2i, gOIhw16i16o2i, OIdhw16i16o2i,
                     gOIdhw16i16o2i);
-        else if (is_int8_deconvolution)
+        else if (jcp.is_int8_deconvolution)
             wei_tag = pick(with_groups + 2 * (ndims - 3), OIw16i16o4i,
                     gOIw16i16o4i, OIhw16i16o4i, gOIhw16i16o4i, OIdhw16i16o4i,
                     gOIdhw16i16o4i);
