@@ -262,6 +262,17 @@ struct jit_conv_conf_t {
     int max_width;
 
     bool transform_to_vnni;
+
+    bool with_input_zp;
+    bool with_weights_zp;
+
+    int oh_block;
+    int oh_block_step;
+    int nb_ow_blocking;
+
+    int dw_conv_oh, dw_conv_ow;
+    data_type_t dw_conv_dst_dt;
+    bool is_int8_deconvolution;
 };
 
 // calculates filter size taking into account dilation
