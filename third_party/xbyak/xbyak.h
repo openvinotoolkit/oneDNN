@@ -67,6 +67,13 @@
 #include <iostream>
 #endif
 
+// for debug trace in GCC
+#if !defined(NDEBUG) && defined(__GNUC__) && !(defined(__ANDROID__) || defined(ANDROID))
+#include <execinfo.h>
+#include <map>
+#include <sstream>
+#endif
+
 // #define XBYAK_DISABLE_AVX512
 
 #if !defined(XBYAK_USE_MMAP_ALLOCATOR) && !defined(XBYAK_DONT_USE_MMAP_ALLOCATOR)
@@ -2127,6 +2134,7 @@ private:
 	}
 	void opRR(const Reg& reg1, const Reg& reg2, uint64_t type, int code)
 	{
+        debug_trace();
 		if (!(type & T_ALLOW_DIFF_SIZE) && reg1.isREG() && reg2.isREG() && reg1.getBit() != reg2.getBit()) XBYAK_THROW(ERR_BAD_SIZE_OF_REGISTER)
 		bool rex2 = rex(reg2, reg1, type);
 		writeCode(type, reg1, code, rex2);
@@ -2134,6 +2142,7 @@ private:
 	}
 	void opMR(const Address& addr, const Reg& r, uint64_t type, int code, uint64_t type2 = 0, int code2 = NONE)
 	{
+        debug_trace();
 		if (code2 == NONE) code2 = code;
 		if (type2 && opROO(Reg(), addr, r, type2, code2)) return;
 		if (addr.is64bitDisp()) XBYAK_THROW(ERR_CANT_USE_64BIT_DISP)
@@ -2438,6 +2447,7 @@ private:
 		if (bit == 16 || bit == BIT) {
 			if (bit == 16) db(0x66);
 			if (op.isREG()) {
+				debug_trace();
 				if (op.getReg().getIdx() >= 8) db(0x41);
 				db(alt | (op.getIdx() & 7));
 				return;
@@ -2528,6 +2538,7 @@ private:
 	}
 	void opVex(const Reg& r, const Operand *p1, const Operand& op2, uint64_t type, int code, int imm8 = NONE)
 	{
+		debug_trace();
 		if (op2.isMEM()) {
 			Address addr = op2.getAddress();
 			const RegExp& regExp = addr.getRegExp();
@@ -3120,6 +3131,35 @@ public:
 		if (p1->isREG() && p2->isREG()) std::swap(p1, p2); // adapt to NASM 2.16.03 behavior to pass tests
 		opRO(static_cast<const Reg&>(*p1), *p2, 0, 0x86 | (p1->isBit(8) ? 0 : 1), (p1->isREG() && (p1->getBit() == p2->getBit())));
 	}
+
+#if !defined(NDEBUG) && defined(__GNUC__) && !(defined(__ANDROID__) || defined(ANDROID))
+	std::map<size_t, std::string> debug_traces;
+	void debug_trace() {
+		static bool enable_trace = std::getenv("ONEDNN_JIT_DUMP") && atoi(std::getenv("ONEDNN_JIT_DUMP")) != 0;
+		if (!enable_trace)
+			return;
+
+		void *array[8];
+		int size = backtrace(array, 8);
+		char **strings = backtrace_symbols(array, size);
+		std::stringstream ss;
+		// skip first 2 frame (backtrace,trace_code)
+		for(int i = 2; i < size; ++i) ss << "," << strings[i];
+		auto offset = getSize();
+		if (debug_traces.count(offset)) {
+			debug_traces[offset] += ss.str();
+		} else {
+			debug_traces[offset] = ss.str();
+		}
+		free(strings);
+	}
+	std::map<size_t, std::string> get_debug_traces() const {
+		return debug_traces;
+	}
+#else
+	void debug_trace() {}
+	std::map<size_t, std::string> get_debug_traces() const { return {}; }
+#endif
 
 #ifndef XBYAK_DISABLE_SEGMENT
 	void push(const Segment& seg)
