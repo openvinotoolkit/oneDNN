@@ -159,7 +159,8 @@ struct primitive_desc_t : public c_compatible {
             && !attr()->weights_zero_points_.has_default_values())
             return arg_usage_t::input;
         if ((arg & (DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_DST))
-            && !attr()->output_compensations_.has_default_values())
+                && !attr()->output_compensations_.has_default_values()
+                && arg != DNNL_ARG_SCRATCHPAD)
             return arg_usage_t::input;
 
         if (arg & DNNL_ARG_ATTR_ZERO_POINTS) {
