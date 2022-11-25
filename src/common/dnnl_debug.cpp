@@ -54,6 +54,7 @@ const char *dnnl_fmt_kind2str(dnnl_format_kind_t v) {
             || v == format_kind::cublaslt_blocked)
         return "opaque";
     if (v == dnnl_format_kind_max) return "max";
+    if (v == dnnl_format_sparse) return "format_sparse";
     assert(!"unknown fmt_kind");
     return "unknown fmt_kind";
 }

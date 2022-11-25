@@ -100,6 +100,8 @@ extern const impl_list_map_t &comp_bf16_s8_impl_list_map();
 extern const impl_list_map_t &comp_s8_s8_impl_list_map();
 
 // clang-format off
+#define REG_SPARSE_SR(idt, ifmt, odt, ofmt, ...) \
+    CPU_REORDER_INSTANCE(simple_sparse_reorder_t, idt, ifmt, odt, ofmt, __VA_ARGS__)
 
 // Some compilers do not allow guarding implementations with macros
 // in the impl list.

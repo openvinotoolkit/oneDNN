@@ -515,6 +515,12 @@ struct brgemm_dynamic_values_t {
         , dynamic_LDD(LDD) {}
 };
 
+struct brgemm_decomp_kernel_params_t {
+    const void *ptr_B;
+    const void *scratch_buf;
+    const void *bitmask_ptr;
+};
+
 struct brgemm_kernel_params_t {
     const void *ptr_A;
     const void *ptr_B;

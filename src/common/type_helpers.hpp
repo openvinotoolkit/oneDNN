@@ -400,6 +400,7 @@ inline bool rnn_packed_desc_is_equal(
 
 inline bool sparse_desc_is_equal(
         const sparse_desc_t &lhs, const sparse_desc_t &rhs) {
+#if 0
     bool ok = lhs.encoding == rhs.encoding && lhs.nnz == rhs.nnz;
     if (!ok) return false;
 
@@ -407,6 +408,8 @@ inline bool sparse_desc_is_equal(
         ok = ok && lhs.metadata_types[i] == rhs.metadata_types[i];
 
     return ok;
+#endif
+    return lhs.encoding == rhs.encoding;
 }
 
 inline memory_desc_t zero_md() {
@@ -1113,22 +1116,21 @@ inline status_t memory_desc_init_by_tag(
     const bool is_sparse = md.format_kind == format_kind::sparse;
     auto md_tmp = memory_desc_t();
 
-    CHECK(memory_desc_init_by_tag(
-            md_tmp, md.ndims, md.dims, md.data_type, tag));
-
-    if (strides != nullptr && !memory_desc_strides_check(md_tmp, strides))
-        return status::invalid_arguments;
+    status_t status =
+        memory_desc_init_by_tag(md_tmp, md.ndims, md.dims, md.data_type, tag);
 
     if (is_sparse) {
-        if (md.format_desc.sparse_desc.encoding != sparse_encoding::packed
-                || md.offset0 != 0)
-            return status::invalid_arguments;
-        md = cvt_blocked2sparse_packed(md_tmp, md.format_desc.sparse_desc.nnz);
+        const auto &bd = md_tmp.format_desc.blocking;
+        md.format_desc.sparse_desc.encoding = sparse_encoding::packed;
+        md.format_desc.sparse_desc.packed_desc = bd;
     } else {
         md = md_tmp;
     }
 
-    if (strides == nullptr) return status::success;
+    if (status != status::success || strides == nullptr) return status;
+
+    if (!memory_desc_strides_check(md_tmp, strides))
+        return status::invalid_arguments;
 
     for (int d = 0; d < md.ndims; ++d) {
         if (is_sparse)
@@ -1136,7 +1138,6 @@ inline status_t memory_desc_init_by_tag(
         else
             md.format_desc.blocking.strides[d] = strides[d];
     }
-
     return status::success;
 }
 
@@ -1235,11 +1236,19 @@ inline bool memory_desc_matches_tag(const memory_desc_t &md, format_tag_t tag,
     status_t status = memory_desc_init_by_tag(
             md_gold, md.ndims, md.dims, md.data_type, tag);
     if (status != status::success) return false;
-    bool equal = types::blocking_desc_is_equal(
-            md, md_gold, /* ignore_strides = */ (bool)strides);
-    if (!strides || !equal) return equal;
+    // bool equal = types::blocking_desc_is_equal(
+    //         md, md_gold, /* ignore_strides = */ (bool)strides);
+    // if (!strides || !equal) return equal;
 
-    const auto &blk = md.format_desc.blocking;
+    const bool is_sparse_packed_desc = md.format_kind == format_kind::sparse
+            && md.format_desc.sparse_desc.encoding == sparse_encoding::packed;
+
+    if (md.format_kind != format_kind::blocked && !is_sparse_packed_desc)
+        return false; // unimplemented yet
+
+    const auto &blk = md.format_kind == format_kind::blocked
+            ? md.format_desc.blocking
+            : md.format_desc.sparse_desc.packed_desc;
     const auto &blk_gold = md_gold.format_desc.blocking;
 
     using utils::array_cmp;

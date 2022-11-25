@@ -166,6 +166,7 @@ struct cublaslt_blocked_desc_t {
     size_t size;
 };
 
+#if 0
 struct sparse_desc_t {
     static constexpr int max_metadata_types = 2;
     // Each encoding defines the number of handles it requires and their
@@ -224,6 +225,21 @@ struct sparse_desc_t {
     // - Use the block number to find an offset in the packed data
     // - Use the bitmask to unpack the packed data
     blocking_desc_t packed_desc;
+}
+#endif
+
+struct sparse_desc_t {
+    static constexpr int max_metadata_types = 2;
+    /// Specifies what encoding is used.
+    dnnl_sparse_encoding_t encoding;
+    /// Descriptor for blocked bitmask - opaque.
+    blocking_desc_t packed_desc;
+    // Number of non-zero entries.
+    dnnl_dim_t nnz;
+    // Metadata types. Each encoding defines how to interpret these.
+    // - CSR: 0th - index data type
+    //        1st - pointer data type
+    dnnl_data_type_t metadata_types[max_metadata_types];
 };
 
 // Description of extra information stored in memory
