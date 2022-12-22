@@ -255,7 +255,7 @@ void jit_uni_depthwise_injector_f32<isa>::compute(int start_idx, int end_idx,
     if (need_to_preserve) {
         if (preserved_vecs_count > 1)
             pop_vmm(h, vmm_aux0);
-        if (preserved_vecs_count > 1)
+        if (preserved_vecs_count > 0)
             pop_vmm(h, vmm_mask);
     }
 }
