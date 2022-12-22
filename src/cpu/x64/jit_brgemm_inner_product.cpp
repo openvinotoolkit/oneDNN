@@ -54,7 +54,6 @@ void copy_data_chunk(ker_type &ker, char *tr_data, const char *data,
     ctx.last_row_blk = is_last_blk ? 1 : 0;
     (*ker)(&ctx);
 }
-
 } // namespace
 
 template <cpu_isa_t isa>
@@ -491,6 +490,7 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
             }
         });
     }
+
     return status::success;
 }
 

@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2018-2022 Intel Corporation
+* Copyright 2018-2021 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -99,8 +99,7 @@ void exec_ctx_t::register_memory_mapping(void *handle, void *host_ptr) {
     memory_mapping_.insert({handle, host_ptr});
 }
 
-void *exec_ctx_t::host_ptr(
-        int arg, int index, bool do_zeropad, status_t *status_) const {
+void *exec_ctx_t::host_ptr(int arg, bool do_zeropad, status_t *status_) const {
     status_t status = status::success;
     if (status_) *status_ = status;
 
@@ -110,7 +109,7 @@ void *exec_ctx_t::host_ptr(
     if (do_zeropad) status = mem->zero_pad(*this);
     if (status_) *status_ = status;
 
-    auto *mem_storage = mem->memory_storage(index);
+    auto *mem_storage = mem->memory_storage();
     return host_ptr(mem_storage);
 }
 

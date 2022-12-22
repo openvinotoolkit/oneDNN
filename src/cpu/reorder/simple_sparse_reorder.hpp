@@ -112,7 +112,7 @@ struct simple_sparse_reorder_impl<SIMPLE_SPARSE_REORDER_TEMPL_CALL,
 
     static status_t execute(const cpu_reorder_pd_t *pd, const exec_ctx_t &ctx) {
         auto input = CTX_IN_MEM(const data_t<type_i> *, DNNL_ARG_FROM);
-        auto output = CTX_OUT_SPARSE_MEM(data_t<type_o> *, DNNL_ARG_TO, 0);
+        auto output = CTX_OUT_MEM(data_t<type_o> *, DNNL_ARG_TO);
 
         const auto input_d = ctx.memory_mdw(DNNL_ARG_FROM, pd->src_md());
         const auto output_d = ctx.memory_mdw(DNNL_ARG_TO, pd->dst_md());

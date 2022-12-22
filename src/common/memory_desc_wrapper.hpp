@@ -88,17 +88,7 @@ struct memory_desc_wrapper : public c_compatible {
         return md_->format_desc.sparse_desc;
     }
 
-    const data_type_t *metadata_types() const {
-        assert(is_sparse_desc());
-        return sparse_desc().metadata_types;
-    }
-
     const memory_extra_desc_t &extra() const { return md_->extra; }
-
-    const dim_t *entry_dims() const {
-        assert(is_sparse_desc());
-        return sparse_desc().entry_dims;
-    }
 
     sparse_encoding_t encoding() const {
         assert(is_sparse_desc());
@@ -202,16 +192,10 @@ struct memory_desc_wrapper : public c_compatible {
 
     /** returns the size required to store described memory
      * note: if offset0 != 0 returns 0 (need to specify the behavior) */
-    size_t size(int index = 0) const {
+    size_t size() const {
         if (utils::one_of(format_kind(), format_kind::undef, format_kind::any)
                 || is_zero() || has_zero_dim())
             return 0;
-
-        if (utils::one_of(format_kind(), format_kind::blocked,
-                    format_kind::wino, format_kind::rnn_packed)
-                && index > 0) {
-            return 0;
-        }
 
         if (has_runtime_dims_or_strides()) return DNNL_RUNTIME_SIZE_VAL;
 
@@ -220,48 +204,7 @@ struct memory_desc_wrapper : public c_compatible {
         } else if (format_kind() == format_kind::rnn_packed) {
             return rnn_packed_desc().size;
         } else if (is_sparse_desc()) {
-            if (utils::one_of(sparse_desc().encoding, sparse_encoding::csr,
-                        sparse_encoding::csc, sparse_encoding::bcsr,
-                        sparse_encoding::bcsc)) {
-
-                const size_t nnze = sparse_desc().nnze;
-
-                const auto idx_dt = metadata_types()[0];
-                const auto ptr_dt = metadata_types()[1];
-
-                // Return size for values.
-                if (index == 0) {
-                    switch (sparse_desc().encoding) {
-                        case sparse_encoding::csr:
-                        case sparse_encoding::csc:
-                            return nnze * data_type_size();
-                        case sparse_encoding::bcsr:
-                        case sparse_encoding::bcsc:
-                            return nnze * entry_dims()[0] * entry_dims()[1]
-                                    * data_type_size();
-                        default: assert(!"unknown sparse encoding"); return 0;
-                    }
-                }
-
-                // Return size for indices.
-                if (index == 1) return nnze * types::data_type_size(idx_dt);
-                // Return size for pointers.
-                if (index == 2) {
-                    switch (sparse_desc().encoding) {
-                        case sparse_encoding::csr:
-                        case sparse_encoding::bcsr:
-                            return (dims()[0] + 1)
-                                    * types::data_type_size(ptr_dt);
-                        case sparse_encoding::csc:
-                        case sparse_encoding::bcsc:
-                            return (dims()[1] + 1)
-                                    * types::data_type_size(ptr_dt);
-                        default: assert(!"unknown sparse encoding"); return 0;
-                    }
-                }
-                return 0;
-            } else if (sparse_desc().encoding == sparse_encoding::packed) {
-                if (index != 0) return 0;
+            if (sparse_desc().encoding == sparse_encoding::packed) {
                 // Only  2D tensors are supported at this point.
                 assert(ndims() == 2);
                 // Only OI16i64o4i is supported at this point.

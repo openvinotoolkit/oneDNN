@@ -1144,36 +1144,10 @@ dnnl_status_t DNNL_API dnnl_memory_desc_init_by_tag(
 ///
 /// @param sparse_desc Output sparse descriptor.
 /// @param encoding Encoding.
-/// @param ndims_order Number of elements in @p dims_order.
-///     Has to be consistent with #dnnl_memory_desc_t::ndims.
-///     Can be 0 if @p dims_order is NULL.
-/// @param dims_order Array with dimensions order. E.g. [0, 1] or [1, 0].
-///     Can be NULL.
-///     Can be NULL in which case [0, ndims - 1] order will be used.
-/// @param nnze Number or non-zero entries.
-/// @param ntypes Number of data types for metadata.
-/// @param metadata_types Array of data types for metadata.
-/// @param nentry_dims Number of dimensions of an entry. Can be 0 if entry
-///     is a scalar.
-/// @param entry_dims Array of dimensions of an entry.
-///     Can be NULL if @p nentry_dims is 0.
-/// @param structure_ndims Number of dimensions of a structure block.
-///     Can be 0 if sparsity has not structure.
-/// @param structure_dims Array of dimensions of a structure block.
-///     Can be NULL if @p structure_ndims is 0.
-/// @param structure_nnz Array that specifies number of non-zero elements per
-///     structure block dimension. E.g. when a structure block is a vector of
-///     size 8 the @p structure_nnz array will contain a single element
-///     4 meaning that 4 out of 8 elements are guaranteed to be non-zero.
-///     Can be NULL if @p structure_ndims is 0.
 /// @returns #dnnl_success on success and a status describing the error
 ///     otherwise.
 dnnl_status_t DNNL_API dnnl_sparse_desc_init(dnnl_sparse_desc_t *sparse_desc,
-        dnnl_sparse_encoding_t encoding, int ndims_order,
-        const dnnl_dims_t dims_order, dnnl_dim_t nnze, int ntypes,
-        const dnnl_data_type_t *metadata_types, int nentry_dims,
-        const dnnl_dim_t *entry_dims, int structure_ndims,
-        const dnnl_dim_t *structure_dims, const dnnl_dim_t *structure_nnz);
+        dnnl_sparse_encoding_t encoding);
 
 /// Initializes a memory descriptor by the given sparse descriptor.
 ///
@@ -1181,7 +1155,6 @@ dnnl_status_t DNNL_API dnnl_sparse_desc_init(dnnl_sparse_desc_t *sparse_desc,
 /// @param ndims Number of dimensions.
 /// @param dims Array of dimensions.
 /// @param data_type Elements data type.
-/// @param structure_nnz Array that specifies number of non-zero elements per
 /// @param sparse_desc Sparse descriptor.
 /// @returns #dnnl_success on success and a status describing the error
 ///     otherwise
@@ -1316,17 +1289,6 @@ int DNNL_API dnnl_memory_desc_equal(
 size_t DNNL_API dnnl_memory_desc_get_size(
         const dnnl_memory_desc_t *memory_desc);
 
-/// Returns the size of a values and metadata for a particular sparse encoding.
-///
-/// @param memory_desc Memory descriptor.
-/// @param index Index that correspondes to values or metadata. Each sparse
-///     encoding defines index interpretation.
-///
-/// @returns The number of bytes required for values or metadata for a
-///     particular sparse encoding described by a memory descriptor.
-size_t DNNL_API dnnl_memory_desc_get_size_sparse(
-        const dnnl_memory_desc_t *memory_desc, int index);
-
 /// Returns the size of data type.
 ///
 /// @param data_type Data type.
@@ -1356,27 +1318,6 @@ size_t DNNL_API dnnl_data_type_size(dnnl_data_type_t data_type);
 dnnl_status_t DNNL_API dnnl_memory_create(dnnl_memory_t *memory,
         const dnnl_memory_desc_t *memory_desc, dnnl_engine_t engine,
         void *handle);
-
-/// Creates a sparse memory object.
-///
-/// @param memory Output memory object.
-/// @param memory_desc Memory descriptor.
-/// @param engine Engine to use.
-/// @param nhandles Number of handles.
-/// @param handles Handles of the memory buffers to use as underlying storages.
-///     For each element of the @p handles array the following applies:
-///     - A pointer to the user-allocated buffer. In this case the library
-///       doesn't own the buffer.
-///     - The DNNL_MEMORY_ALLOCATE special value. Instructs the library to
-///       allocate the buffer for the memory object. In this case the library
-///       owns the buffer.
-///     - DNNL_MEMORY_NONE Instructs the library to skip allocation of the
-///       memory buffer.
-/// @returns #dnnl_success on success and a status describing the error
-///     otherwise.
-dnnl_status_t DNNL_API dnnl_memory_create_sparse(dnnl_memory_t *memory,
-        const dnnl_memory_desc_t *memory_desc, dnnl_engine_t engine,
-        dnnl_dim_t nhandles, void **handles);
 
 /// Returns the memory descriptor for a memory object.
 ///
@@ -1439,13 +1380,6 @@ dnnl_status_t DNNL_API dnnl_memory_map_data(
 dnnl_status_t DNNL_API dnnl_memory_unmap_data(
         const_dnnl_memory_t memory, void *mapped_ptr);
 
-// TODO: add documentation and put these in the right place.
-dnnl_status_t DNNL_API dnnl_memory_map_data_sparse(
-        const_dnnl_memory_t memory, int index, void **mapped_ptr);
-
-dnnl_status_t DNNL_API dnnl_memory_unmap_data_sparse(
-        const_dnnl_memory_t memory, int index, void *mapped_ptr);
-
 /// Returns memory object's data handle.
 ///
 /// @param memory Memory object.
@@ -1470,13 +1404,6 @@ dnnl_status_t DNNL_API dnnl_memory_set_data_handle(
 
 dnnl_status_t DNNL_API dnnl_memory_set_data_handle_no_pads_proc(
         dnnl_memory_t memory, void *handle);
-        
-// TODO: add documentation and put these in the right place.
-dnnl_status_t DNNL_API dnnl_memory_get_data_handles(
-        const_dnnl_memory_t memory, dnnl_dim_t *nhandles, void **handles);
-
-dnnl_status_t DNNL_API dnnl_memory_set_data_handles(
-        dnnl_memory_t memory, dnnl_dim_t nhandles, void **handles);
 
 /// Sets the underlying memory buffer.
 ///
