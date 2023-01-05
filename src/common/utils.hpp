@@ -69,8 +69,8 @@ static_assert(sizeof(void *) == 8, "oneDNN supports 64-bit architectures only");
 
 #define CHECK(f) \
     do { \
-        dnnl::impl::status_t _status_ = f; \
-        if (_status_ != dnnl::impl::status::success) return _status_; \
+        status_t _status_ = f; \
+        if (_status_ != status::success) return _status_; \
     } while (0)
 
 #define IMPLICATION(cause, effect) (!(cause) || !!(effect))

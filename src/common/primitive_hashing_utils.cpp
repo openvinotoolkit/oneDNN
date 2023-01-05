@@ -81,22 +81,6 @@ size_t get_md_hash(const memory_desc_t &md) {
         case format_kind::sparse:
             seed = hash_combine(seed,
                     static_cast<size_t>(md.format_desc.sparse_desc.encoding));
-            seed = get_array_hash(seed, md.format_desc.sparse_desc.dims_order,
-                    DNNL_MAX_NDIMS);
-            seed = hash_combine(seed, md.format_desc.sparse_desc.nnze);
-            seed = get_array_hash(seed,
-                    md.format_desc.sparse_desc.metadata_types,
-                    DNNL_MAX_METADATA_TYPES);
-            seed = get_array_hash(
-                    seed, md.format_desc.sparse_desc.entry_dims, 2);
-            seed = hash_combine(
-                    seed, md.format_desc.sparse_desc.structure_ndims);
-            if (md.format_desc.sparse_desc.structure_ndims != 0) {
-                seed = get_array_hash(
-                        seed, md.format_desc.sparse_desc.structure_dims, 2);
-                seed = get_array_hash(
-                        seed, md.format_desc.sparse_desc.structure_nnz, 2);
-            }
             // User cannot initialize `packed_desc` therefore therefore
             // at this point `packed_desc` is always zero initialized.
             break;

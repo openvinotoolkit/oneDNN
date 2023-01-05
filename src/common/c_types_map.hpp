@@ -1221,10 +1221,6 @@ using sparse_encoding_t = dnnl_sparse_encoding_t;
 namespace sparse_encoding {
 const sparse_encoding_t undef = dnnl_sparse_encoding_undef;
 const sparse_encoding_t any = dnnl_sparse_encoding_any;
-const sparse_encoding_t csr = dnnl_sparse_encoding_csr;
-const sparse_encoding_t csc = dnnl_sparse_encoding_csc;
-const sparse_encoding_t bcsr = dnnl_sparse_encoding_bcsr;
-const sparse_encoding_t bcsc = dnnl_sparse_encoding_bcsc;
 const sparse_encoding_t packed = dnnl_sparse_encoding_packed;
 } // namespace sparse_encoding
 

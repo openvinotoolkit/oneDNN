@@ -60,15 +60,6 @@ size_t get_vector_hash(size_t seed, const std::vector<T, A> &vec) {
     return get_array_hash(seed, vec.data(), vec.size());
 }
 
-template <>
-inline size_t get_array_hash<data_type_t>(
-        size_t seed, const data_type_t *v, int size) {
-    for (int i = 0; i < size; i++) {
-        seed = hash_combine(seed, static_cast<size_t>(v[i]));
-    }
-    return seed;
-}
-
 } // namespace primitive_hashing
 } // namespace impl
 } // namespace dnnl

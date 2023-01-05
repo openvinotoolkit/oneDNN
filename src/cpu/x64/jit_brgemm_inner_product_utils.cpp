@@ -974,10 +974,10 @@ status_t init_ip_conf(cpu_isa_t isa, jit_brgemm_primitive_conf_t &jbgp,
         // TODO: generalize this.
         if (jbgp.weights_compressed) {
             jbgp.weights_compressed = true;
-            jbgp.weight_comp_bitmask_off = jbgp.ic * jbgp.oc;
             int total_blocks = (jbgp.oc * jbgp.ic) / 4096;
             jbgp.weights_starting_offset
                     = ceil((float)total_blocks * 2 / 64.0) * 64;
+            jbgp.weight_comp_bitmask_off = jbgp.weights_starting_offset + jbgp.ic * jbgp.oc;
         }
     } else if (is_bf16) {
         jbgp.acc_dt = f32;
@@ -1181,6 +1181,12 @@ void init_scratchpad(memory_tracking::registrar_t &scratchpad,
             || jbgp.isa == avx512_core_bf16_amx_bf16)
         scratchpad.book(key_conv_amx_tile_buffer,
                 (size_t)jbgp.nthr * jbgp.amx_buf_size_per_thread, sizeof(char));
+
+    if (jbgp.weights_compressed) {
+        scratchpad.book(key_brgemm_primitive_decomp_buf,
+                (size_t)jbgp.nthr * jbgp.ic * 64,
+                types::data_type_size(jbgp.wei_dt));
+    }
 }
 
 } // namespace brgemm_inner_product_utils

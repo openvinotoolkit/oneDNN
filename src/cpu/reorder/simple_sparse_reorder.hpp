@@ -112,7 +112,7 @@ struct simple_sparse_reorder_impl<SIMPLE_SPARSE_REORDER_TEMPL_CALL,
 
     static status_t execute(const cpu_reorder_pd_t *pd, const exec_ctx_t &ctx) {
         auto input = CTX_IN_MEM(const data_t<type_i> *, DNNL_ARG_FROM);
-        auto output = CTX_OUT_SPARSE_MEM(data_t<type_o> *, DNNL_ARG_TO, 0);
+        auto output = CTX_OUT_MEM(data_t<type_o> *, DNNL_ARG_TO);
 
         const auto input_d = ctx.memory_mdw(DNNL_ARG_FROM, pd->src_md());
         const auto output_d = ctx.memory_mdw(DNNL_ARG_TO, pd->dst_md());
@@ -131,7 +131,6 @@ struct simple_sparse_reorder_impl<SIMPLE_SPARSE_REORDER_TEMPL_CALL,
         const int plain_i_stride = input_d.blocking_desc().strides[1];
         size_t offset = padded_dims[0] * padded_dims[1];
 
-        uint64_t *bitmask_ptr = reinterpret_cast<uint64_t *>(output + offset);
         int total_blocks = offset / 4096;
         int16_t *comp_tile_len_ptr = reinterpret_cast<int16_t *>(output);
         int comp_tile_len_index = 0;
@@ -139,6 +138,9 @@ struct simple_sparse_reorder_impl<SIMPLE_SPARSE_REORDER_TEMPL_CALL,
         // TODO: why 2 / 64?
         // Wasting memory space due to allocation a buffer for the whole tensor?
         int output_offset = ceil((float)total_blocks * 2 / 64.0);
+
+        size_t offset_2 = static_cast<size_t>(ceil((float)total_blocks * 2 / 64.0)) * 64;
+        uint64_t *bitmask_ptr = reinterpret_cast<uint64_t *>(output + offset + offset_2);
 
         auto outp = &output[output_d.blk_off(0, 0, 0, 0) + output_offset * 64];
 

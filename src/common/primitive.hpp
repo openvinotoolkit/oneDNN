@@ -194,19 +194,15 @@ private:
 
 #define CTX_IN_MEM(type, arg) \
     static_cast<const ARG_TYPE(type) *>(ctx.host_ptr(arg))
-#define CTX_IN_SPARSE_MEM(type, arg, idx) \
-    static_cast<const ARG_TYPE(type) *>(ctx.host_ptr(arg, idx))
 
 // Returns destination memory which may not have been zero pad initialized.
 #define CTX_OUT_MEM(type, arg) static_cast<ARG_TYPE(type) *>(ctx.host_ptr(arg))
-#define CTX_OUT_SPARSE_MEM(type, arg, idx) \
-    static_cast<ARG_TYPE(type) *>(ctx.host_ptr(arg, idx))
 
 // Returns destination memory which has been zero pad initialized. This macro
 // may result in a failure returned via the `status` input since zero pad
 // may fail.
 #define CTX_OUT_CLEAN_MEM(type, arg, status) \
-    static_cast<ARG_TYPE(type) *>(ctx.host_ptr(arg, 0, true, &status))
+    static_cast<ARG_TYPE(type) *>(ctx.host_ptr(arg, true, &status))
 
 #define CTX_IN_BATCH(arg) \
     ctx.input(arg) ? ctx.input(arg)->md()->ndims != 0 ? ctx.input(arg)->md()->dims[0] : 0 : 0

@@ -54,7 +54,6 @@ void copy_data_chunk(ker_type &ker, char *tr_data, const char *data,
     ctx.last_row_blk = is_last_blk ? 1 : 0;
     (*ker)(&ctx);
 }
-
 } // namespace
 
 template <cpu_isa_t isa>
@@ -98,6 +97,9 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
             ? ctx.get_scratchpad_grantor().template get<char>(
                     key_conv_amx_tile_buffer)
             : nullptr;
+    auto decomp_buf_global = (jbgp.weights_compressed)
+            ? scratchpad.template get<char>(key_brgemm_primitive_decomp_buf)
+            : nullptr;
 
     const int ic_chunks = div_up(jbgp.nb_ic, jbgp.nb_ic_blocking);
 
@@ -119,7 +121,7 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
 
     const auto ker = [&](int ithr_oc_mb, int nthr_oc_mb, int ithr_ic, int n,
                              int ocb, int icc, bool do_init, int buffer_a_osb,
-                             bool copy_buffer_a, int8_t *decomp_buf = nullptr) {
+                             bool copy_buffer_a) {
         const int ithr = nthr_oc_mb * ithr_ic + ithr_oc_mb;
         auto addr_batch = addr_batch_global + ithr * jbgp.adjusted_batch_size;
 
@@ -208,7 +210,10 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                                             [compressed_weights_offset]
                                     * 64;
                     dcomp_params.bitmask_ptr
-                            = weights + (jbgp.oc * jbgp.ic) + wei_offset / 8;
+                            = weights + jbgp.weight_comp_bitmask_off + wei_offset / 8;
+                    const size_t decomp_buf_per_thr = (size_t)jbgp.ic * 64;
+                    auto decomp_buf = decomp_buf_global + ithr * decomp_buf_per_thr;
+
                     dcomp_params.scratch_buf = decomp_buf;
                     (*brg_decomp_kernel_)(&dcomp_params);
                     addr_batch[b].ptr.B = decomp_buf;
@@ -329,16 +334,6 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
         if (is_amx)
             amx_tile_configure(&brg_kernel_palettes_[base_brg_ker_idx][0]);
 
-        // TODO: use scratchpad.
-        const size_t decomp_buffer_size = (size_t)jbgp.ic * 64;
-#ifdef _WIN32
-        // [av] WA: use scratchpad
-        std::vector<int8_t> decomp_vec(decomp_buffer_size);
-        auto decomp_buf = decomp_vec.data();
-#else
-        alignas(64) int8_t decomp_buf[decomp_buffer_size];
-#endif
-
         int occ {0}, osc {0};
         nd_iterator_init(start, osc, os_chunks, occ, oc_chunks);
         while (start < end) {
@@ -370,7 +365,7 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                 const bool copy_buffer_a = jbgp.use_buffer_a
                         && IMPLICATION(ocb_inner_most, ocb == 0);
                 ker(ithr_oc_mb, nthr_oc_mb, ithr_ic, n, ocb + ocb_s, cur_icc,
-                        cur_icc == icc_start, osb, copy_buffer_a, decomp_buf);
+                        cur_icc == icc_start, osb, copy_buffer_a);
 
                 ++loop_start;
                 if (ocb_inner_most)
@@ -491,6 +486,7 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
             }
         });
     }
+
     return status::success;
 }
 

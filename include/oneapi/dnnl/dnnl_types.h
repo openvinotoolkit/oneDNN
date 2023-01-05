@@ -1823,38 +1823,12 @@ typedef struct {
 typedef enum {
     dnnl_sparse_encoding_undef = 0,
     dnnl_sparse_encoding_any,
-    dnnl_sparse_encoding_csr,
-    dnnl_sparse_encoding_csc,
-    dnnl_sparse_encoding_bcsr,
-    dnnl_sparse_encoding_bcsc,
     dnnl_sparse_encoding_packed,
 } dnnl_sparse_encoding_t;
-
-/// Maximum number of types for metadata.
-#define DNNL_MAX_METADATA_TYPES 12
 
 typedef struct {
     /// Specifies what encoding is used.
     dnnl_sparse_encoding_t encoding;
-    /// Order of dimensions. E.g. for CSR it's [0, 1], for CSC [1, 0].
-    dnnl_dims_t dims_order;
-    /// Number of non-zero entries.
-    dnnl_dim_t nnze;
-    /// Metadata types. Each encoding defines how to interpret these.
-    dnnl_data_type_t metadata_types[DNNL_MAX_METADATA_TYPES];
-    /// Dimensions of an entry. For example: 1x1 for CSR/CSC or MxN for
-    /// BCSR/BCSC.
-    dnnl_dim_t entry_dims[2];
-
-    /// Section that describes sparsity pattern.
-    ///
-    /// Number of dimensions of a structure block. When ndims is 0 then sparsity
-    /// pattern is considered unstructured.
-    int structure_ndims;
-    /// Dimensions of a structure block.
-    dnnl_dim_t structure_dims[2];
-    /// Number of non-zero elements per-dimension.
-    dnnl_dim_t structure_nnz[2];
     /// Descriptor for blocked bitmask - opaque.
     dnnl_blocking_desc_t packed_desc;
 } dnnl_sparse_desc_t;

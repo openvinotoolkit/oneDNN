@@ -1212,10 +1212,6 @@ const char *dnnl_alg_kind2str(dnnl_alg_kind_t v) {
 const char *dnnl_sparse_encoding2str(dnnl_sparse_encoding_t v) {
     if (v == dnnl_sparse_encoding_undef) return "undef";
     if (v == dnnl_sparse_encoding_any) return "any";
-    if (v == dnnl_sparse_encoding_csr) return "sparse_encoding_csr";
-    if (v == dnnl_sparse_encoding_csc) return "sparse_encoding_csc";
-    if (v == dnnl_sparse_encoding_bcsr) return "sparse_encoding_bcsr";
-    if (v == dnnl_sparse_encoding_bcsc) return "sparse_encoding_bcsc";
     if (v == dnnl_sparse_encoding_packed) return "sparse_encoding_packed";
     assert(!"unknown sparse_encoding");
     return "unknown sparse_encoding";
