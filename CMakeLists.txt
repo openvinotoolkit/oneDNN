@@ -57,7 +57,7 @@ set(PROJECT_VERSION "3.10.2")
 project(${PROJECT_NAME} VERSION "${PROJECT_VERSION}" LANGUAGES C CXX)
 
 if (NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
-    message(FATAL_ERROR "oneDNN supports 64 bit platforms only")
+    message(WARNING "oneDNN officially supports 64 bit platforms only")
 endif()
 
 # Set the target architecture.
