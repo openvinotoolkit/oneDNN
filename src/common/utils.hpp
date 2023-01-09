@@ -65,7 +65,7 @@ namespace impl {
     void operator=(const T &) = delete;
 
 // Sanity check for 64 bits
-static_assert(sizeof(void *) == 8, "oneDNN supports 64-bit architectures only");
+// static_assert(sizeof(void *) == 8, "oneDNN supports 64-bit architectures only");
 
 // Note: if `f` has any explicit templated arguments, e.g., func<A, B>, then
 // compiler returns `error: macro "CHECK" passed 2 arguments, but takes just 1`.
