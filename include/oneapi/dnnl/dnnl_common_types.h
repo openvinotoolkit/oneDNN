@@ -89,6 +89,8 @@ typedef enum {
     dnnl_f64 = 7,
     /// 1-bit integer.
     dnnl_bin = 8,
+    /// 64-bit signed integer.
+    dnnl_s64 = 9,
     /// Parameter to allow internal only data_types without undefined behavior.
     /// This parameter is chosen to be valid for so long as sizeof(int) >= 2.
     dnnl_data_type_max = 0x7fff,

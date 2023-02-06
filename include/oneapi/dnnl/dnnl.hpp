@@ -864,6 +864,8 @@ struct memory : public handle<dnnl_memory_t> {
         f64 = dnnl_f64,
         /// 32-bit signed integer.
         s32 = dnnl_s32,
+        /// 64-bit signed integer.
+        s64 = dnnl_s64,
         /// 8-bit signed integer.
         s8 = dnnl_s8,
         /// 8-bit unsigned integer.
