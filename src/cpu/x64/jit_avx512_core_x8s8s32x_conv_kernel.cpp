@@ -1472,10 +1472,6 @@ status_t jit_avx512_core_x8s8s32x_fwd_kernel::init_conf(jit_conv_conf_t &jcp,
     jcp.isa = mayiuse(avx512_core_bf16) ? avx512_core_bf16
                                         : bf16_emulation_t::get_isa();
 
-    if (jcp.is_depthwise && is_3d)
-        // NOTE: 3D depthwise is not currently supported here.
-        return status::unimplemented;
-
     jcp.with_input_zp = !attr.input_zero_points_.has_default_values();
     jcp.with_weights_zp = !attr.weights_zero_points_.has_default_values();
 
