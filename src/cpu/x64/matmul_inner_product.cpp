@@ -207,6 +207,26 @@ status_t matmul_inner_product_fwd_t::pd_t::init_matmul_params(
         }
     } else {
         mm_wei_tag = format_tag::any;
+        const auto weights_size = static_cast<size_t>(OC())
+            * static_cast<size_t>(IC_total())
+            * types::data_type_size(weights_md()->data_type);
+        const bool has_spatial = KD() + KH() + KW() > 3;
+        if (weights_size >= 8 * (1 << 20)
+            && weights_md()->data_type == data_type::bf16
+            && src_md()->data_type == data_type::bf16
+            && mayiuse(avx512_core_amx)
+            && (!has_spatial || IC() % 32 == 0))
+            mm_wei_tag = BA16a32b2a;
+        else if (weights_size >= 16 * (1 << 20)
+            && utils::everyone_is(data_type::f32, src_md()->data_type,
+                weights_md()->data_type, dst_md()->data_type)
+            && attr()->fpmath_.mode_ == fpmath_mode::strict) {
+            if (mayiuse(avx512_core) && (!has_spatial || IC() % 16 == 0))
+            mm_wei_tag = BA16a64b;
+            else if (!mayiuse(avx512_core) && mayiuse(avx2)
+                && (!has_spatial || IC() % 8 == 0))
+            mm_wei_tag = BA8a24b;
+        }
     }
 
     VDISPATCH_INNER_PRODUCT(mm_wei_tag != format_tag::undef,
@@ -265,11 +285,19 @@ status_t matmul_inner_product_fwd_t::pd_t::init_matmul_params(
                 weights_md(1)->data_type, format_tag::ab));
     }
 
-    VDISPATCH_INNER_PRODUCT_SC(
-            create_matmul_pd(matmul_pd_, engine, &mm_src_md, &mm_wei_md,
-                    &mm_dst_md, with_bias() ? &mm_bia_md : nullptr, nullptr,
-                    &matmul_attr),
-            VERBOSE_PRIMITIVE_CREATION_FAIL, "matmul");
+        auto matmul_status = create_matmul_pd(matmul_pd_, engine, &mm_src_md,
+            &mm_wei_md, &mm_dst_md, with_bias() ? &mm_bia_md : nullptr,
+            nullptr, &matmul_attr);
+        if (matmul_status == status::unimplemented
+            && weights_md()->format_kind == format_kind::any
+            && mm_wei_tag != format_tag::any) {
+        CHECK(init_matmul_md(mm_wei_md, *weights_md(), format_tag::any, true));
+        matmul_status = create_matmul_pd(matmul_pd_, engine, &mm_src_md,
+            &mm_wei_md, &mm_dst_md, with_bias() ? &mm_bia_md : nullptr,
+            nullptr, &matmul_attr);
+        }
+        VDISPATCH_INNER_PRODUCT_SC(
+            matmul_status, VERBOSE_PRIMITIVE_CREATION_FAIL, "matmul");
 
     // Try to initialize Inner Product weights layout based on the MatMul's one.
     if (weights_md()->format_kind == format_kind::any) {
