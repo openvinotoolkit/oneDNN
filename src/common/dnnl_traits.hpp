@@ -63,6 +63,10 @@ struct prec_traits<data_type::s32> {
     typedef int32_t type;
 };
 template <>
+struct prec_traits<data_type::s64> {
+    typedef int64_t type;
+};
+template <>
 struct prec_traits<data_type::s8> {
     typedef int8_t type;
 };
@@ -94,6 +98,10 @@ struct data_traits<float> {
 template <>
 struct data_traits<int32_t> {
     static constexpr data_type_t data_type = data_type::s32;
+};
+template <>
+struct data_traits<int64_t> {
+    static constexpr data_type_t data_type = data_type::s64;
 };
 template <>
 struct data_traits<int8_t> {

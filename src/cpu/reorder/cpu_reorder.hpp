@@ -76,6 +76,7 @@ extern const impl_list_map_t &regular_f32_u8_impl_list_map();
 extern const impl_list_map_t &regular_f32_bin_impl_list_map();
 extern const impl_list_map_t &regular_bf16_impl_list_map();
 extern const impl_list_map_t &regular_f16_impl_list_map();
+extern const impl_list_map_t &regular_s64_impl_list_map();
 extern const impl_list_map_t &regular_s32_impl_list_map();
 extern const impl_list_map_t &regular_s8_impl_list_map();
 extern const impl_list_map_t &regular_u8_impl_list_map();
