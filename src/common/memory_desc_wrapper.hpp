@@ -451,6 +451,12 @@ struct memory_desc_wrapper : public c_compatible {
         return memory_desc_matches_tag(*md_, tag);
     }
 
+    /** returns true if the memory desc corresponds to the given format tag and
+     * strides.
+     * @sa memory_desc_matches_tag */
+    bool matches_tag(format_tag_t tag, const dims_t strides) const {
+        return memory_desc_matches_tag(*md_, tag, strides);
+    }
     /** returns matching tag (or undef if match is not found)
      * XXX: This is a workaround that eventually should go away! */
     template <typename... Tags>
@@ -459,6 +465,21 @@ struct memory_desc_wrapper : public c_compatible {
             if (memory_desc_matches_tag(*md_, tag)) return tag;
         }
         return format_tag::undef;
+    }
+
+    /** returns matching tag (or undef if match is not found) with taking into
+     *  account strides specified outside */
+    template<typename ...Tags>
+    dnnl_format_tag_t stride_relaxed_matches_any_of(const dims_t &strides, Tags... tags) const {
+        for (const auto &tag : {tags...})
+            if (matches_tag(tag, strides)) return tag;
+        return format_tag::undef;
+    }
+
+    template<typename ...Tags>
+    dnnl_format_tag_t mb_stride_relaxed_match(Tags... tags) const {
+        const dims_t skip_mb_stride{-1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+        return stride_relaxed_matches_any_of(skip_mb_stride, tags...);
     }
 
     /* offset section */
