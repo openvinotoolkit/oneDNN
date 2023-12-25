@@ -1077,6 +1077,7 @@ public:
 			base_ = r;
 		}
 	}
+	XBYAK_CONSTEXPR RegExp(const RegExp& rhs) : base_(rhs.base_), index_(rhs.index_), scale_(rhs.scale_), disp_(rhs.disp_), label_(rhs.label_), rip_(rhs.rip_), asPtr_(rhs.asPtr_) { }
 	RegExp(Label& label);
 
 	// can't use constexpr to const void *
