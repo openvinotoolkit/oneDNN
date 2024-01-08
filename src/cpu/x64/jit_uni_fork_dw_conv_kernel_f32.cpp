@@ -817,7 +817,7 @@ void jit_uni_fork_dw_conv_fwd_kernel_f32<isa>::generate() {
     Label exit_label;
 
     int ch_blocks_tail = jcp.nb_ch % jcp.nb_ch_blocking;
-    if (isa & avx512_core_bit) {
+    if (static_cast<unsigned>(isa) & avx512_core_bit) {
         const auto oc_tail = jcp.oc_without_padding % jcp.ch_block;
         if (oc_tail != 0) {
             // Prepare masks for tailing
