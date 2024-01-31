@@ -27,6 +27,8 @@ namespace impl {
 namespace cpu {
 namespace x64 {
 
+#define avx512_gemm_available() false
+
 int jit_avx2_kernel_sgemm_kern::next_acc(int idx, int um, int un) const {
     while (!(((idx / unroll_n_) < std::max(1, um / nelt_per_vecreg_))
             || ((idx % unroll_n_) < un)))
@@ -36,7 +38,7 @@ int jit_avx2_kernel_sgemm_kern::next_acc(int idx, int um, int un) const {
 
 void jit_avx2_kernel_sgemm_kern::prefetchB_beforeBload(
         int um, int un, int k_idx, int n_idx) {
-    if (!mayiuse(avx512_core)) {
+    if (!avx512_gemm_available()) {
         if ((n_idx == 0) && (k_idx == 0) && (un == unroll_n_) && (um != 16)) {
             prefetcht0(ptr[BO_ + elt_size_ * (PREFETCHSIZEB_ + offb_)]);
             offb_ += 16;
@@ -46,7 +48,7 @@ void jit_avx2_kernel_sgemm_kern::prefetchB_beforeBload(
 
 void jit_avx2_kernel_sgemm_kern::prefetchB_beforeFMA(
         int um, int un, int k_idx, int n_idx, int m_idx) {
-    if (!mayiuse(avx512_core)) {
+    if (!avx512_gemm_available()) {
         if ((um == 16) || (un < unroll_n_)) {
             if ((k_idx + m_idx + n_idx) == 0) {
                 prefetcht0(ptr[BO_ + elt_size_ * (PREFETCHSIZEB_ + offb_)]);
@@ -63,7 +65,7 @@ void jit_avx2_kernel_sgemm_kern::prefetchB_beforeFMA(
 
 void jit_avx2_kernel_sgemm_kern::prefetchA_afterFMA(
         int um, int un, int k_idx, int n_idx, int m_idx) {
-    if (mayiuse(avx512_core)) {
+    if (avx512_gemm_available()) {
         if ((um < unroll_m_) && (m_idx == 0)) {
             if (((k_idx % (nb_zmm_a_ / unroll_m_reg_) == 0) && (n_idx % 6 == 0))
                     || ((k_idx % (nb_zmm_a_ / unroll_m_reg_) == 1)
@@ -87,7 +89,7 @@ void jit_avx2_kernel_sgemm_kern::prefetchA_afterFMA(
 
 void jit_avx2_kernel_sgemm_kern::prefetchA_afterBload(
         int um, int un, int k_idx, int n_idx) {
-    if (!mayiuse(avx512_core)) {
+    if (!avx512_gemm_available()) {
         if ((um == unroll_m_) && (un == 2)) {
             if (k_idx % 3 == 0) {
                 if (n_idx == 1) {
@@ -111,7 +113,7 @@ void jit_avx2_kernel_sgemm_kern::prefetchA_afterBload(
 
 void jit_avx2_kernel_sgemm_kern::prefetchB_afterFMA(
         int k_idx, int n_idx, int m_idx) {
-    if (mayiuse(avx512_core)) {
+    if (avx512_gemm_available()) {
         if (((m_idx + (k_idx % (nb_zmm_a_ / unroll_m_reg_)) * unroll_m_reg_)
                     == 0)
                 && (n_idx == 1)) {
@@ -126,7 +128,7 @@ void jit_avx2_kernel_sgemm_kern::prefetchB_afterFMA(
 
 void jit_avx2_kernel_sgemm_kern::prefetchA_beforeFMA(
         int um, int un, int k_idx, int n_idx, int m_idx) {
-    if (!mayiuse(avx512_core)) {
+    if (!avx512_gemm_available()) {
         if ((um == unroll_m_) && (un == unroll_n_)) {
             if (((k_idx == 0) && (n_idx % 2 == 1) && (m_idx == 0))
                     || ((k_idx == 1) && (n_idx == 2) && (m_idx == 0))
@@ -160,7 +162,7 @@ void jit_avx2_kernel_sgemm_kern::prefetchA_beforeFMA(
 
 void jit_avx2_kernel_sgemm_kern::prefetchC_afterBload(
         int um, int un, int k_idx, int n_idx) {
-    if (mayiuse(avx512_core)) {
+    if (avx512_gemm_available()) {
         if (um == unroll_m_) {
             if (n_idx == std::min(1, un - 1)) {
                 if (k_idx == unroll_k_ - 1)
@@ -173,7 +175,7 @@ void jit_avx2_kernel_sgemm_kern::prefetchC_afterBload(
 }
 
 void jit_avx2_kernel_sgemm_kern::prefetchC_beforeKloop(int um) {
-    if (mayiuse(avx512_core)) {
+    if (avx512_gemm_available()) {
         if (um < unroll_m_) {
             prefetchw(ptr[CO2_ + elt_size_ * 0]);
             prefetchw(ptr[CO2_ + elt_size_ * 8]);
@@ -228,7 +230,7 @@ void jit_avx2_kernel_sgemm_kern::generate() {
     mov(C_, ptr[rsp + get_size_of_abi_save_regs() + C_off]);
     mov(LDC_, ptr[rsp + get_size_of_abi_save_regs() + LDC_off]);
 
-    if (mayiuse(avx512_core)) {
+    if (avx512_gemm_available()) {
         for (i = zmm_acc_idx_; i < unroll_m_reg_ * unroll_n_ + zmm_acc_idx_;
                 i++)
             vpxorq(Xbyak::Zmm(i), Xbyak::Zmm(i), Xbyak::Zmm(i));
@@ -267,7 +269,7 @@ void jit_avx2_kernel_sgemm_kern::generate() {
         add(AA_, A_);
         mov(CO1_, C_);
 
-        if ((unroll_x == unroll_m_) || (!mayiuse(avx512_core)))
+        if ((unroll_x == unroll_m_) || (!avx512_gemm_available()))
             lea(CO2_, ptr[C_ + LDC_ * 2]);
 
         add(C_, unroll_x * elt_size_);
@@ -292,12 +294,12 @@ void jit_avx2_kernel_sgemm_kern::generate() {
                             T_NEAR);
             }
 
-            if (!mayiuse(avx512_core))
+            if (!avx512_gemm_available())
                 prefetcht2(ptr[AA_ - addr_off_ * elt_size_]);
 
             switch (unroll_x) {
                 case 8:
-                    if (mayiuse(avx512_core)) {
+                    if (avx512_gemm_available()) {
                         loop<Xbyak::Zmm, Xbyak::Zmm, Xbyak::Address, Xbyak::Xmm,
                                 Xbyak::Operand>(unroll_x, unroll_y,
                                 &Xbyak::CodeGenerator::vbroadcastf64x4,
@@ -319,7 +321,7 @@ void jit_avx2_kernel_sgemm_kern::generate() {
 
                     break;
                 case 4:
-                    if (mayiuse(avx512_core)) {
+                    if (avx512_gemm_available()) {
                         loop<Xbyak::Zmm, Xbyak::Ymm, Xbyak::Address, Xbyak::Xmm,
                                 Xbyak::Operand>(unroll_x, unroll_y,
                                 &Xbyak::CodeGenerator::vbroadcastf32x4,
@@ -340,7 +342,7 @@ void jit_avx2_kernel_sgemm_kern::generate() {
 
                     break;
                 case 2:
-                    if (mayiuse(avx512_core)) {
+                    if (avx512_gemm_available()) {
                         loop<Xbyak::Zmm, Xbyak::Ymm, Xbyak::Operand, Xbyak::Xmm,
                                 Xbyak::Operand>(unroll_x, unroll_y,
                                 &Xbyak::CodeGenerator::vbroadcastsd,
@@ -357,7 +359,7 @@ void jit_avx2_kernel_sgemm_kern::generate() {
                             &Xbyak::CodeGenerator::vmovsd);
                     break;
                 case 1:
-                    if (mayiuse(avx512_core)) {
+                    if (avx512_gemm_available()) {
                         loop<Xbyak::Zmm, Xbyak::Xmm, Xbyak::Operand, Xbyak::Xmm,
                                 Xbyak::Operand>(unroll_x, unroll_y,
                                 &Xbyak::CodeGenerator::vbroadcastss,
@@ -377,7 +379,7 @@ void jit_avx2_kernel_sgemm_kern::generate() {
 
                     break;
                 default:
-                    if (mayiuse(avx512_core)) {
+                    if (avx512_gemm_available()) {
                         loop<Xbyak::Zmm, Xbyak::Xmm, Xbyak::Operand, Xbyak::Xmm,
                                 Xbyak::Operand>(unroll_x, unroll_y,
                                 &Xbyak::CodeGenerator::vmovups,
@@ -400,7 +402,7 @@ void jit_avx2_kernel_sgemm_kern::generate() {
                     break;
             }
 
-            if (mayiuse(avx512_core)) {
+            if (avx512_gemm_available()) {
                 sub(AA_, -16 * elt_size_);
             } else {
                 if ((unroll_y != unroll_n_) || (unroll_x <= 4)) {

@@ -266,7 +266,7 @@ static inline int thread_checker(
         }
 #if DNNL_CPU_RUNTIME == DNNL_RUNTIME_THREADPOOL
         if (is_f32) {
-            static const bool is_avx2 = mayiuse(avx2) && !mayiuse(avx512_core);
+            static const bool is_avx2 = mayiuse(avx2) && !avx512_gemm_available();
             static auto l2_cache_per_thread
                     = platform::get_per_core_cache_size(2);
             static int n_cores_per_socket

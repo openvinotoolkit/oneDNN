@@ -42,7 +42,7 @@ bool pack_sgemm_supported() {
 }
 
 bool pack_gemm_bf16bf16f32_supported() {
-    return mayiuse(avx512_core);
+    return avx512_gemm_available();
 }
 
 #if USE_MKL_PACKED_GEMM
@@ -84,7 +84,7 @@ static inline bool use_reference_igemm(void) {
     if (is_s8u8)
         return !mayiuse(sse41);
     else
-        return !mayiuse(avx512_core);
+        return !avx512_gemm_available();
 }
 
 #else
