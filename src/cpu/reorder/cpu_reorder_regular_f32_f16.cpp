@@ -28,7 +28,7 @@ const impl_list_map_t &regular_f32_f16_impl_list_map() {
         {{f32, f16, 0}, {
             DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64_jit_blk_reorder_t))
             DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64_jit_uni_reorder_t))
-
+            REG_SR(f32, any, f16, any, fmt_order_any, spec_reference)
             nullptr,
         }},
     });
