@@ -131,8 +131,12 @@ status_t deconv_desc_init(deconvolution_desc_t *deconv_desc,
         dim_t ker_range = 1 + (ker - 1) * (dil + 1);
 
         VCHECK_DECONV(str > 0, VERBOSE_BAD_DIM, "strides", i - 2);
-        VCHECK_DECONV(dil >= 0 && pad_l >= 0 && pad_r + str > 0,
-                VERBOSE_INCONSISTENT_PRB);
+        // VCHECK_DECONV(dil >= 0 && pad_l >= 0 && pad_r + str > 0,
+        //         VERBOSE_INCONSISTENT_PRB);
+        //WA: OV has feature to set output shape, which would cause specified output space dims are larger than deconv actural space dims.
+        //    Need to extra padding on the space dims. pad_r < 0 && pad_r + str <=0 in these test cases.
+        VCHECK_DECONV(dil >= 0 && pad_l >= 0,
+                    VERBOSE_INCONSISTENT_PRB);
         VCHECK_DECONV((dst - ker_range + pad_l + pad_r) / str + 1 == src,
                 VERBOSE_INCONSISTENT_PRB);
     }
