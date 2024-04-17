@@ -3975,37 +3975,56 @@ typename std::enable_if<!(std::is_same<T, Xbyak::Zmm>::value
         || std::is_same<T, Xbyak::Address>::value)>::type
 jit_uni_binary_injector_t<isa, Vmm>::execute_prelu_binary(
         const Vmm &dst, const Vmm &lhs, const T &rhs) const {
-    int aux0_idx
-            = static_cast<int>(rhs_arg_static_params_.rhs_prelu_helper_vmm_idx);
-
-    if (isa == sse41) {
-        assert(dst.getIdx() != aux0_idx && "conflict mask register");
+    if (is_superset(isa, avx)) {
+        host_->uni_vmulps(rhs, rhs, lhs);
+        host_->uni_vblendvps(dst, lhs, rhs, lhs);
     } else {
-        bool changed;
-        do {
-            changed = false;
-            if (aux0_idx == dst.getIdx()) {
-                aux0_idx = (aux0_idx + 1) % 16;
-                changed = true;
-            }
-            if (aux0_idx == lhs.getIdx()) {
-                aux0_idx = (aux0_idx + 1) % 16;
-                changed = true;
-            }
-            if (aux0_idx == rhs.getIdx()) {
-                aux0_idx = (aux0_idx + 1) % 16;
-                changed = true;
-            }
-        } while (changed);
-    }
-    const Vmm vmm_aux0 = Vmm(aux0_idx);
+        using dnnl::impl::utils::one_of;
+        // in sse4 vmm_aux0 as mask it's index must be 0
+        Vmm vmm_aux0 = Vmm(rhs_arg_static_params_.rhs_prelu_helper_vmm_idx);
+        if (one_of(vmm_aux0, dst, lhs, rhs)) {
+            //let's find a vacant XMM register
+            int occupied_idices[] = {dst.getIdx(), lhs.getIdx(), rhs.getIdx()};
 
-    push_vmm(host_, vmm_aux0);
-    host_->uni_vmulps(rhs, rhs, lhs);
-    host_->vpxor(vmm_aux0, vmm_aux0, vmm_aux0);
-    host_->vcmpltps(vmm_aux0, lhs, vmm_aux0);
-    host_->uni_vblendvps(dst, lhs, rhs, vmm_aux0);
-    pop_vmm(host_, vmm_aux0);
+            int fixup_reg_indx = 14;
+            while (std::any_of(std::begin(occupied_idices),
+                           std::end(occupied_idices), [&](const int x) {
+                return x == fixup_reg_indx;
+            }) && --fixup_reg_indx > 0) {}
+            if (fixup_reg_indx < 0) assert(!"couldn't find a vacant XMM reg");
+
+            vmm_aux0 = Vmm(fixup_reg_indx);
+        }
+
+        push_vmm(host_, vmm_aux0);
+
+        auto swap_aux0 = [&](const Vmm &reg) {
+            Vmm vmm(reg.getIdx());
+            host_->vmovups(vmm_aux0, vmm);
+            std::swap(vmm_aux0, vmm);
+            return vmm;
+        };
+
+        const auto aux_orig_indx = vmm_aux0.getIdx();
+        // if XMM0 is occupied, we swap XMM0 with vmm_aux0 to use XMM0 as the mask register
+        const auto &dst_ = 0 == dst.getIdx() ? swap_aux0(dst) : dst;
+        const auto &lhs_ = 0 == lhs.getIdx() ? swap_aux0(lhs) : lhs;
+        const auto &rhs_ = 0 == rhs.getIdx() ? swap_aux0(rhs) : rhs;
+
+        host_->uni_vmulps(rhs_, rhs_, lhs_);
+        host_->vpxor(vmm_aux0, vmm_aux0, vmm_aux0);
+        host_->vcmpltps(vmm_aux0, lhs_, vmm_aux0);
+        host_->uni_vblendvps(dst_, lhs_, rhs_, vmm_aux0);
+
+        if (aux_orig_indx != 0) {
+            auto vmm_aux_orig = Vmm(aux_orig_indx);
+            host_->vmovups(
+                    vmm_aux0, vmm_aux_orig); // restore original Xmm0 value
+            std::swap(vmm_aux0, vmm_aux_orig);
+        }
+
+        pop_vmm(host_, vmm_aux0);
+    }
 }
 
 template <cpu_isa_t isa, typename Vmm>
