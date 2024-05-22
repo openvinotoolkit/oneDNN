@@ -2819,7 +2819,7 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(dim_t bd_block2,
                     vcvtneebf162ps(vmm_load, addr);
                 else
                     vcvtneobf162ps(vmm_load, addr);
-            } else if (utils::one_of(brg.isa_impl, avx512_core, avx2)) {
+            } else if (utils::one_of(brg.isa_impl, avx512_core, avx2) && brg.is_f32) {
                 // Upconvert: load 16 bits and move them 16 bits left.
                 uni_vpmovzxwd(vmm_load, addr);
                 uni_vpslld(vmm_load, vmm_load, 16);

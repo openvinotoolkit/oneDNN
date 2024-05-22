@@ -59,7 +59,7 @@ status_t init_kernel_datatype(
     brg->is_bf16 = (dt_a == data_type::bf16) && utils::one_of(dt_b, data_type::bf16, data_type::u8, data_type::s8, data_type::nf4, data_type::s4, data_type::u4);
     brg->is_f32 = (dt_a == data_type::f32)
             && utils::one_of(
-                    dt_b, data_type::f32, data_type::u8, data_type::s8, data_type::nf4, data_type::s4, data_type::u4);
+                    dt_b, data_type::f32, data_type::f16, data_type::bf16, data_type::u8, data_type::s8, data_type::nf4, data_type::s4, data_type::u4);
     brg->is_f16 = (dt_a == data_type::f16)
             && utils::one_of(dt_b, data_type::f32, data_type::f16);
     brg->is_fp8 = one_of(dt_a, data_type::f8_e5m2, data_type::f8_e4m3)
@@ -857,11 +857,10 @@ status_t brgemm_blocking_vmm(brgemm_desc_t *brg) {
 }
 
 status_t brgemm_blocking(brgemm_desc_t *brg) {
-    const bool is_vcvtph2ps_kernel = (brg->dt_b == data_type::f16 && brg->dt_a == data_type::f32);
     const bool is_b_in_vnni_format = !(brg->dt_b == data_type::f16 && brg->isa_impl == avx512_core_fp16) &&
                                      !(one_of(brg->dt_a, data_type::f32, data_type::bf16) &&
                                      one_of(brg->dt_b, data_type::u8, data_type::s8)) &&
-                                     !is_vcvtph2ps_kernel;
+                                     !(one_of(brg->dt_a, data_type::f32) && one_of(brg->dt_b, data_type::bf16, data_type::f16));
     brg->ld_step = is_b_in_vnni_format ? data_type_vnni_granularity(brg->dt_b) : 1;
     const bool has_no_vnni_compute_instruction
             = (brg->is_f16 && one_of(brg->isa_impl, avx2_vnni_2, avx512_core_fp16))
