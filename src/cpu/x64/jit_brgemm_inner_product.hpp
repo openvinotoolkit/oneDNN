@@ -61,8 +61,8 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
             auto dst_dt = invariant_dst_md()->data_type;
             auto wei_dt = invariant_wei_md()->data_type;
             const bool is_int8 = one_of(src_dt, u8, s8);
-            const bool is_wei_decomp = one_of(src_dt, f32, bf16) &&
-                                       one_of(wei_dt, u8, s8, nf4, s4, u4, f16);
+            const bool is_wei_decomp = (one_of(src_dt, f32, bf16) && one_of(wei_dt, u8, s8, nf4, s4, u4)) ||
+                                       (one_of(src_dt, f32) && one_of(wei_dt, f16, bf16));
 
             using skip_mask_t = primitive_attr_t::skip_mask_t;
             auto skip_mask = skip_mask_t::post_ops | skip_mask_t::sum_dt
@@ -122,8 +122,8 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
             const float beta = 1.0;
             const float beta_init = 0.0;
 
-            // f16 weight decompression doesn't need scales/zero-points which handles by normal brgemm kernel
-            bool brgemm_with_wei_decomp = is_wei_decomp && jbgp_.wei_decomp_algo == weights_decomp_kind_t::immediate && wei_dt != f16;
+            // f16/bf16 weights decompression doesn't need scales/zero-points which is handled by normal brgemm kernel
+            bool brgemm_with_wei_decomp = is_wei_decomp && jbgp_.wei_decomp_algo == weights_decomp_kind_t::immediate && !one_of(wei_dt, f16, bf16);
 
             for_(int i_bs = 0; i_bs < 2; i_bs++)
             for_(int i_init = 0; i_init < 2; i_init++)

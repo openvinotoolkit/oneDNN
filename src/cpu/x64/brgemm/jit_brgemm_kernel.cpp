@@ -2641,7 +2641,7 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(dim_t bd_block2,
                     vcvtneebf162ps(vmm_load, addr);
                 else
                     vcvtneobf162ps(vmm_load, addr);
-            } else if (utils::one_of(brg.isa_impl, avx512_core, avx2)) {
+            } else if (utils::one_of(brg.isa_impl, avx512_core, avx2) && brg.is_f32) {
                 // Upconvert: load 16 bits and move them 16 bits left.
                 uni_vpmovzxwd(vmm_load, addr);
                 uni_vpslld(vmm_load, vmm_load, 16);
@@ -2875,12 +2875,6 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(dim_t bd_block2,
                         }
                     }
 
-                    bool maybe_load_bytes = (rows_for_rd_tail > 0 || brg.brgattr.wary_A_k_tail_read)
-                            && is_rd_tail && rd_tail_size != 0 && (brg.is_bf16 || brg.is_int8);
-                    bool have_to_load_bytes
-                            = maybe_load_bytes && (rd == rd_loop - brg.rd_step);
-
-                    auto rows_by_load_bytes = have_to_load_bytes ? rows_for_rd_tail : 0;
                     for (int bd = bd_b; bd < bd_e; bd++) {
                         if (!is_emdbd) {
                             if (brg.dt_a == data_type::bf16) {
