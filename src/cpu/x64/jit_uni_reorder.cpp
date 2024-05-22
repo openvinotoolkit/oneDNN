@@ -197,7 +197,8 @@ struct jit_uni_reorder_kernel_f32_t : public kernel_t, public jit_generator_t {
                 && utils::everyone_is(0, p.ioff, p.ooff) /* do we need this? */
                 && utils::one_of(p.beta, 0.f, 1.f) /* anything else? */
                 && simple_impl_desc_init(p, nullptr) && mayiuse(sse41)
-                && IMPLICATION(utils::one_of(bf16, p.itype, p.otype),
+                && IMPLICATION(bf16 == p.itype, mayiuse(avx2))
+                && IMPLICATION((bf16 == p.otype) && (bf16 != p.itype),
                         mayiuse(avx512_core) || mayiuse(avx2_vnni_2))
                 && IMPLICATION(utils::one_of(f16, p.itype, p.otype),
                         mayiuse(avx512_core_fp16) || mayiuse(avx2))
@@ -1535,7 +1536,7 @@ struct jit_uni_reorder_kernel_f32_t : public kernel_t, public jit_generator_t {
         otype_sz_ = data_type_size(prb_.otype);
         stype_sz_ = sizeof(float);
         if (prb_.otype == data_type::bf16 && !mayiuse(avx512_core_bf16)
-                && !mayiuse(avx2_vnni_2)) {
+                && !mayiuse(avx2_vnni_2) && mayiuse(avx512_core)) {
             bf16_emu_ = utils::make_unique<bf16_emulation_t>(this,
                     bf16_emu_reserv_1_, bf16_emu_reserv_2_, bf16_emu_reserv_3_,
                     bf16_emu_scratch_, bf16_emu_reserv_4_);
