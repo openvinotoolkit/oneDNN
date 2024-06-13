@@ -471,10 +471,23 @@ void im2col_dt_3d(const conv_gemm_conf_t &jcp,
                     const int oh_end = saturate(0, jcp.oh, jcp.ih + tp - kh);
                     const int ow_start = saturate(0, jcp.ow, lp - kw);
                     const int ow_end = saturate(0, jcp.ow, jcp.iw + lp - kw);
+                    if (with_input_zp) {
+                        col_dt izp = with_input_zp ? (col_dt)input_zp[ic] : shift;
+                        for (int oh = 0; oh < oh_start; oh++) {
+                            col_dt *__restrict col_h = col_loc + oh * jcp.ow;
+                            for (ptrdiff_t i = 0; i < jcp.ow; i++) {
+                                col_h[i] = izp;
+                            }
+                        }
+                    }
                     for (int oh = oh_start, ih = oh_start - tp + kh;
                             oh < oh_end; oh++, ih++) {
                         col_dt *__restrict col_h = col_loc + oh * jcp.ow;
                         const im_dt *__restrict imtr_h = imtr_loc + ih * jcp.iw;
+                        for (int ow = 0; ow < ow_start; ow++) {
+                            col_dt izp = with_input_zp ? (col_dt)input_zp[ic] : shift;
+                            col_h[ow] = izp;
+                        }
                         for (int ow = ow_start, iw = ow_start - lp + kw;
                                 ow < ow_end; ow++, iw++) {
                             col_h[ow] = imtr_h[iw];
