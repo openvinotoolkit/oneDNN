@@ -2634,8 +2634,8 @@ struct memory : public handle<dnnl_memory_t> {
                     allow_empty);
         }
 
-        static sparse_desc packed(dim nnze, bool allow_empty = false) {
-            return sparse_desc(dnnl_sparse_encoding_packed, {}, nnze, {}, {},
+        static sparse_desc packed(bool allow_empty = false) {
+            return sparse_desc(dnnl_sparse_encoding_packed, {}, -1, {}, {},
                     {}, {}, allow_empty);
         }
 
