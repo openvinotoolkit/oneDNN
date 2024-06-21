@@ -24,6 +24,7 @@
 
 #include "bit_cast.hpp"
 #include "oneapi/dnnl/dnnl.h"
+#include "cpu/platform.hpp"
 
 namespace dnnl {
 namespace impl {
