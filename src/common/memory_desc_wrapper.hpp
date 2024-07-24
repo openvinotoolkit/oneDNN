@@ -426,8 +426,7 @@ struct memory_desc_wrapper : public c_compatible {
         if (utils::one_of(format_kind(), format_kind::undef, format_kind::any))
             return false;
         if (has_runtime_dims_or_strides() || has_broadcast()) return false;
-        return nelems(with_padding) * data_type_size()
-                / sub_byte_data_type_multiplier()
+        return utils::div_up(nelems(with_padding)* data_type_size(), sub_byte_data_type_multiplier())
                 == size(0, /* include_additional_size = */ false);
     }
 

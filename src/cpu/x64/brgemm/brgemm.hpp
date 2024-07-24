@@ -67,7 +67,9 @@ status_t DNNL_API brgemm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
         impl::data_type_t dt_b, bool transA, bool transB,
         brgemm_layout_t layout, float alpha, float beta, dim_t LDA, dim_t LDB,
         dim_t LDC, dim_t M, dim_t N, dim_t K,
-        const brgemm_strides_t *strides = nullptr, bool is_tf32 = false);
+        const brgemm_strides_t *strides = nullptr, bool is_tf32 = false,
+        bool is_weights_decompression = false, bool is_src_dynamic_quantization = false,
+        const memory_desc_t *wei_md = nullptr, const primitive_attr_t *attr = nullptr);
 
 /// Initializes a BRGEMM descriptor configured for batched matrix-vector
 /// multiplication.
@@ -150,7 +152,8 @@ status_t DNNL_API brdgmm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
 ///
 status_t DNNL_API brgemm_desc_set_postops(brgemm_desc_t *brg,
         const primitive_attr_t *attr, const memory_desc_t *dst_md, dim_t LDD,
-        impl::data_type_t dt_bias = impl::data_type::undef);
+        impl::data_type_t dt_bias = impl::data_type::undef,
+        bool is_weights_decompression = false);
 
 /// Adds BRGEMM attributes to BRGEMM descriptor
 ///
@@ -209,7 +212,9 @@ status_t DNNL_API brgemm_kernel_destroy(brgemm_kernel_t *brg_kernel);
 void DNNL_API brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
         const brgemm_batch_element_t *batch, void *ptr_C,
         void *scratch = nullptr,
-        const brgemm_dynamic_values_t *dynamic_values = nullptr);
+        const brgemm_dynamic_values_t *dynamic_values = nullptr,
+        const void *ptr_wei_scales = nullptr, const void *ptr_wei_zero_points = nullptr,
+        const void *ptr_src_scales = nullptr, size_t ic = 0);
 
 /// Execute BRGEMM kernel (brgemm_offs and brgemm_strd version)
 ///
@@ -237,7 +242,9 @@ void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
         const void *addr_A, const void *addr_B,
         const brgemm_batch_element_t *batch, void *ptr_C,
         void *scratch = nullptr,
-        const brgemm_dynamic_values_t *dynamic_values = nullptr);
+        const brgemm_dynamic_values_t *dynamic_values = nullptr,
+        const void *ptr_wei_scales = nullptr, const void *ptr_wei_zero_points = nullptr,
+        const void *ptr_src_scales = nullptr, size_t ic = 0);
 
 /// Execute BRGEMM kernel (brgemm_addr version)
 ///
@@ -264,7 +271,9 @@ void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
 void DNNL_API brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel,
         int bs, const brgemm_batch_element_t *batch, void *ptr_C, void *ptr_D,
         const brgemm_post_ops_data_t &post_ops_data, void *scratch = nullptr,
-        const brgemm_dynamic_values_t *dynamic_values = nullptr);
+        const brgemm_dynamic_values_t *dynamic_values = nullptr,
+        const void *ptr_wei_scales = nullptr, const void *ptr_wei_zero_points = nullptr,
+        const void *ptr_src_scales = nullptr, size_t ic = 0);
 
 /// Execute BRGEMM kernel (brgemm_offs and brgemm_strd version)
 ///
@@ -295,7 +304,9 @@ void DNNL_API brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel,
         int bs, const void *addr_A, const void *addr_B,
         const brgemm_batch_element_t *batch, void *ptr_C, void *ptr_D,
         const brgemm_post_ops_data_t &post_ops_data, void *scratch = nullptr,
-        const brgemm_dynamic_values_t *dynamic_values = nullptr);
+        const brgemm_dynamic_values_t *dynamic_values = nullptr,
+        const void *ptr_wei_scales = nullptr, const void *ptr_wei_zero_points = nullptr,
+        const void *ptr_src_scales = nullptr, size_t ic = 0);
 
 /// AMX utilities: Creates a palette based on BRGEMM descriptor
 ///

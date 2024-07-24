@@ -58,15 +58,22 @@ quant_entry_t quant_entry_t::deserialize(deserializer_t &d) {
 
 std::string quant_entry_t::get_verbose() const {
     std::string s;
-    s.append(std::to_string(mask_));
-    s.append(":").append(dnnl_dt2str(data_type_));
+    s.append(std::to_string(get_mask()));
+    s.append(":").append(dnnl_dt2str(get_data_type()));
+    s.append(":").append(std::to_string(type_));
+    s.append(":");
     if (group_ndims_ > 0) {
-        s.append(":")
-                .append(std::to_string(group_dims_[0]))
+                s.append(std::to_string(group_dims_[0]))
                 .append("x")
                 .append(std::to_string(group_dims_[1]));
     }
     if (is_host_scalar_) { s.append(":host_scalar"); }
+    s.append(":");
+    if (get_ndims() > 0) {
+            s.append(std::to_string(get_dims()[0]))
+            .append("x")
+            .append(std::to_string(get_dims()[1]));
+    }
     return s;
 }
 

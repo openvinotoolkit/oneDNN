@@ -186,6 +186,7 @@ size_t get_attr_hash(const primitive_attr_t &attr) {
         seed = hash_combine(
                 seed, get_md_hash(attr.dropout_.user_dropout_desc_));
     }
+    seed = hash_combine(seed, attr.src_dyn_quant_params_.get());
     // Combined hash for attributes
     return seed;
 }
