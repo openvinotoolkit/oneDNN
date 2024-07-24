@@ -103,6 +103,10 @@ template <> struct prec_traits_t<data_type::bin> {
     typedef uint8_t type;
 };
 
+template <> struct prec_traits_t<data_type::nf4> {
+    typedef uint8_t type;
+};
+
 template <>
 struct data_traits_t<float4_e3m0_t> {
     static constexpr data_type_t data_type = data_type::f4_e3m0;
