@@ -738,6 +738,7 @@ struct dnnl_primitive_attr : public dnnl::impl::c_compatible {
         input_zero_points_ = (other.input_zero_points_);
         weights_zero_points_ = (other.weights_zero_points_);
         output_compensations_ = (other.output_compensations_);
+        src_dyn_quant_params_ = other.src_dyn_quant_params_;
 
         return status::success;
     }
@@ -763,9 +764,10 @@ struct dnnl_primitive_attr : public dnnl::impl::c_compatible {
         fpmath_mode = 1u << 15,
         dropout = 1u << 16,
         rounding_mode = 1u << 17,
-        input_zero_points = 1 << 18,
-        weights_zero_points = 1 << 19,
-        output_compensations = 1 << 20,
+        input_zero_points = 1u << 18,
+        weights_zero_points = 1u << 19,
+        output_compensations = 1u << 20,
+        src_dyn_quant_params = 1u << 21,
     };
 
     /** Returns true if the attributes have default values.
@@ -795,7 +797,8 @@ struct dnnl_primitive_attr : public dnnl::impl::c_compatible {
                 && rounding_mode_ == rhs.rounding_mode_
                 && input_zero_points_ == rhs.input_zero_points_
                 && weights_zero_points_ == rhs.weights_zero_points_
-                && output_compensations_ == rhs.output_compensations_;
+                && output_compensations_ == rhs.output_compensations_
+                && src_dyn_quant_params_ == rhs.src_dyn_quant_params_;
         return ret;
     }
 
@@ -877,6 +880,8 @@ struct dnnl_primitive_attr : public dnnl::impl::c_compatible {
     dnnl::impl::legacy_zero_points_t input_zero_points_;
     dnnl::impl::legacy_zero_points_t weights_zero_points_;
     dnnl::impl::legacy_zero_points_t output_compensations_;
+
+    dnnl::impl::src_dyn_quant_params_t src_dyn_quant_params_;
 
     dnnl_primitive_attr &operator=(const dnnl_primitive_attr &other) = delete;
 };

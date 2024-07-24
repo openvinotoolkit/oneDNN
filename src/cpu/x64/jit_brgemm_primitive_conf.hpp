@@ -25,6 +25,11 @@ namespace impl {
 namespace cpu {
 namespace x64 {
 
+enum weights_decomp_kind_t {
+    immediate,
+    prepack,
+};
+
 struct jit_brgemm_primitive_conf_t {
     prop_kind_t prop_kind;
     conv_harness_t harness;
@@ -94,6 +99,20 @@ struct jit_brgemm_primitive_conf_t {
 
     // Compute foward weights oc-block.
     int get_weights_oc_block() const;
+
+    data_type_t orig_wei_dt;
+    weights_decomp_kind_t wei_decomp_algo;
+    bool weights_decompression;
+    bool with_grouped_weights_decompression;
+    size_t wei_scales_ic_group_size;
+    size_t wei_zero_points_ic_group_size;
+    size_t wei_decomp_scales_buffer_size;
+    size_t wei_decomp_zero_points_buffer_size;
+    data_type_t wei_decomp_zero_points_dt;
+
+    bool with_src_dynamic_quant;
+    size_t src_quant_group_size;
+    data_type_t orig_src_dt;
 };
 
 } // namespace x64

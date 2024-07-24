@@ -51,13 +51,13 @@ void init_kernel_datatype(
         brgemm_desc_t *brg, impl::data_type_t dt_a, impl::data_type_t dt_b) {
     assert(dt_a != data_type::undef && dt_b != data_type::undef);
     brg->is_int8 = utils::one_of(dt_a, data_type::u8, data_type::s8)
-            && utils::one_of(dt_b, data_type::u8, data_type::s8);
-    brg->is_bf16 = (dt_a == data_type::bf16) && (dt_b == data_type::bf16);
+            && utils::one_of(dt_b, data_type::u8, data_type::s8, data_type::u4);
+    brg->is_bf16 = (dt_a == data_type::bf16) && utils::one_of(dt_b, data_type::bf16, data_type::u8, data_type::s8, data_type::nf4, data_type::s4, data_type::u4);
     // Note: f32:bf16 is treated as f32 case while f32:f16 has already been
     // treated as f16. Probably, need a common ground here.
     brg->is_f32 = (dt_a == data_type::f32)
             && utils::one_of(
-                    dt_b, data_type::f32, data_type::bf16, data_type::f16);
+                    dt_b, data_type::f32, data_type::u8, data_type::s8, data_type::nf4, data_type::s4, data_type::u4);
     brg->is_f16 = utils::one_of(data_type::f16, dt_a, dt_b) && !brg->is_f32;
     brg->is_fp8 = one_of(dt_a, data_type::f8_e5m2, data_type::f8_e4m3)
             && one_of(dt_b, data_type::f8_e5m2, data_type::f8_e4m3);
@@ -273,8 +273,20 @@ int calculate_max_bcast_block(brgemm_desc_t *brg, const int adj_ld_block2) {
     auto store_max_bcast_block = store_max_reg_count / adj_ld_block2;
 
     // ------------ final calculation ------------
-    const auto max_bcast_block
+    auto max_bcast_block
             = nstl::min(microkernel_max_bcast_block, store_max_bcast_block);
+
+    // openvino extension
+    if (one_of(brg->dt_b, data_type::nf4) && brg->isa_impl == avx2) max_bcast_block -= 5;
+    if (one_of(brg->dt_b, data_type::nf4) && brg->isa_impl != avx2) max_bcast_block -= 1;
+    if (brg->with_wei_decomp_zero_points && brg->wei_decomp_zero_points_stride == 0) max_bcast_block -= 1;
+    if (brg->with_src_dyn_quant) max_bcast_block -= 2;
+    if (brg->with_src_dyn_quant && brg->with_wei_decomp_zero_points && brg->wei_decomp_zero_points_stride != 0) max_bcast_block -= adj_ld_block2;
+
+    max_bcast_block /= adj_ld_block2;
+    if (brg->with_src_dyn_quant) {
+        max_bcast_block /= 2;
+    }
 
     return max_bcast_block;
 }
@@ -690,6 +702,7 @@ status_t brgemm_blocking_vmm(brgemm_desc_t *brg) {
     // virtual padding
     int max_bcast_block {0}, min_bcast_block {0}, adj_ld_block2 {0};
     bool few_regs = utils::one_of(brg->isa_impl, avx2, avx2_vnni, avx2_vnni_2);
+    few_regs |= brg->with_src_dyn_quant;
     bool hint_n_bcast_1_load
             = brg->brgattr.hint_loop_order == brgemm_lo_bl_1load;
     for (int try_ld_block2 = 4; try_ld_block2 > 0; --try_ld_block2) {
@@ -728,11 +741,20 @@ status_t brgemm_blocking_vmm(brgemm_desc_t *brg) {
     brg->bdb = brg->bcast_dim / brg->bd_block;
     brg->bdb_tail = brg->bcast_dim % brg->bd_block;
 
-    const int rd_unroll = 4;
     const data_type_t rd_block_dt = get_mac_emu_data_type(
             brg->dt_a, brg->isa_impl, brg->isa_impl != avx2_vnni_2);
     if (rd_block_dt == dnnl_data_type_undef) return status::unimplemented;
-    const int vnni_granularity = data_type_vnni_granularity(rd_block_dt);
+    const int vnni_granularity
+            = (brg->is_f16 && brg->isa_impl == avx512_core_fp16)
+            ? 1
+            : data_type_vnni_granularity(brg->dt_a);
+    int rd_unroll = one_of(brg->dt_b, data_type::nf4, data_type::u4, data_type::s4) ? 32 : 4;
+    if (brg->with_grouped_wei_decomp) {
+        auto min_group_size = nstl::min(brg->wei_decomp_scales_group_size, brg->wei_decomp_zero_points_group_size);
+        min_group_size = nstl::min(min_group_size, brg->src_scales_group_size);
+        rd_unroll = nstl::min(rd_unroll, min_group_size / vnni_granularity);
+        rd_unroll = nstl::min(rd_unroll, min_group_size / vnni_granularity);
+    }
     brg->rd_block = rd_unroll * vnni_granularity;
     brg->rdb = brg->reduce_dim / brg->rd_block;
     brg->rdb_tail = brg->reduce_dim % brg->rd_block;
@@ -747,15 +769,23 @@ status_t brgemm_blocking_vmm(brgemm_desc_t *brg) {
 }
 
 status_t brgemm_blocking(brgemm_desc_t *brg) {
-    const data_type_t ld_step_compute_dt
-            = get_mac_emu_data_type(brg->dt_b, brg->isa_impl,
-                    brg->isa_impl != avx2_vnni_2 && !brg->is_fp8_via_convert());
-    brg->ld_step = brg->is_f16_b_non_amx_vnni()
-            ? 2
-            : data_type_vnni_granularity(ld_step_compute_dt);
-    const data_type_t rd_step_compute_dt = get_mac_emu_data_type(
-            brg->dt_b, brg->isa_impl, !brg->is_fp8_via_convert());
-    brg->rd_step = data_type_vnni_granularity(rd_step_compute_dt);
+    const bool is_vcvtph2ps_kernel = (brg->dt_b == data_type::f16 && brg->dt_a == data_type::f32);
+    const bool is_b_in_vnni_format = !(brg->dt_b == data_type::f16 && brg->isa_impl == avx512_core_fp16) &&
+                                     !(one_of(brg->dt_a, data_type::f32, data_type::bf16) &&
+                                     one_of(brg->dt_b, data_type::u8, data_type::s8)) &&
+                                     !is_vcvtph2ps_kernel;
+    brg->ld_step = is_b_in_vnni_format ? data_type_vnni_granularity(brg->dt_b) : 1;
+    const bool has_no_vnni_compute_instruction
+            = (brg->is_f16 && one_of(brg->isa_impl, avx2_vnni_2, avx512_core_fp16))
+            || (brg->is_bf16 && brg->isa_impl == avx2_vnni_2)
+            || (one_of(brg->dt_a, data_type::f32, data_type::bf16) &&
+                one_of(brg->dt_b, data_type::u8, data_type::s8, data_type::nf4, data_type::s4, data_type::u4, data_type::f16));
+    brg->rd_step = has_no_vnni_compute_instruction ? 1 : data_type_vnni_granularity(brg->dt_b);
+
+    if (brg->with_src_dyn_quant && one_of(brg->dt_b, data_type::u4)) {
+        brg->ld_step = 8;
+        brg->rd_step = 4;
+    }
 
     set_isa_impl(brg);
     if (brg->isa_impl == isa_undef) return status::unimplemented;
@@ -911,8 +941,9 @@ void init_brgemm_conf(brgemm_desc_t *brg, cpu_isa_t isa,
     brg->has_int8_vnni = isa_has_int8_vnni(brg->isa_impl);
 
     set_brg_vmm(brg); // TODO: Investigate if it is really needed here.
-    brg->req_s8s8_compensation = brg->is_int8 && brg->dt_a == data_type::s8
-            && !isa_has_s8s8(brg->isa_impl);
+    brg->req_s8s8_compensation = brg->is_int8 && !brg->is_int8_tmm
+            && !isa_has_s8s8(brg->isa_impl) && brg->dt_a == data_type::s8
+            && !brg->with_src_dyn_quant;
 
     brg->LDA = (brg->is_row_major()) ? static_cast<int>(LDA)
                                      : static_cast<int>(LDB);

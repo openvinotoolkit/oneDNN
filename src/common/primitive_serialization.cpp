@@ -232,6 +232,7 @@ void serialize(serialization_stream_t &sstream, const primitive_attr_t &attr) {
         int zero = 0;
         sstream.append(zero);
     }
+    sstream.append(attr.src_dyn_quant_params_.group_size_);
 }
 
 void serialize(serialization_stream_t &sstream, const concat_desc_t &desc) {

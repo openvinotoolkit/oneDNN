@@ -421,6 +421,8 @@ dnnl_status_t DNNL_API dnnl_primitive_attr_set_scratchpad_mode(
 ///     otherwise.
 dnnl_status_t DNNL_API dnnl_primitive_attr_set_scales_mask(
         dnnl_primitive_attr_t attr, int arg, int mask);
+dnnl_status_t DNNL_API dnnl_primitive_attr_set_scales_dims(
+        dnnl_primitive_attr_t attr, int arg, const dnnl_dims_t dims, int ndims);
 
 /// Sets primitive attributes scaling factors for primitive operations for a
 /// given memory argument. The scaling factors must be passed at execution time
@@ -468,6 +470,8 @@ dnnl_status_t DNNL_API dnnl_primitive_attr_set_scales(
 ///     otherwise.
 dnnl_status_t DNNL_API dnnl_primitive_attr_set_zero_points_mask(
         dnnl_primitive_attr_t attr, int arg, int mask);
+dnnl_status_t DNNL_API dnnl_primitive_attr_set_zero_points_dims(
+        dnnl_primitive_attr_t attr, int arg, const dnnl_dims_t dims, int ndims, dnnl_data_type_t data_type);
 
 /// Sets primitive attributes zero points for primitive operations for a given
 /// memory argument. The zero points must be passed at execution time
@@ -2734,6 +2738,10 @@ dnnl_status_t DNNL_API dnnl_primitive_attr_get_rnn_weights_projection_qparams(
         const_dnnl_primitive_attr_t attr, dnnl_dim_t *count, int *mask,
         const float **scales);
 
+dnnl_status_t DNNL_API dnnl_primitive_attr_set_src_dyn_quant_params(
+        dnnl_primitive_attr_t attr, uint64_t group_size);
+dnnl_status_t DNNL_API  dnnl_primitive_attr_get_src_dyn_quant_params(
+        dnnl_primitive_attr_t attr, uint64_t* group_size);
 /// @} dnnl_api_attributes
 
 /// @addtogroup dnnl_api_rnn

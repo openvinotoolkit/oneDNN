@@ -109,13 +109,25 @@ struct quant_entry_t : public c_compatible {
     std::string get_verbose() const;
 
 private:
+    data_type_t data_type_ = data_type::undef;
+    int group_ndims_ = 0;
+    dims_t group_dims_ {};
+public:
     // Note: INT_MIN is used on purpose to avoid potential issues when
     // `(mask & bit)` expression will return `true`. `INT_MIN` is represented
     // as `10...0` in bits and will avoid such situations.
     int mask_ = INT_MIN;
-    data_type_t data_type_ = data_type::undef;
-    int group_ndims_ = 0;
-    dims_t group_dims_ {};
+    // openvino extension
+    // scale
+    bool is_set_ = false;
+    int ndims_ = 0;
+    dims_t dims_ {};
+    // zero_point
+    bool is_set_wei = false;
+    int ndims_wei = 0;
+    int mask_wei = 0;
+    dims_t dims_wei {};
+    data_type_t data_type_wei = data_type::s32;
 };
 
 std::ostream &operator<<(std::ostream &ss, const quant_entry_t &e);
@@ -135,10 +147,48 @@ struct quant_entries_t : public c_compatible {
     status_t set(int arg, int mask) {
         return set(arg, mask, default_data_type_, 0, {});
     }
+    status_t set(int arg, const dims_t dims, int ndims) {
+        if (!check_arg(arg)) return status::invalid_arguments;
+        entries_[arg].is_set_ = true;
+        entries_[arg].ndims_ = ndims;
+        entries_[arg].mask_ = 1;
+        utils::array_copy(entries_[arg].dims_, dims, entries_[arg].ndims_);
+        return status::success;
+    }
+    status_t set(int arg, const dims_t dims, int ndims, data_type_t data_type) {
+        const bool supported_arg = utils::one_of(arg, DNNL_ARG_WEIGHTS);
+        if (!supported_arg) return status::unimplemented;
+
+        switch (arg) {
+            case DNNL_ARG_WEIGHTS:
+                entries_[arg].is_set_wei = true;
+                entries_[arg].ndims_wei = ndims;
+                entries_[arg].mask_wei = 1;
+                utils::array_copy(entries_[arg].dims_wei, dims, ndims);
+                entries_[arg].data_type_wei = data_type;
+                break;
+        }
+        return status::success;
+    }
+    const dims_t & get_dims(int arg) const {
+        return get(arg).dims_wei;
+    }
+    int get_ndims(int arg) const {
+        const bool supported_arg = utils::one_of(arg, DNNL_ARG_WEIGHTS);
+        if (!supported_arg) return status::unimplemented;
+        switch (arg) {
+            case DNNL_ARG_WEIGHTS: return get(arg).ndims_wei; break;
+            default: return 0;
+        }
+    }
     status_t set(int arg, int mask, data_type_t data_type, int group_ndims,
             const dims_t group_dims) {
         if (!check_arg(arg)) return status::invalid_arguments;
         CHECK(entries_[arg].set(mask, data_type, group_ndims, group_dims));
+        if (arg == DNNL_ARG_WEIGHTS) {
+            utils::array_copy(entries_[arg].dims_wei, group_dims, group_ndims);
+            entries_[arg].ndims_wei = group_ndims;
+        }
         return status::success;
     }
     // Use this interface with `default_quant_entry` when need to remove a
@@ -321,6 +371,32 @@ private:
         if (arg == DNNL_ARG_SRC_2) return true;
         return false;
     }
+};
+
+struct src_dyn_quant_params_t : public c_compatible {
+    src_dyn_quant_params_t() : group_size_(0) {}
+    bool has_default_values() const {
+        return (group_size_ == 0);
+    }
+    bool defined() const {
+        return true;
+    }
+
+    status_t set(uint64_t group_size) {
+        group_size_ = group_size;
+        return status::success;
+    }
+
+    uint64_t get() {
+        return group_size_;
+    }
+
+    bool operator==(const src_dyn_quant_params_t &rhs) const {
+        using namespace utils;
+        return group_size_ == rhs.group_size_;
+    }
+
+    uint64_t group_size_;
 };
 
 } // namespace impl

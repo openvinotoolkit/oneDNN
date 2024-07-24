@@ -187,8 +187,6 @@ struct simple_sparse_reorder_impl<SIMPLE_SPARSE_REORDER_TEMPL_CALL,
                                 *outp++ = o;
                                 bitmask_ptr[bitmask_idx] |= (1UL << bit);
                                 non_zeros++;
-                            } else {
-                                zeros++;
                             }
                             plain_off += plain_i_stride;
                             bit++;
