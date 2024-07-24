@@ -135,6 +135,7 @@ bool primitive_attr_t::has_default_values(dnnl_primitive_attr::skip_mask_t mask,
     CHECK_MASK(smask_t::rnn_weights_qparams, rnn_weights_qparams_);
     CHECK_MASK(smask_t::rnn_weights_projection_qparams,
             rnn_weights_projection_qparams_);
+    CHECK_MASK(smask_t::src_dyn_quant_params, src_dyn_quant_params_);
     CHECK_ARG(IMPLICATION((bool)(~mask & smask_t::sum_dt),
             post_ops_.sum_with_default_dt(dst_dt)));
     bool gpu_attr_ok = IMPLICATION((bool)(~mask & smask_t::gpu_attr),
@@ -168,6 +169,7 @@ bool primitive_attr_t::defined(dnnl_primitive_attr::skip_mask_t mask) const {
     CHECK_MASK(smask_t::rnn_weights_qparams, rnn_weights_qparams_);
     CHECK_MASK(smask_t::rnn_weights_projection_qparams,
             rnn_weights_projection_qparams_);
+    CHECK_MASK(smask_t::src_dyn_quant_params, src_dyn_quant_params_);
     return ok;
 #undef CHECK_MASK
 #undef CHECK_ARG
@@ -673,6 +675,13 @@ status_t dnnl_primitive_attr_set_scales_mask(
     VCHECK_ATTR(arg >= 0, VERBOSE_BAD_PARAM, "arg");
     return attr->scales_.set(arg, mask);
 }
+status_t dnnl_primitive_attr_set_scales_dims(
+        primitive_attr_t *attr, int arg, const dims_t dims, int ndims, data_type_t data_type) {
+    bool ok = attr && arg >= 0 && ndims > 0
+            && attr->scales_.has_default_values();
+    if (!ok) return invalid_arguments;
+    return attr->scales_.set_scales(arg, dims, ndims, data_type);
+}
 
 status_t dnnl_primitive_attr_set_scales(primitive_attr_t *attr, int arg,
         int mask, int group_ndims, const dims_t group_dims,
@@ -709,6 +718,13 @@ status_t dnnl_primitive_attr_set_zero_points_mask(
     VCHECK_ATTR(attr, VERBOSE_NULL_ARG);
     VCHECK_ATTR(mask >= 0, VERBOSE_BAD_PARAM, "mask");
     return attr->zero_points_.set(arg, mask);
+}
+status_t dnnl_primitive_attr_set_zero_points_dims(
+        primitive_attr_t *attr, int arg, const dims_t dims, int ndims, dnnl_data_type_t data_type) {
+    bool ok = attr && ndims > 0;
+    if (!ok) return invalid_arguments;
+
+    return attr->zero_points_.set_zero_points(arg, dims, ndims, data_type);
 }
 
 status_t dnnl_primitive_attr_set_zero_points(dnnl_primitive_attr_t attr,
@@ -1094,6 +1110,21 @@ status_t DNNL_API dnnl_primitive_attr_set_rnn_tparams(
     if (attr == nullptr) return invalid_arguments;
 
     return attr->rnn_tparams_.set(mode, ngates, scales, cscale);
+}
+
+status_t dnnl_primitive_attr_set_src_dyn_quant_params(
+        primitive_attr_t *attr, const uint64_t group_size) {
+    if (attr == nullptr) return invalid_arguments;
+
+    return attr->src_dyn_quant_params_.set(group_size);
+}
+
+status_t dnnl_primitive_attr_get_src_dyn_quant_params(
+        primitive_attr_t *attr, uint64_t* group_size) {
+    if (attr == nullptr) return invalid_arguments;
+
+    if (group_size) *group_size = attr->src_dyn_quant_params_.get();
+    return success;
 }
 
 template struct dnnl::impl::shifts_t<uint8_t>;

@@ -384,6 +384,19 @@ struct brgemm_desc_t {
 
     bool is_input_convert() const { return is_bf32 || is_fp8_via_convert(); }
 
+    bool with_wei_decomp = false;
+    bool with_grouped_wei_decomp = false;
+    bool with_wei_decomp_scales = false;
+    bool with_wei_decomp_zero_points = false;
+    int wei_decomp_scales_stride = 0;
+    int wei_decomp_zero_points_stride = 0;
+    int wei_decomp_scales_group_size = 0;
+    int wei_decomp_zero_points_group_size = 0;
+    impl::data_type_t wei_decomp_zero_points_dt = data_type::undef;
+    bool with_src_dyn_quant = false;
+    int src_scales_group_size = 0;
+    int src_scales_stride = 0;
+
     bool is_row_major() const {
         assert(layout != brgemm_layout_undef);
         return layout == brgemm_row_major;
@@ -590,6 +603,12 @@ struct brgemm_dynamic_values_t {
         , dynamic_LDD(LDD) {}
 };
 
+struct brgemm_decomp_kernel_params_t {
+    const void *ptr_B;
+    const void *scratch_buf;
+    const void *bitmask_ptr;
+};
+
 struct brgemm_kernel_params_t {
     const void *ptr_A;
     const void *ptr_B;
@@ -625,6 +644,9 @@ struct brgemm_kernel_params_t {
     const void *c_zp_values = nullptr;
     size_t skip_accm = 0;
     int32_t zp_a_val = 1;
+
+    const void *ptr_wei_zero_points = nullptr;
+    size_t ic;
     dim_t dynamic_LDA = 0;
     dim_t dynamic_LDB = 0;
     dim_t dynamic_LDC = 0;
