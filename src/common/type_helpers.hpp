@@ -112,6 +112,7 @@ inline size_t data_type_size(data_type_t data_type) {
         case u4: return sizeof(prec_traits_t<u4>::type);
         case boolean: return sizeof(prec_traits_t<boolean>::type);
         case bin: return sizeof(prec_traits_t<u8>::type);
+        case nf4: return sizeof(prec_traits_t<u8>::type);
         case data_type::undef:
         default: assert(!"unknown data_type");
     }
