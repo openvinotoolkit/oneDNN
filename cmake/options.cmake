@@ -405,6 +405,9 @@ if(NOT _dnnl_aarch64_use_kai_supported AND DNNL_AARCH64_USE_KAI)
         "yet supported for threadpool runtime or MSVC")
 endif()
 
+option(DNNL_XBYAK_NO_EXCEPTION
+    "Enables XBYAK_NO_EXCEPTION" ON) # enabled by default
+
 # ===========
 # GPU options
 # ===========
