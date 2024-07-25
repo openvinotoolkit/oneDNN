@@ -125,6 +125,10 @@ if(UNIX)
     endif()
 endif()
 
+if(DNNL_XBYAK_NO_EXCEPTION)
+    add_definitions_with_host_compiler(-DDNNL_XBYAK_NO_EXCEPTION)
+endif()
+
 add_subdirectory(common)
 
 if(NOT DNNL_CPU_RUNTIME STREQUAL "NONE")
