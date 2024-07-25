@@ -367,6 +367,9 @@ onednn_option(AARCH64_USE_ACL OFF "Enables use of AArch64 optimised functions
     functioning Compute Library build available at the location specified by the
     environment variable ACL_ROOT_DIR.")
 
+option(DNNL_XBYAK_NO_EXCEPTION
+    "Enables XBYAK_NO_EXCEPTION" ON) # enabled by default
+
 # ===========
 # GPU options
 # ===========
