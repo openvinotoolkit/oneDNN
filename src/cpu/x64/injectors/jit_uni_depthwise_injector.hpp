@@ -47,15 +47,19 @@ struct static_params_t {
 struct dynamic_params_t {
     dynamic_params_t(int vmm_d_weights_idx = 0, int vmm_d_bias_idx = 0,
                      Xbyak::Reg64 reg_d_weights = Xbyak::Reg64(0), Xbyak::Reg64 reg_d_bias = Xbyak::Reg64(0),
-                     Xbyak::Reg64 reg_init_off = Xbyak::Reg64(0), const std::map<size_t, int> vmm_idx_off = {}) :
+                     Xbyak::Reg64 reg_init_off = Xbyak::Reg64(0), const std::map<size_t, int> vmm_idx_off = {},
+                     Xbyak::Reg64 reg_post_ops_data = Xbyak::Reg64(0), int base_post_ops_data_offset = 0) :
             vmm_d_weights_idx(vmm_d_weights_idx), vmm_d_bias_idx(vmm_d_bias_idx), reg_d_weights(reg_d_weights), reg_d_bias(reg_d_bias),
-            reg_init_off(reg_init_off), reg_init_off_addr(), vmm_idx_off(vmm_idx_off), useAddr(false) {}
+            reg_init_off(reg_init_off), reg_init_off_addr(), vmm_idx_off(vmm_idx_off), useAddr(false),
+            reg_post_ops_data(reg_post_ops_data), base_post_ops_data_offset(base_post_ops_data_offset) {}
 
     dynamic_params_t(int vmm_d_weights_idx, int vmm_d_bias_idx,
                      Xbyak::Reg64 reg_d_weights, Xbyak::Reg64 reg_d_bias,
-                     Xbyak::Address reg_init_off, const std::map<size_t, int> vmm_idx_off) :
+                     Xbyak::Address reg_init_off, const std::map<size_t, int> vmm_idx_off,
+                     Xbyak::Reg64 reg_post_ops_data = Xbyak::Reg64(0), int base_post_ops_data_offset = 0) :
             vmm_d_weights_idx(vmm_d_weights_idx), vmm_d_bias_idx(vmm_d_bias_idx), reg_d_weights(reg_d_weights), reg_d_bias(reg_d_bias),
-            reg_init_off(0), reg_init_off_addr(reg_init_off), vmm_idx_off(vmm_idx_off), useAddr(true) {}
+            reg_init_off(0), reg_init_off_addr(reg_init_off), vmm_idx_off(vmm_idx_off), useAddr(true),
+            reg_post_ops_data(reg_post_ops_data), base_post_ops_data_offset(base_post_ops_data_offset) {}
 
     int vmm_d_weights_idx;
     int vmm_d_bias_idx;
@@ -66,6 +70,8 @@ struct dynamic_params_t {
     std::map<size_t, int> vmm_idx_off;
     bool useAddr;
     bool preserve_gprs = false;
+    Xbyak::Reg64 reg_post_ops_data;
+    int base_post_ops_data_offset;
 };
 
 } // quantization_injector
@@ -79,21 +85,31 @@ struct jit_uni_depthwise_injector_f32 {
         assert(utils::one_of(depthwise_alg, alg_kind::depthwise_scale_shift, alg_kind::depthwise_prelu));
     }
 
+    jit_uni_depthwise_injector_f32(jit_generator_t *host, dnnl_post_ops::entry_t post_op, Xbyak::Opmask k_mask_)
+        : jit_uni_depthwise_injector_f32(host, post_op, 0, k_mask_) {}
+
         jit_uni_depthwise_injector_f32(jit_generator_t* host, dnnl_post_ops::entry_t post_op,
-            dim_t channels, Xbyak::Opmask k_mask_ = Xbyak::Opmask(1))
+            dim_t channels = 0, Xbyak::Opmask k_mask_ = Xbyak::Opmask(1))
             : h(host), post_op_(post_op), k_mask(k_mask_), channels_(channels) {
         depthwise_alg = post_op.depthwise.alg;
         assert(utils::one_of(depthwise_alg, alg_kind::depthwise_scale_shift, alg_kind::depthwise_prelu));
     }
 
-    void compute_vector_range(int start_idx, int end_idx, const Xbyak::Reg64& p_weights, const Xbyak::Reg64& p_bias, bool is_broadcast = false);
+    void compute_vector_range(int start_idx, int end_idx, const Xbyak::Reg64& p_weights, const Xbyak::Reg64& p_bias, bool is_broadcast = false, bool scale_only = false);
 
-    void init_ptrs(const Xbyak::Reg64& reg_d_weights, const Xbyak::Reg64& reg_d_bias,
+    void init_ptrs(const Xbyak::RegExp& ptr_data,
+                   const Xbyak::Reg64& reg_d_weights, const Xbyak::Reg64& reg_d_bias,
                    const Xbyak::Operand& ch_off, bool is_broadcast);
+    void set_runtime_base(const Xbyak::RegExp &ptr_data) { runtime_base_ = ptr_data; }
+
     void compute(int start_idx, int end_idx,
                  int vmm_d_weights_idx, int vmm_d_bias_idx,
                  const Xbyak::Reg64& reg_d_weights, const Xbyak::Reg64& reg_d_bias,
                  bool is_broadcast = false, int offset = 0, bool need_to_preserve = false);
+
+    static constexpr size_t memoryStep() {
+        return sizeof(float*);
+    }
 
 private:
     jit_generator_t* h;
@@ -109,6 +125,8 @@ private:
 
     Xbyak::Opmask k_mask;
     dim_t channels_ = 0;
+    Xbyak::RegExp runtime_base_;
+    size_t runtime_stack_adjust_ = 0;
 
     const static size_t preserved_vecs_max = 5;
     size_t vecs_to_preserve = 0;
@@ -119,13 +137,13 @@ private:
 
     int aux_vecs_count(alg_kind_t elt_alg, bool is_broadcast);
 
-    void compute_body(size_t start_idx, size_t end_idx, const Xbyak::Reg64& p_weights, const Xbyak::Reg64& p_bias, bool is_broadcast = false);
+    void compute_body(size_t start_idx, size_t end_idx, const Xbyak::Reg64& p_weights, const Xbyak::Reg64& p_bias, bool is_broadcast = false,  bool scale_only = false);
     void injector_preamble(size_t start_idx, size_t end_idx, bool is_broadcast = false);
     void injector_preamble_tail(size_t start_idx, size_t end_idx);
     void injector_postamble();
     void assign_regs();
 
-    void scale_shift_compute_vector(const Vmm &vmm_src, const Xbyak::Reg64& p_weights, const Xbyak::Reg64& p_bias, bool is_broadcast = false, int offset = 0, bool bounded = false);
+    void scale_shift_compute_vector(const Vmm &vmm_src, const Xbyak::Reg64& p_weights, const Xbyak::Reg64& p_bias, bool is_broadcast = false, int offset = 0, bool scale_only = false, bool bounded = false);
     void prelu_compute_vector(const Vmm &vmm_src, const Xbyak::Reg64& p_weights, const Xbyak::Reg64& p_bias, bool is_broadcast = false, int offset = 0, bool bounded = false);
 };
 

@@ -43,6 +43,7 @@ struct conv_gemm_conf_t {
     bool with_bias;
     bool with_eltwise;
     bool with_binary;
+    bool with_depthwise;
     bool with_sum;
     post_ops_t post_ops;
     bool is_nspc;
@@ -96,7 +97,8 @@ struct pp_kernel_t {
     virtual ~pp_kernel_t() = default;
 
     virtual void operator()(float *dst, const float *bias, dim_t len,
-            dim_t oc_start, dim_t oc_work, dim_t oc_stride) const = 0;
+                        dim_t oc_start, dim_t oc_work, dim_t oc_stride,
+                        const std::vector<const void *> &post_ops_binary_rhs_arg_vec) const = 0;
 
     virtual status_t create_kernel() { return status::success; }
 

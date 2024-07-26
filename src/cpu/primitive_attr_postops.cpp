@@ -405,10 +405,14 @@ void ref_post_ops_t::execute(float &res, const args_t &args, const size_t oc) co
                 ++it_prelu_md;
             } break;
             case primitive_kind::depthwise: {
-                auto depthwise_weights = e.depthwise.weights_data;
-                auto depthwise_bias = e.depthwise.biases_data;
+                assert(args.ctx);
+                const exec_ctx_t &ctx = *args.ctx;
+                const auto depthwise_base = CTX_IN_MEM(const float *,
+                        DNNL_ARG_ATTR_MULTIPLE_POST_OP(idx) | DNNL_ARG_SRC_1);
+                const auto depthwise_weights = depthwise_base + e.depthwise.offset[e.depthwise.scales];
+                const auto depthwise_bias = depthwise_base + e.depthwise.offset[e.depthwise.shifts];
                 res = it_depthwise_po->compute_scalar(res, depthwise_weights + oc,
-                    depthwise_bias ? depthwise_bias + oc : nullptr);
+                    depthwise_bias + oc);
                 ++it_depthwise_po;
             } break;
             case primitive_kind::quantization: {
@@ -420,8 +424,12 @@ void ref_post_ops_t::execute(float &res, const args_t &args, const size_t oc) co
                         position, args.l_offset, dst_d.dims(), dst_d.ndims());
                 const dim_t channel = position[1];
                 const auto &quant = e.quantization;
+                const exec_ctx_t &ctx = *args.ctx;
+                const auto quantization_base = CTX_IN_MEM(const float *,
+                        DNNL_ARG_ATTR_MULTIPLE_POST_OP(idx) | DNNL_ARG_SRC_1);
                 const auto value = [&](int field) {
-                    return quant.data[field][quant.per_channel[field] ? channel : 0];
+                    return quantization_base[quant.offset[field]
+                            + (quant.per_channel[field] ? channel : 0)];
                 };
                 res = nstl::max(res, value(quant.crop_low));
                 res = nstl::min(res, value(quant.crop_high));

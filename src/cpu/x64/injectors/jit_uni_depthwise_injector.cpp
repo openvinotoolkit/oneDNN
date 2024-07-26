@@ -106,29 +106,38 @@ void jit_uni_depthwise_injector_f32<isa>::assign_regs() {
 
 template <cpu_isa_t isa>
 void jit_uni_depthwise_injector_f32<isa>::scale_shift_compute_vector(const Vmm &vmm_src,
-    const Xbyak::Reg64& p_weights, const Xbyak::Reg64& p_bias, bool is_broadcast, int offset, bool bounded) {
+    const Xbyak::Reg64& p_weights, const Xbyak::Reg64& p_bias, bool is_broadcast, int offset, bool scale_only, bool bounded) {
+    size_t weights_off = post_op_.depthwise.offset[post_op_.depthwise.scales] * sizeof(float);
+    size_t bias_off = post_op_.depthwise.offset[post_op_.depthwise.shifts] * sizeof(float);
+
     if (is_broadcast) {
-        h->uni_vbroadcastss(vmm_mask, h->ptr[p_weights]);
+        h->uni_vbroadcastss(vmm_mask, h->ptr[p_weights + weights_off]);
         h->uni_vmulps(vmm_src, vmm_src, vmm_mask);
-        h->uni_vbroadcastss(vmm_mask, h->ptr[p_bias]);
-        h->uni_vaddps(vmm_src, vmm_src, vmm_mask);
-        } else if (bounded) {
+        if (!scale_only) {
+            h->uni_vbroadcastss(vmm_mask, h->ptr[p_bias + bias_off]);
+            h->uni_vaddps(vmm_src, vmm_src, vmm_mask);
+        }
+    } else if (bounded) {
         int tmp_idx = 0;
         while (tmp_idx == vmm_src.getIdx()) ++tmp_idx;
         const Vmm tmp(tmp_idx);
         h->sub(h->rsp, vlen);
         h->uni_vmovups(h->ptr[h->rsp], tmp);
-        load_channel_vector(h, tmp, p_weights, offset,
-            post_op_.depthwise.weights_data, channels_);
+        const auto base = runtime_base_ + (runtime_base_.getBase().getBit()
+                && runtime_base_.getBase().getIdx() == h->rsp.getIdx()
+                ? runtime_stack_adjust_ + vlen : 0);
+        load_channel_vector(h, tmp, p_weights, offset + weights_off, base, weights_off, channels_);
         h->uni_vmulps(vmm_src, vmm_src, tmp);
-        load_channel_vector(h, tmp, p_bias, offset,
-            post_op_.depthwise.biases_data, channels_);
-        h->uni_vaddps(vmm_src, vmm_src, tmp);
+        if (!scale_only) {
+            load_channel_vector(h, tmp, p_bias, offset + bias_off, base, bias_off, channels_);
+            h->uni_vaddps(vmm_src, vmm_src, tmp);
+        }
         h->uni_vmovups(tmp, h->ptr[h->rsp]);
         h->add(h->rsp, vlen);
-        } else {
-        h->uni_vmulps(vmm_src, vmm_src, h->ptr[p_weights + offset]);
-        h->uni_vaddps(vmm_src, vmm_src, h->ptr[p_bias + offset]);
+    } else {
+        h->uni_vmulps(vmm_src, vmm_src, h->ptr[p_weights + offset + weights_off]);
+        if (!scale_only)
+            h->uni_vaddps(vmm_src, vmm_src, h->ptr[p_bias + offset + bias_off]);
     }
 }
 
@@ -136,26 +145,29 @@ template <cpu_isa_t isa>
 void jit_uni_depthwise_injector_f32<isa>::prelu_compute_vector(const Vmm &vmm_src,
     const Xbyak::Reg64& p_weights, const Xbyak::Reg64& p_bias, bool is_broadcast, int offset, bool bounded) {
     const unsigned char _cmp_lt_os = 1;
+    size_t weights_off =  post_op_.depthwise.offset[post_op_.depthwise.scales] * sizeof(float);
 
     int tmp_idx = 0;
     while (tmp_idx == vmm_src.getIdx() || tmp_idx == vmm_mask.getIdx()
-        || tmp_idx == vmm_aux0.getIdx()) ++tmp_idx;
+            || tmp_idx == vmm_aux0.getIdx()) ++tmp_idx;
     const Vmm tmp(tmp_idx);
     if (bounded && !is_broadcast) {
-    h->sub(h->rsp, vlen);
-    h->uni_vmovups(h->ptr[h->rsp], tmp);
-    load_channel_vector(h, tmp, p_weights, offset,
-        post_op_.depthwise.weights_data, channels_);
+        h->sub(h->rsp, vlen);
+        h->uni_vmovups(h->ptr[h->rsp], tmp);
+        const auto base = runtime_base_ + (runtime_base_.getBase().getBit()
+                && runtime_base_.getBase().getIdx() == h->rsp.getIdx()
+                ? runtime_stack_adjust_ + vlen : 0);
+        load_channel_vector(h, tmp, p_weights, offset + weights_off, base, weights_off, channels_);
     }
 
     if (isa == avx2 && !h->is_valid_isa(avx512_core)) {
         if (is_broadcast) {
-            h->uni_vbroadcastss(vmm_mask, h->ptr[p_weights]);
+            h->uni_vbroadcastss(vmm_mask, h->ptr[p_weights + weights_off]);
             h->vmulps(vmm_aux0, vmm_src, vmm_mask);
         } else if (bounded)
             h->vmulps(vmm_aux0, vmm_src, tmp);
         else
-            h->vmulps(vmm_aux0, vmm_src, h->ptr[p_weights + offset]);
+            h->vmulps(vmm_aux0, vmm_src, h->ptr[p_weights + offset + weights_off]);
         h->vxorps(vmm_mask, vmm_mask, vmm_mask);
         h->vcmpgtps(vmm_mask, vmm_src, vmm_mask);
         h->vblendvps(vmm_src, vmm_aux0, vmm_src, vmm_mask);
@@ -164,12 +176,12 @@ void jit_uni_depthwise_injector_f32<isa>::prelu_compute_vector(const Vmm &vmm_sr
         h->vmovups(vmm_aux0, vmm_src);
         h->vcmpps(k_mask, vmm_src, vmm_mask, _cmp_lt_os);
         if (is_broadcast) {
-            h->uni_vbroadcastss(vmm_mask, h->ptr[p_weights]);
+            h->uni_vbroadcastss(vmm_mask, h->ptr[p_weights + weights_off]);
             h->vmulps(vmm_src | k_mask, vmm_aux0, vmm_mask);
         } else if (bounded)
             h->vmulps(vmm_src | k_mask, vmm_aux0, tmp);
         else
-            h->vmulps(vmm_src | k_mask, vmm_aux0, h->ptr[p_weights + offset]);
+            h->vmulps(vmm_src | k_mask, vmm_aux0, h->ptr[p_weights + offset + weights_off]);
     }
     if (bounded && !is_broadcast) {
         h->uni_vmovups(tmp, h->ptr[h->rsp]);
@@ -179,12 +191,11 @@ void jit_uni_depthwise_injector_f32<isa>::prelu_compute_vector(const Vmm &vmm_sr
 
 template <cpu_isa_t isa>
 void jit_uni_depthwise_injector_f32<isa>::compute_body(size_t start_idx, size_t end_idx,
-        const Xbyak::Reg64& p_weights, const Xbyak::Reg64& p_bias, bool is_broadcast) {
+        const Xbyak::Reg64& p_weights, const Xbyak::Reg64& p_bias, bool is_broadcast, bool scale_only) {
     for (size_t idx = start_idx; idx < end_idx; idx++) {
         switch (depthwise_alg) {
             case alg_kind::depthwise_scale_shift:
-                scale_shift_compute_vector(Vmm(idx), p_weights, p_bias,
-                        is_broadcast, 0, channels_ > 0); break;
+                scale_shift_compute_vector(Vmm(idx), p_weights, p_bias, is_broadcast, 0, scale_only, channels_ > 0); break;
             case alg_kind::depthwise_prelu:
                 prelu_compute_vector(Vmm(idx), p_weights, p_bias,
                         is_broadcast, 0, channels_ > 0); break;
@@ -195,21 +206,24 @@ void jit_uni_depthwise_injector_f32<isa>::compute_body(size_t start_idx, size_t 
 
 template <cpu_isa_t isa>
 void jit_uni_depthwise_injector_f32<isa>::compute_vector_range(int start_idx, int end_idx,
-        const Xbyak::Reg64& p_weights, const Xbyak::Reg64& p_bias, bool is_broadcast) {
+        const Xbyak::Reg64& p_weights, const Xbyak::Reg64& p_bias, bool is_broadcast, bool scale_only) {
     injector_preamble(start_idx, end_idx, is_broadcast);
-    compute_body(start_idx_tail, end_idx, p_weights, p_bias, is_broadcast);
+    runtime_stack_adjust_ = preserved_vecs_count * vlen;
+    compute_body(start_idx_tail, end_idx, p_weights, p_bias, is_broadcast, scale_only);
     injector_preamble_tail(start_idx, end_idx);
-    compute_body(start_idx, start_idx_tail, p_weights, p_bias, is_broadcast);
+    compute_body(start_idx, start_idx_tail, p_weights, p_bias, is_broadcast, scale_only);
     injector_postamble();
+    runtime_stack_adjust_ = 0;
 }
 
-
 template <cpu_isa_t isa>
-void jit_uni_depthwise_injector_f32<isa>::init_ptrs(const Xbyak::Reg64& reg_d_weights, const Xbyak::Reg64& reg_d_bias,
+void jit_uni_depthwise_injector_f32<isa>::init_ptrs(const Xbyak::RegExp& ptr_data,
+                                                    const Xbyak::Reg64& reg_d_weights, const Xbyak::Reg64& reg_d_bias,
                                                     const Xbyak::Operand& ch_off, bool is_broadcast) {
-    h->mov(reg_d_weights, reinterpret_cast<size_t>(post_op_.depthwise.weights_data));
+    runtime_base_ = ptr_data;
+    h->mov(reg_d_weights, h->ptr[ptr_data]);
     if (post_op_.depthwise.alg == alg_kind::depthwise_scale_shift)
-        h->mov(reg_d_bias, reinterpret_cast<size_t>(post_op_.depthwise.biases_data));
+        h->mov(reg_d_bias, h->ptr[ptr_data]);
 
     if (!is_broadcast) {
         h->add(reg_d_weights, ch_off);
@@ -245,13 +259,14 @@ void jit_uni_depthwise_injector_f32<isa>::compute(int start_idx, int end_idx,
         if (preserved_vecs_count > 1)
             push_vmm(h, vmm_aux0);
     }
+            runtime_stack_adjust_ = need_to_preserve ? preserved_vecs_count * vlen : 0;
 
     for (int idx = start_idx; idx < end_idx; idx++) {
         switch (depthwise_alg) {
             case alg_kind::depthwise_scale_shift:
-                scale_shift_compute_vector(Vmm(idx), reg_d_weights, reg_d_bias, is_broadcast, offset, true); break;
+                scale_shift_compute_vector(Vmm(idx), reg_d_weights, reg_d_bias, is_broadcast, offset, false, channels_ > 0); break;
             case alg_kind::depthwise_prelu:
-                prelu_compute_vector(Vmm(idx), reg_d_weights, reg_d_bias, is_broadcast, offset, true); break;
+                prelu_compute_vector(Vmm(idx), reg_d_weights, reg_d_bias, is_broadcast, offset, channels_ > 0); break;
             default: assert(!"unsupported depthwise algorithm");
         }
     }
@@ -259,9 +274,10 @@ void jit_uni_depthwise_injector_f32<isa>::compute(int start_idx, int end_idx,
     if (need_to_preserve) {
         if (preserved_vecs_count > 1)
             pop_vmm(h, vmm_aux0);
-        if (preserved_vecs_count > 1)
+        if (preserved_vecs_count > 0)
             pop_vmm(h, vmm_mask);
     }
+    runtime_stack_adjust_ = 0;
 }
 
 template struct jit_uni_depthwise_injector_f32<avx512_core_fp16>;

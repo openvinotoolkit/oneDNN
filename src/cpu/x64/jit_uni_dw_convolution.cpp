@@ -196,11 +196,13 @@ void jit_uni_dw_convolution_bwd_data_t<isa, diff_dst_type,
     auto weights = CTX_IN_MEM(const wei_data_t *, DNNL_ARG_WEIGHTS);
     auto diff_src = CTX_OUT_MEM(diff_src_data_t *, DNNL_ARG_DIFF_SRC);
 
+    const auto &jcp = pd()->jcp_;
+    const auto post_ops_binary_rhs_arg_vec
+            = binary_injector::prepare_binary_args(jcp.post_ops, ctx);
+
     const memory_desc_wrapper diff_dst_d(pd()->diff_dst_md());
     const memory_desc_wrapper diff_src_d(pd()->diff_src_md());
     const memory_desc_wrapper weights_d(pd()->weights_md(0));
-
-    const auto &jcp = pd()->jcp_;
 
     auto kernel_params = [=](dim_t ur_str_w, dim_t iw, dim_t oh, dim_t ih,
                                  dim_t i_t_overflow, dim_t i_b_overflow,
@@ -244,6 +246,8 @@ void jit_uni_dw_convolution_bwd_data_t<isa, diff_dst_type,
         par_conv.ch_blocks = load_work;
 
         par_conv.ic_off = ch * jcp.ch_block * sizeof(float);
+        par_conv.post_ops_binary_rhs_arg_vec
+                = post_ops_binary_rhs_arg_vec.data();
 
         return par_conv;
     };

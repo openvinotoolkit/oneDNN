@@ -45,6 +45,9 @@ std::vector<const void *> prepare_binary_args(const post_ops_t &post_ops,
                 append_arg(DNNL_ARG_ATTR_MULTIPLE_POST_OP(idx) | DNNL_ARG_SRC_2,
                         post_op.binary.src2_desc);
             }
+            } else if (post_op.is_depthwise() || post_op.is_quantization()) {
+                post_ops_binary_rhs_arg_vec.emplace_back(CTX_IN_MEM(const void *,
+                    DNNL_ARG_ATTR_MULTIPLE_POST_OP(idx) | DNNL_ARG_SRC_1));
         } else if (post_op.is_prelu()) {
             auto *arg = CTX_IN_MEM(const void *,
                     DNNL_ARG_ATTR_MULTIPLE_POST_OP(idx) | DNNL_ARG_WEIGHTS);

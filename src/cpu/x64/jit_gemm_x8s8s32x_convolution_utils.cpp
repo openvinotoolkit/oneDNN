@@ -343,46 +343,53 @@ void jit_pp_ker_t::apply_postops(const Xbyak::Reg64 &reg_dst, const int idx,
         add(reg_oc_offset_, ptr[reg_param_ + PARAM_OFF(g_oc_offset)]);
         size_t eltwise_index = 0;
         size_t depthwise_index = 0;
+        size_t post_ops_data_index = 0;
         for (int i = 0; i < post_ops_.len(); ++i) {
             const auto &post_op = post_ops_.entry_[i];
             if (post_op.is_eltwise()) {
                 legacy_eltwise_injectors_[eltwise_index++]->compute_vector(
                         dst.getIdx());
             } else if (post_op.is_depthwise()) {
-                mov(weights, reinterpret_cast<size_t>(post_op.depthwise.weights_data + offset));
-                lea(weights, ptr[weights + reg_oc_offset_ * sizeof(float)]);
-                if (post_op.depthwise.biases_data) {
-                    mov(bias, reinterpret_cast<size_t>(post_op.depthwise.biases_data + offset));
-                    lea(bias, ptr[bias + reg_oc_offset_ * sizeof(float)]);
-                }
-                legacy_depthwise_injectors_[depthwise_index++]->compute_vector_range(
+                mov(weights, ptr[reg_param_ + PARAM_OFF(post_ops_binary_rhs_arg_vec)]);
+                mov(weights, ptr[weights + post_ops_data_index * sizeof(void *)]);
+                push(weights);
+                lea(weights, ptr[weights + reg_oc_offset_ * sizeof(float) + offset * sizeof(float)]);
+                mov(bias, weights);
+                auto &injector = legacy_depthwise_injectors_[depthwise_index++];
+                injector->set_runtime_base(rsp);
+                injector->compute_vector_range(
                         dst.getIdx(), dst.getIdx() + 1, weights, bias);
+                pop(weights);
+                ++post_ops_data_index;
             } else if (post_op.is_quantization()) {
                 const auto &quant = post_op.quantization;
-                const auto load_param = [&](const Xbyak::Zmm &vreg,
-                                                const float *values, size_t count) {
-                    mov(weights, reinterpret_cast<size_t>(values + (count == 1 ? 0 : offset)));
-                    if (count == 1)
-                        vbroadcastss(vreg, ptr[weights]);
+                mov(bias, ptr[reg_param_ + PARAM_OFF(post_ops_binary_rhs_arg_vec)]);
+                mov(bias, ptr[bias + post_ops_data_index * sizeof(void *)]);
+                const auto load_param = [&](const Xbyak::Zmm &vreg, int field) {
+                    const auto field_offset = quant.offset[field] * sizeof(float);
+                    if (!quant.per_channel[field])
+                        vbroadcastss(vreg, ptr[bias + field_offset]);
                     else
                         vmovups(vreg | mask,
-                                ptr[weights + reg_oc_offset_ * sizeof(float)]);
+                                ptr[bias + reg_oc_offset_ * sizeof(float)
+                                        + offset * sizeof(float) + field_offset]);
                 };
-                load_param(vreg_d_weights_, quant.data[quant.crop_low], quant.count[quant.crop_low]);
-                load_param(vreg_d_bias_, quant.data[quant.crop_high], quant.count[quant.crop_high]);
+                load_param(vreg_d_weights_, quant.crop_low);
+                load_param(vreg_d_bias_, quant.crop_high);
                 vmaxps(dst, dst, vreg_d_weights_);
                 vminps(dst, dst, vreg_d_bias_);
-                load_param(vreg_d_weights_, quant.data[quant.inp_scale], quant.count[quant.inp_scale]);
-                load_param(vreg_d_bias_, quant.data[quant.inp_shift], quant.count[quant.inp_shift]);
+                load_param(vreg_d_weights_, quant.inp_scale);
+                load_param(vreg_d_bias_, quant.inp_shift);
                 vfmadd213ps(dst, vreg_d_weights_, vreg_d_bias_);
                 const bool dequantize = quant.alg == alg_kind::quantization_quantize_dequantize;
                 if (dequantize || dst_data_type_ == data_type::f32 || i != post_ops_.len() - 1)
                     vrndscaleps(dst, dst, 0);
                 if (dequantize) {
-                    load_param(vreg_d_weights_, quant.data[quant.output_scale], quant.count[quant.output_scale]);
-                    load_param(vreg_d_bias_, quant.data[quant.output_shift], quant.count[quant.output_shift]);
+                    load_param(vreg_d_weights_, quant.output_scale);
+                    load_param(vreg_d_bias_, quant.output_shift);
                     vfmadd213ps(dst, vreg_d_weights_, vreg_d_bias_);
                 }
+                ++post_ops_data_index;
             }
         }
         pop(reg_oc_offset_);

@@ -37,9 +37,12 @@ TEST(convolution_gemm_post_ops_test, GroupedDepthwise) {
     std::vector<float> src(24, -2.f), weights(12, 1.f), dst(36);
     std::vector<float> scales {1.f, 2.f, 3.f, 4.f, 5.f, 6.f};
     std::vector<float> shifts {1.f, 2.f, 3.f, 4.f, 5.f, 6.f};
+	std::vector<float> depthwise_data(scales);
+	depthwise_data.insert(depthwise_data.end(), shifts.begin(), shifts.end());
+	const memory::desc depthwise_md({12}, memory::data_type::f32, memory::format_tag::x);
+	memory depthwise_mem(depthwise_md, eng, depthwise_data.data());
     post_ops ops;
-    ops.append_depthwise(algorithm::depthwise_scale_shift, scales.data(),
-	    shifts.data());
+	ops.append_depthwise(algorithm::depthwise_scale_shift, {0, scales.size()});
     ops.append_eltwise(algorithm::eltwise_relu, 0.1f, 0.f);
     primitive_attr attr;
     attr.set_post_ops(ops);
@@ -64,7 +67,8 @@ TEST(convolution_gemm_post_ops_test, GroupedDepthwise) {
 	memory dst_mem(dst_md, eng, dst.data());
 	convolution_forward(pd).execute(strm,
 		{{DNNL_ARG_SRC, src_mem}, {DNNL_ARG_WEIGHTS, weights_mem},
-			{DNNL_ARG_DST, dst_mem}});
+			{DNNL_ARG_DST, dst_mem},
+			{DNNL_ARG_ATTR_MULTIPLE_POST_OP(0) | DNNL_ARG_SRC_1, depthwise_mem}});
 	strm.wait();
 	for (int channel = 0; channel < 6; ++channel) {
 	    const float expected = (-4.f * scales[channel] + shifts[channel]) * 0.1f;
@@ -90,9 +94,12 @@ TEST(convolution_gemm_post_ops_test, GroupedBf16Depthwise) {
     std::vector<float> dst(36);
     std::vector<float> scales {1.f, 2.f, 3.f, 4.f, 5.f, 6.f};
     std::vector<float> shifts {1.f, 2.f, 3.f, 4.f, 5.f, 6.f};
+	std::vector<float> depthwise_data(scales);
+	depthwise_data.insert(depthwise_data.end(), shifts.begin(), shifts.end());
+	const memory::desc depthwise_md({12}, memory::data_type::f32, memory::format_tag::x);
+	memory depthwise_mem(depthwise_md, eng, depthwise_data.data());
     post_ops ops;
-    ops.append_depthwise(algorithm::depthwise_scale_shift, scales.data(),
-	    shifts.data());
+	ops.append_depthwise(algorithm::depthwise_scale_shift, {0, scales.size()});
     ops.append_eltwise(algorithm::eltwise_relu, 0.1f, 0.f);
     primitive_attr attr;
     attr.set_post_ops(ops);
@@ -118,7 +125,8 @@ TEST(convolution_gemm_post_ops_test, GroupedBf16Depthwise) {
 	memory dst_mem(dst_md, eng, dst.data());
 	convolution_forward(pd).execute(strm,
 		{{DNNL_ARG_SRC, src_mem}, {DNNL_ARG_WEIGHTS, weights_mem},
-			{DNNL_ARG_DST, dst_mem}});
+			{DNNL_ARG_DST, dst_mem},
+			{DNNL_ARG_ATTR_MULTIPLE_POST_OP(0) | DNNL_ARG_SRC_1, depthwise_mem}});
 	strm.wait();
 	for (int channel = 0; channel < 6; ++channel) {
 	    const float expected = (-4.f * scales[channel] + shifts[channel]) * 0.1f;

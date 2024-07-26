@@ -135,6 +135,10 @@ public:
     // Thin wrapper for eltwise injector specific function
     void prepare_table(bool gen_table);
 
+    void push_post_ops_data_on_stack(const Xbyak::Reg64& post_ops_data_reg, std::size_t post_ops_data_offset,
+                                     const Xbyak::Reg64& aux_reg0, const Xbyak::Reg64& aux_reg1);
+    void reset_stack_pointer();
+
 private:
         static constexpr cpu_isa_t injector_isa
                         = std::is_same<Vmm, Xbyak::Zmm>::value ? avx512_core : avx2;
@@ -153,6 +157,7 @@ private:
         std::map<int, jit_uni_quantization_injector_f32<injector_isa, Vmm>> quantization_injectors_;
     // When unset, a sum entry is skipped because the kernel applies it itself.
     const bool inject_sum_;
+    std::size_t post_ops_pointers_count = 0;
 };
 
 enum post_op_type { sum = 0, eltwise, binary, prelu, depthwise, quantization };

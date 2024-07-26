@@ -46,12 +46,16 @@ struct static_params_t {
 };
 
 struct dynamic_params_t {
-    dynamic_params_t(Xbyak::Reg64 reg_oc_off = Xbyak::Reg64(0), const std::map<size_t, int>& vmm_idx_off = {}, data_type_t dst_dt = dnnl_f32) :
-            reg_oc_off(reg_oc_off), reg_oc_off_addr(), vmm_idx_off(vmm_idx_off), dst_dt(dst_dt), useAddr(false) {
+    dynamic_params_t(Xbyak::Reg64 reg_oc_off = Xbyak::Reg64(0), const std::map<size_t, int>& vmm_idx_off = {}, data_type_t dst_dt = dnnl_f32,
+            Xbyak::Reg64 reg_post_ops_data = Xbyak::Reg64(0), int base_post_ops_data_offset = 0) :
+            reg_oc_off(reg_oc_off), reg_oc_off_addr(), vmm_idx_off(vmm_idx_off), dst_dt(dst_dt), useAddr(false),
+            reg_post_ops_data(reg_post_ops_data), base_post_ops_data_offset(base_post_ops_data_offset) {
     }
 
-    dynamic_params_t(Xbyak::Address reg_oc_off, const std::map<size_t, int>& vmm_idx_off, data_type_t dst_dt = dnnl_f32) :
-            reg_oc_off(0), reg_oc_off_addr(reg_oc_off), vmm_idx_off(vmm_idx_off), dst_dt(dst_dt), useAddr(true) {
+    dynamic_params_t(Xbyak::Address reg_oc_off, const std::map<size_t, int>& vmm_idx_off, data_type_t dst_dt = dnnl_f32,
+            Xbyak::Reg64 reg_post_ops_data = Xbyak::Reg64(0), int base_post_ops_data_offset = 0) :
+        reg_oc_off(0), reg_oc_off_addr(reg_oc_off), vmm_idx_off(vmm_idx_off), dst_dt(dst_dt), useAddr(true),
+        reg_post_ops_data(reg_post_ops_data), base_post_ops_data_offset(base_post_ops_data_offset) {
     }
 
     Xbyak::Reg64 reg_oc_off;
@@ -59,6 +63,8 @@ struct dynamic_params_t {
     std::map<size_t, int> vmm_idx_off;
     data_type_t dst_dt;
     bool useAddr;
+    Xbyak::Reg64 reg_post_ops_data;
+    int base_post_ops_data_offset;
 };
 
 } // quantization_injector
@@ -66,8 +72,8 @@ struct dynamic_params_t {
 template <cpu_isa_t isa, typename Vmm = typename cpu_isa_traits_t<isa>::Vmm>
 struct jit_uni_quantization_injector_f32 {
     jit_uni_quantization_injector_f32(jit_generator_t* host, dnnl_post_ops::entry_t post_op,
-            Vmm vmm_d_weights, Vmm vmm_d_bias, Xbyak::Reg64 reg_d_weights, Xbyak::Reg64 reg_d_bias)
-        : h(host), post_op_(post_op), vmm_d_weights_(vmm_d_weights), vmm_d_bias_(vmm_d_bias), reg_d_weights_(reg_d_weights), reg_d_bias_(reg_d_bias) {
+            Vmm vmm_d_weights, Vmm vmm_d_bias, Xbyak::Reg64 reg_d_weights, Xbyak::Reg64 reg_d_bias, dim_t channels)
+        : h(host), post_op_(post_op), vmm_d_weights_(vmm_d_weights), vmm_d_bias_(vmm_d_bias), reg_d_weights_(reg_d_weights), reg_d_bias_(reg_d_bias), channels_(channels) {
         assert(post_op.is_quantization());
         assert(utils::one_of(post_op.quantization.alg, alg_kind::quantization_quantize, alg_kind::quantization_quantize_dequantize));
 
@@ -77,11 +83,8 @@ struct jit_uni_quantization_injector_f32 {
         xmm_d_bias_ = Xbyak::Xmm(vmm_d_bias.getIdx());
     }
 
-    void init_crop_ptrs(const Xbyak::Operand& ch_off);
     void init_crop_ptrs(const Xbyak::RegExp& ptr_begin, const Xbyak::Operand& ch_off);
-    void init_input_scale_shift_ptrs(const Xbyak::Operand& ch_off);
     void init_input_scale_shift_ptrs(const Xbyak::RegExp& ptr_begin, const Xbyak::Operand& ch_off);
-    void init_output_scale_shift_ptrs(const Xbyak::Operand& ch_off);
     void init_output_scale_shift_ptrs(const Xbyak::RegExp& ptr_begin, const Xbyak::Operand& ch_off);
 
     void compute_crop(int start_idx, int end_idx, int offset, bool is_scalar = false, bool is_broadcast = false);
@@ -94,10 +97,14 @@ struct jit_uni_quantization_injector_f32 {
 
     // in bytes
     static constexpr size_t memoryStep() {
-        return sizeof(post_op_.quantization.data);
+        return sizeof(float*);
     }
 
 private:
+    void compute_crop_impl(const std::set<size_t>& vmmIdxs, int offset, bool is_scalar, bool is_broadcast);
+    void compute_input_scale_shift_impl(const std::set<size_t>& vmmIdxs, int offset, bool do_rounding, bool is_scalar = false, bool is_broadcast = false);
+    void compute_output_scale_shift_impl(const std::set<size_t>& vmmIdxs, int offset, bool is_scalar = false, bool is_broadcast = false);
+
     jit_generator_t* h;
 
     size_t vlen = cpu_isa_traits_t<isa>::vlen;
@@ -111,6 +118,8 @@ private:
 
     Xbyak::Reg64 reg_d_weights_;
     Xbyak::Reg64 reg_d_bias_;
+    Xbyak::RegExp runtime_base_;
+    dim_t channels_;
 
     bool do_dequantization;
 };

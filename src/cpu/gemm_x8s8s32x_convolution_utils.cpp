@@ -73,7 +73,7 @@ void ref_pp_ker_t<dst_data_t>::operator()(void *void_dst, acc_data_t *acc,
         const char *bias, const float *scales, float dst_scale, float sum_scale,
         float signed_scale, int g, int mb, size_t start, size_t end,
         const zero_point_call_params_t &zp,
-        const void * /* post_ops_binary_rhs_arg_vec */,
+        const void * post_ops_binary_rhs_arg_vec,
         const void * /* dst_orig */, const exec_ctx_t &ctx,
         const memory_desc_t &dst_md,
         const single_gemm_conv_chunk_desc_t &chunk_desc) const {

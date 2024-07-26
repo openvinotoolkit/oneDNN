@@ -180,8 +180,10 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::apply_postops(dim_t ur_w,
                     vmm_idx_off.insert({vmm_out_idx(j, k), k * oc_block * sizeof(float)});
                 });
         depthwise_injector::dynamic_params_t ddp {zmm_d_weights.getIdx(), zmm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
-                                                  ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off};
-        quantization_injector::dynamic_params_t qdp {ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, jcp.dst_dt};
+                                                  ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off,
+                                                  this->rsp, base_post_ops_data_offset};
+        quantization_injector::dynamic_params_t qdp {ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, jcp.dst_dt,
+                                                     this->rsp, base_post_ops_data_offset};
 
         injector_utils::vmm_index_set_t vmm_idxs;
         // Sum post-op requires binary parameters to be set.
@@ -437,6 +439,7 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Zmm>::compute_ker_dw(dim_t ur_w,
 
     if (jcp.src_zero_point) {
         push(aux_reg_ker_d);
+        base_post_ops_data_offset += reg64_size;
         mov(reg_src_zero_point, ptr[param1 + GET_OFF(src_zero_point)]);
     }
 
@@ -596,7 +599,10 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Zmm>::compute_ker_dw(dim_t ur_w,
             }
         }
     }
-    if (jcp.src_zero_point) pop(aux_reg_ker_d);
+    if (jcp.src_zero_point) {
+        pop(aux_reg_ker_d);
+        base_post_ops_data_offset -= reg64_size;
+    }
 }
 
 template <typename Vmm>
@@ -612,6 +618,7 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::compute_ker(dim_t ur_w,
 
     if (jcp.src_zero_point) {
         push(aux_reg_ker_d);
+        base_post_ops_data_offset += reg64_size;
         mov(reg_src_zero_point, ptr[param1 + GET_OFF(src_zero_point)]);
     }
 
@@ -747,7 +754,10 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::compute_ker(dim_t ur_w,
         }
     }
 
-    if (jcp.src_zero_point) pop(aux_reg_ker_d);
+    if (jcp.src_zero_point) {
+        pop(aux_reg_ker_d);
+        base_post_ops_data_offset -= reg64_size;
+    }
 }
 
 template <typename Vmm>
@@ -1004,6 +1014,10 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::generate() {
     const dim_t out_shift = jcp.typesize_out
             * (jcp.ur_w * jcp.oc_without_padding * jcp.ngroups);
     preamble();
+
+    if (postops_injector_)
+        postops_injector_->push_post_ops_data_on_stack(this->param1, GET_OFF(post_ops_binary_rhs_arg_vec), reg_inp, reg_out);
+
     bool with_quantization = attr_.post_ops_.find(primitive_kind::quantization) != -1;
 
     if (jcp.is_depthwise) {
@@ -1379,6 +1393,9 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::generate() {
     }
     L(done_compute);
     assert(ow_block_jmp_table.size() == static_cast<size_t>(label_cntr));
+
+    if (postops_injector_)
+        postops_injector_->reset_stack_pointer();
 
     postamble();
 

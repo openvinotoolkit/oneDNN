@@ -49,10 +49,14 @@ TEST(convolution_gemm_post_ops_test, GroupedInt8Depthwise) {
         std::vector<float> scales(channels, 1.f), shifts(channels);
         for (int channel = 0; channel < channels; ++channel)
             shifts[channel] = static_cast<float>(channel);
+        std::vector<float> depthwise_data(scales);
+        depthwise_data.insert(depthwise_data.end(), shifts.begin(), shifts.end());
+        const memory::desc depthwise_md(
+                {2 * channels}, memory::data_type::f32, memory::format_tag::x);
+        memory depthwise_mem(depthwise_md, eng, depthwise_data.data());
         post_ops ops;
         ops.append_sum(1.f);
-        ops.append_depthwise(algorithm::depthwise_scale_shift, scales.data(),
-                shifts.data());
+        ops.append_depthwise(algorithm::depthwise_scale_shift, {0, scales.size()});
         ops.append_eltwise(algorithm::eltwise_relu, 0.f, 0.f);
         primitive_attr attr;
         attr.set_post_ops(ops);
@@ -67,7 +71,9 @@ TEST(convolution_gemm_post_ops_test, GroupedInt8Depthwise) {
         memory dst_mem(dst_md, eng, dst.data());
         convolution_forward(pd).execute(strm,
                 {{DNNL_ARG_SRC, src_mem}, {DNNL_ARG_WEIGHTS, weights_mem},
-                        {DNNL_ARG_DST, dst_mem}});
+                        {DNNL_ARG_DST, dst_mem},
+                        {DNNL_ARG_ATTR_MULTIPLE_POST_OP(1) | DNNL_ARG_SRC_1,
+                                depthwise_mem}});
         strm.wait();
         for (int spatial = 0; spatial < 8; ++spatial)
             for (int channel = 0; channel < channels; ++channel)
@@ -100,9 +106,13 @@ TEST(convolution_gemm_post_ops_test, Int8DepthwiseWithPaddingAndZeroPoint) {
     std::vector<float> scales(channels, 1.f), shifts(channels);
     for (int channel = 0; channel < channels; ++channel)
         shifts[channel] = static_cast<float>(channel);
+        std::vector<float> depthwise_data(scales);
+        depthwise_data.insert(depthwise_data.end(), shifts.begin(), shifts.end());
+        const memory::desc depthwise_md(
+                        {2 * channels}, memory::data_type::f32, memory::format_tag::x);
+        memory depthwise_mem(depthwise_md, eng, depthwise_data.data());
     post_ops ops;
-    ops.append_depthwise(algorithm::depthwise_scale_shift, scales.data(),
-            shifts.data());
+        ops.append_depthwise(algorithm::depthwise_scale_shift, {0, scales.size()});
     primitive_attr attr;
     attr.set_post_ops(ops);
     attr.set_zero_points_mask(DNNL_ARG_SRC, 0);
@@ -123,7 +133,9 @@ TEST(convolution_gemm_post_ops_test, Int8DepthwiseWithPaddingAndZeroPoint) {
     convolution_forward(pd).execute(strm,
             {{DNNL_ARG_SRC, src_mem}, {DNNL_ARG_WEIGHTS, weights_mem},
                     {DNNL_ARG_DST, dst_mem},
-                    {DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_SRC, zp_mem}});
+                    {DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_SRC, zp_mem},
+                    {DNNL_ARG_ATTR_MULTIPLE_POST_OP(0) | DNNL_ARG_SRC_1,
+                            depthwise_mem}});
     strm.wait();
     for (int spatial = 0; spatial < 8; ++spatial) {
         const int valid = spatial % 4 == 0 || spatial % 4 == 3 ? 4 : 6;
