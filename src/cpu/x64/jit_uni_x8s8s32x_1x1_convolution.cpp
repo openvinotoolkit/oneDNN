@@ -74,13 +74,16 @@ status_t jit_uni_x8s8s32x_1x1_convolution_fwd_t<isa>::execute_forward(
     const void *dw_dst_scales = CTX_IN_MEM(const void *,
             DNNL_ARG_ATTR_SCALES | DNNL_ARG_ATTR_POST_OP_DW | DNNL_ARG_DST);
 
+    DEFINE_OUTPUT_COMPENSATION_BUFFER(output_compensation, pd()->jcp_);
+
     parallel(pd()->jcp_.nthr, [&](const int ithr, const int nthr) {
         execute_forward_thr(ithr, nthr, src, weights, bias, weights_dw, bias_dw,
                 dst, src_scales, wei_scales, dst_scales, dw_wei_scales,
                 dw_dst_scales, src_zero_points, dst_zero_points,
                 ctx.get_scratchpad_grantor(),
                 post_ops_binary_rhs_arg_vec.data(),
-                post_ops_binary_rhs_arg_vec_dw.data());
+                post_ops_binary_rhs_arg_vec_dw.data(),
+                output_compensation);
     });
     return status::success;
 }
@@ -95,7 +98,8 @@ void jit_uni_x8s8s32x_1x1_convolution_fwd_t<isa>::execute_forward_thr(
         const int32_t *dst_zero_points,
         const memory_tracking::grantor_t &scratchpad,
         const void *post_ops_binary_rhs_arg_vec,
-        const void *post_ops_binary_rhs_arg_vec_dw) const {
+        const void *post_ops_binary_rhs_arg_vec_dw,
+        const int32_t *output_compensation) const {
     const memory_desc_wrapper src_d(pd()->src_md());
     const memory_desc_wrapper dst_d(pd()->dst_1x1_md());
     const memory_desc_wrapper weights_d(pd()->weights_md(0));
@@ -124,7 +128,7 @@ void jit_uni_x8s8s32x_1x1_convolution_fwd_t<isa>::execute_forward_thr(
     auto offset = weights_d.size() - weights_d.additional_buffer_size();
     char *w = const_cast<char *>(weights);
     const int32_t *compensation = (jcp.signed_input) ? reinterpret_cast<int32_t *>(w + offset) :
-                                  (jcp.with_input_zp) ? pd()->attr()->output_compensations_.shifts_ : nullptr;
+                                  (jcp.with_input_zp) ? output_compensation : nullptr;
     const int32_t *zp_compensation = jcp.src_zero_point
             ? reinterpret_cast<int32_t *>(&w[offset])
                     + (jcp.signed_input ? jcp.ngroups * jcp.oc : 0)
