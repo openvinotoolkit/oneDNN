@@ -200,8 +200,10 @@ void jit_uni_x8s8s32x_1x1_conv_kernel_vmm_t<isa, Vmm>::apply_postops(
             vmm_idx_off.insert({vreg_accum_idx(load_loop_blk, i_load, i_ur), i_load * jcp.load_block * sizeof(float)});
         });
         depthwise_injector::dynamic_params_t ddp {vmm_d_weights.getIdx(), vmm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
-                                                  reg_oc_off, vmm_idx_off};
-        quantization_injector::dynamic_params_t qdp {reg_oc_off, vmm_idx_off, jcp.dst_dt};
+                                                  reg_oc_off, vmm_idx_off,
+                                                  this->rsp, base_post_ops_data_offset};
+        quantization_injector::dynamic_params_t qdp {reg_oc_off, vmm_idx_off, jcp.dst_dt,
+                                                     this->rsp, base_post_ops_data_offset};
 
         if (jcp.with_sum && *p_sum_zp != 0)
             mov(ptr[rsp + reg_bcast_loop_iter_off], reg_ptr_sum_zp);
@@ -584,7 +586,11 @@ template <cpu_isa_t isa, typename Vmm>
 void jit_uni_x8s8s32x_1x1_conv_kernel_vmm_t<isa, Vmm>::generate() {
     preamble();
 
+    if (postops_injector_)
+        postops_injector_->push_post_ops_data_on_stack(this->param1, GET_OFF(post_ops_binary_rhs_arg_vec), reg_load_data, reg_output_data);
+
     sub(rsp, stack_space_needed);
+    base_post_ops_data_offset += stack_space_needed;
 
     if (jcp.with_bias) mov(reg_bias_data, ptr[param1 + GET_OFF(bias_data)]);
     if (jcp.signed_input || jcp.with_input_zp) {
@@ -607,7 +613,7 @@ void jit_uni_x8s8s32x_1x1_conv_kernel_vmm_t<isa, Vmm>::generate() {
         mov(ptr[rsp + reg_wei_scales_off], reg_wei_scales);
     }
     if (jcp.with_dst_scales) {
-        if (!jcp.signed_input) mov(ptr[rsp + reg_bias_data_off], reg_bias_data);
+        if (!jcp.signed_input && !jcp.with_input_zp) mov(ptr[rsp + reg_bias_data_off], reg_bias_data);
         mov(reg_dst_scales, ptr[param1 + GET_OFF(dst_scales)]);
         mov(ptr[rsp + reg_dst_scales_off], reg_dst_scales);
     }
@@ -704,7 +710,13 @@ void jit_uni_x8s8s32x_1x1_conv_kernel_vmm_t<isa, Vmm>::generate() {
         }
     }
     L(load_loop_blk[num_ur_cases]);
+
+    base_post_ops_data_offset -= stack_space_needed;
     add(rsp, stack_space_needed);
+
+    if (postops_injector_)
+        postops_injector_->reset_stack_pointer();
+
     postamble();
 
     if (jcp.with_eltwise)
