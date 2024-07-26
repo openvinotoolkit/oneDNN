@@ -492,7 +492,7 @@ status_t jit_sse41_conv_fwd_kernel_f32::init_conf(jit_conv_conf_t &jcp,
             sum_requires_scale_one, sum_requires_zp_zero));
     VDISPATCH_CONV_IC(post_ops_ok_, VERBOSE_UNSUPPORTED_POSTOP);
 
-    const bool flat = jcp.ic == 3 || jcp.ic == 1;
+    const bool flat = one_of(jcp.ic, 1, 2, 3);
     const bool mimo = !flat;
 
     const bool tag_ok = true
@@ -515,7 +515,7 @@ status_t jit_sse41_conv_fwd_kernel_f32::init_conf(jit_conv_conf_t &jcp,
     VDISPATCH_CONV_IC(channel_pad_ok, VERBOSE_UNSUPPORTED_PAD_FEATURE,
             "i/o and padded channel size mismatch");
 
-    bool ok_to_pad_channels = true && jcp.ngroups == 1;
+    bool ok_to_pad_channels = true && !is_data_layout_nxc && jcp.ngroups == 1;
 
     const int simd_w = 8; // 2 SSE vectors processing at once
     if (ok_to_pad_channels) {
