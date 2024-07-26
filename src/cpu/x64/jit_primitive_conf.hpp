@@ -272,8 +272,6 @@ struct jit_conv_conf_t {
 
     int dw_conv_oh, dw_conv_ow;
     data_type_t dw_conv_dst_dt;
-    const float* conv_weights;
-    const float* conv_biases;
 };
 
 // calculates filter size taking into account dilation
@@ -397,6 +395,8 @@ struct jit_conv_args_t {
     size_t last_oc_block = 0;
 
     size_t oc_off;
+    //Used for holding oc offset like GP registers. Used when lack of regisers. 
+    size_t dummy_oc_off;
     size_t ic_off;
     size_t oc_off_prf;
     size_t oh_blocks;
