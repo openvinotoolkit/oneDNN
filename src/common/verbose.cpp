@@ -745,7 +745,12 @@ std::ostream &operator<<(std::ostream &ss, const primitive_attr_t *attr) {
     if (!zero_points.has_default_values()) {
         ss << field_delim() << "attr-zero-points:" << zero_points.get_verbose();
     }
-
+    const auto &legacy_input_zp = attr->input_zero_points_;
+    if (!legacy_input_zp.has_default_values()) {
+        ss << "attr-legacy-input-zero-points:";
+        ss << ":" << get_val_str(legacy_input_zp.mask_) << ":" << get_val_str(legacy_input_zp.count_);
+        ss << " ";
+    }
     const post_ops_t &po = attr->post_ops_;
     if (!po.has_default_values()) {
         std::string delim = empty_delim;

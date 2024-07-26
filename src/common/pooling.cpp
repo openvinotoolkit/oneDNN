@@ -151,7 +151,7 @@ status_t pooling_attr_check(const pooling_desc_t &desc, const engine_t *engine,
         if (!attr->post_ops_.has_default_values()) {
             const auto &po = attr->post_ops_;
             using namespace primitive_kind;
-            VCHECK_POOLING_IMPL(po.has_default_values({binary, eltwise}),
+            VCHECK_POOLING_IMPL(po.has_default_values({binary, eltwise, quantization}),
                     VERBOSE_UNSUPPORTED_POSTOP);
 
             // Note: verbose support is inside the call.
