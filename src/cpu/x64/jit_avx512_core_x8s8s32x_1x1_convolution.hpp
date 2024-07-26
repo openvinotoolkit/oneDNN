@@ -268,8 +268,8 @@ struct jit_avx512_core_x8s8s32x_1x1_convolution_fwd_t : public primitive_t {
             while (jcp_1x1.nb_load_blocking % jcp_dw_->nb_ch_blocking != 0)
                 --jcp_dw_->nb_ch_blocking;
 
-            jcp_dw_->dw_conv_buffer_oc = static_cast<int>(
-                    jcp_1x1.nb_load_blocking * jcp_1x1.oc_block);
+            jcp_dw_->dw_conv_buffer_oc
+                    = jcp_1x1.nb_load_blocking * jcp_1x1.oc_block;
             jcp_1x1.bcast_loop_output_step = jcp_1x1.ur
                     * (jcp_1x1.nb_load_blocking * jcp_1x1.oc_block)
                     * jcp_1x1.typesize_out;
@@ -277,7 +277,7 @@ struct jit_avx512_core_x8s8s32x_1x1_convolution_fwd_t : public primitive_t {
             registrar_t scratchpad(scratchpad_registry_);
             registrar_t dw_scratchpad(scratchpad, names::prefix_fusion);
 
-            dim_t dw_conv_buffer_size_ = static_cast<dim_t>(nthr) * jcp_dw_->kh
+            size_t dw_conv_buffer_size_ = (size_t)nthr * jcp_dw_->kh
                     * jcp_dw_->iw * jcp_dw_->dw_conv_buffer_oc;
             assert(dw_conv_buffer_size_);
             dw_scratchpad.book(memory_tracking::names::key_fusion_inout_buffer,
@@ -330,7 +330,8 @@ private:
             const int32_t *src_zero_point, const int32_t *dst_zero_point,
             const memory_tracking::grantor_t &scratchpad,
             const void *post_ops_binary_rhs_arg_vec,
-            const void *post_ops_binary_rhs_arg_vec_dw) const;
+            const void *post_ops_binary_rhs_arg_vec_dw,
+            const int32_t *output_compensation) const;
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 
     std::unique_ptr<jit_avx512_core_x8s8s32x_1x1_conv_kernel_t> kernel_;

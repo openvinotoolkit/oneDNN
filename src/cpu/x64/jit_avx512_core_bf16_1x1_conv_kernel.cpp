@@ -196,9 +196,9 @@ void jit_avx512_core_bf16_1x1_conv_kernel_t::apply_postops(
 
         depthwise_injector::dynamic_params_t ddp {zmm_d_weights.getIdx(),
                 zmm_d_bias.getIdx(), reg_d_weights, reg_d_bias, reg_oc_off,
-                vmm_idx_off};
-        quantization_injector::dynamic_params_t qdp {
-                reg_oc_off, vmm_idx_off, jcp.dst_dt};
+                vmm_idx_off, this->rsp, base_post_ops_data_offset};
+        quantization_injector::dynamic_params_t qdp {reg_oc_off, vmm_idx_off,
+                jcp.dst_dt, this->rsp, base_post_ops_data_offset};
 
         injector_utils::vmm_index_set_t vmm_idxs;
         if (jcp.with_binary) {
@@ -1017,7 +1017,14 @@ void jit_avx512_core_bf16_1x1_conv_kernel_t::compute_diff_bias(
 void jit_avx512_core_bf16_1x1_conv_kernel_t::generate() {
     preamble();
 
+    if (postops_injector_)
+        postops_injector_->push_post_ops_data_on_stack(this->param1,
+                GET_OFF(post_ops_binary_rhs_arg_vec), reg_bcast_data,
+                reg_load_data);
+
     sub(rsp, stack_space_needed);
+    base_post_ops_data_offset += stack_space_needed;
+
     if (jcp.with_binary) {
         mov(EVEX_compress_addr(rsp, reg_abi_param1_backup), abi_param1);
         if (jcp.with_dw_conv) {
@@ -1201,6 +1208,9 @@ void jit_avx512_core_bf16_1x1_conv_kernel_t::generate() {
     L(load_loop_blk[num_ur_cases]);
 
     add(rsp, stack_space_needed);
+    base_post_ops_data_offset -= stack_space_needed;
+
+    if (postops_injector_) postops_injector_->reset_stack_pointer();
 
     postamble();
 
@@ -1422,8 +1432,7 @@ status_t jit_avx512_core_bf16_1x1_conv_kernel_t::init_conf(
                 backward_data)) {
         jcp.nthr = nthreads;
         if (one_of(jcp.prop_kind, forward_inference, forward_training)) {
-            if (jcp.with_dw_conv)
-                jcp.ur = static_cast<int>(nstl::min<dim_t>(jcp.ow, jcp.ur));
+            if (jcp.with_dw_conv) jcp.ur = nstl::min(jcp.ow, jcp.ur);
             jcp.reduce_dim = jcp.ic;
             jcp.reduce_block = jcp.ic_block;
 
@@ -1738,8 +1747,8 @@ status_t jit_avx512_core_bf16_1x1_conv_kernel_t::init_conf(
         // for reduction balance
         int max_reduce_blocking
                 = nstl::min<dim_t>(L1_capacity / jcp.ur, jcp.reduce_dim);
-        int min_reduce_blocking = static_cast<int>(nstl::min<dim_t>(
-                L1_capacity / jcp.ur, nstl::max(jcp.iw, jcp.ih)));
+        int min_reduce_blocking
+                = nstl::min(L1_capacity / jcp.ur, nstl::max(jcp.iw, jcp.ih));
         reduce_blocking = best_divider(
                 jcp.reduce_dim, min_reduce_blocking, max_reduce_blocking, true);
         reduce_blocking = nstl::max(
@@ -1912,7 +1921,7 @@ void jit_avx512_core_bf16_1x1_conv_kernel_t::balance(
 
         if (jcp.prop_kind == backward_weights) {
             int mult = (jcp.stride_h == 1 && jcp.stride_w == 1)
-                    ? static_cast<int>(nstl::max<dim_t>(1, (jcp.oc / jcp.ic)))
+                    ? nstl::max(1, (jcp.oc / jcp.ic))
                     : 1;
             output_koeff = 4 * mult;
         }
@@ -1934,15 +1943,12 @@ void jit_avx512_core_bf16_1x1_conv_kernel_t::balance(
     auto best_mem_cost = calc_mem_cost(nthr_mb, nthr_oc_b, nthr_ic_b);
 
     /* step 1: find the best thread distribution with lowest memory cost */
-    const int nthr_mb_max
-            = static_cast<int>(nstl::min<dim_t>(nthr, jcp.mb * nb_reduce));
+    const int nthr_mb_max = nstl::min(nthr, jcp.mb * nb_reduce);
     for (nthr_mb = 1; nthr_mb <= nthr_mb_max; ++nthr_mb) {
         const int nthr_par = nthr / nthr_mb;
-        const int nthr_oc_b_max
-                = static_cast<int>(nstl::min<dim_t>(nthr_par, nb_load));
+        const int nthr_oc_b_max = nstl::min(nthr_par, nb_load);
         for (nthr_oc_b = 1; nthr_oc_b <= nthr_oc_b_max; ++nthr_oc_b) {
-            nthr_ic_b = static_cast<int>(
-                    nstl::min<dim_t>(nthr_par / nthr_oc_b, nb_bcast));
+            nthr_ic_b = nstl::min(nthr_par / nthr_oc_b, nb_bcast);
             auto mem_cost = calc_mem_cost(nthr_mb, nthr_oc_b, nthr_ic_b);
             if (mem_cost <= best_mem_cost) {
                 best_mem_cost = mem_cost;
@@ -1953,7 +1959,7 @@ void jit_avx512_core_bf16_1x1_conv_kernel_t::balance(
         }
     }
     if (jcp.nthr_mb > nthreads / 2 && jcp.nthr_mb < nthreads)
-        jcp.nthr_mb = static_cast<int>(nstl::min<dim_t>(jcp.mb, nthreads));
+        jcp.nthr_mb = nstl::min(jcp.mb, nthreads);
 
     jcp.nthr = jcp.nthr_mb * jcp.nthr_g * jcp.nthr_oc_b * jcp.nthr_ic_b;
     assert(jcp.nthr <= nthreads);

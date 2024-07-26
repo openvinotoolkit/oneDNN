@@ -303,15 +303,15 @@ status_t jit_uni_x8s8s32x_deconv_fwd_kernel_t<isa>::init_conf(
     const int regs = jcp.has_vnni ? 14 : 12;
 
     jcp.nb_ch_blocking = 1;
-    jcp.nb_oc_blocking = static_cast<int>(nstl::min<dim_t>(4, jcp.nb_oc));
+    jcp.nb_oc_blocking = nstl::min(4, jcp.nb_oc);
     for (; jcp.nb_oc_blocking > 1; jcp.nb_oc_blocking--)
         if (jcp.nb_oc % jcp.nb_oc_blocking == 0
                 && jcp.l_pad <= regs / (jcp.nb_oc_blocking + 1))
             break;
 
     jcp.ur_w = regs / (jcp.nb_oc_blocking + 1);
-    const int l_overflow = static_cast<int>(max<dim_t>(
-            0, ((jcp.kw - 1) * (jcp.dilate_w + 1) - jcp.l_pad) / jcp.stride_w));
+    const int l_overflow = max(
+            0, ((jcp.kw - 1) * (jcp.dilate_w + 1) - jcp.l_pad) / jcp.stride_w);
 
     if (jcp.ow < jcp.ur_w) {
         jcp.ur_w = jcp.ow;
@@ -328,10 +328,10 @@ status_t jit_uni_x8s8s32x_deconv_fwd_kernel_t<isa>::init_conf(
             const bool left_boundary_covered
                     = jcp.ur_w >= l_overflow * jcp.stride_w;
             jcp.ur_w_tail = jcp.ow % jcp.ur_w;
-            const int r_overflow_no_tail = static_cast<int>(max<dim_t>(0,
-                    ((jcp.kw - 1) * (jcp.dilate_w + 1)
-                            - max<dim_t>(0, jcp.r_pad) - jcp.ur_w_tail)
-                            / jcp.stride_w));
+            const int r_overflow_no_tail = max(0,
+                    ((jcp.kw - 1) * (jcp.dilate_w + 1) - max(0, jcp.r_pad)
+                            - jcp.ur_w_tail)
+                            / jcp.stride_w);
             const bool right_boundary_covered
                     = jcp.ur_w >= r_overflow_no_tail * jcp.stride_w;
 
@@ -471,7 +471,7 @@ jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa,
 
 template <cpu_isa_t isa, typename Vmm>
 Vmm jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::vmm_out(
-        dim_t i_ur, dim_t i_oc) const {
+        int i_ur, int i_oc) const {
     const int idx = i_ur * jcp_.nb_oc_blocking + i_oc;
     assert(idx < ker_max_regs_);
     /* remap the reg indices to avoid using xmm0 in eltwise injector */
@@ -480,16 +480,16 @@ Vmm jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::vmm_out(
 
 template <cpu_isa_t isa, typename Vmm>
 Vmm jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::vmm_inp(
-        dim_t i_ic, dim_t nb_x_blocking) const {
+        int i_ic, int nb_x_blocking) const {
     const int idx = i_ic + nb_x_blocking * jcp_.ur_w;
     assert(idx < ker_max_regs_);
     return Vmm(15 - idx);
 }
 
 template <cpu_isa_t isa, typename Vmm>
-dim_t jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::get_ow_start(
-        dim_t ki, dim_t l_overflow) const noexcept {
-    dim_t res = (jcp_.ow - 1 + jcp_.r_pad) % jcp_.stride_w
+int jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::get_ow_start(
+        int ki, int l_overflow) const noexcept {
+    int res = (jcp_.ow - 1 + jcp_.r_pad) % jcp_.stride_w
             + l_overflow * jcp_.stride_w
             - (jcp_.kw - 1 - ki) * (jcp_.dilate_w + 1);
     while (res < 0)
@@ -498,11 +498,11 @@ dim_t jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::get_ow_start(
 }
 
 template <cpu_isa_t isa, typename Vmm>
-dim_t jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::get_ow_end(
-        dim_t ur_w, dim_t ki, dim_t r_overflow) const noexcept {
+int jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::get_ow_end(
+        int ur_w, int ki, int r_overflow) const noexcept {
     if (utils::one_of(ur_w, jcp_.ow, jcp_.ur_w_tail))
-        ur_w += nstl::min<dim_t>(0, jcp_.r_pad); // remove negative padding
-    dim_t res = (ur_w - 1 + jcp_.l_pad) % jcp_.stride_w
+        ur_w += nstl::min(0, jcp_.r_pad); // remove negative padding
+    int res = (ur_w - 1 + jcp_.l_pad) % jcp_.stride_w
             + r_overflow * jcp_.stride_w - ki * (jcp_.dilate_w + 1);
     while (res < 0)
         res += jcp_.stride_w;
@@ -510,13 +510,13 @@ dim_t jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::get_ow_end(
 }
 
 template <cpu_isa_t isa, typename Vmm>
-dim_t jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::get_blocking_size()
+int jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::get_blocking_size()
         const noexcept {
     return jcp_.is_depthwise ? jcp_.ch_block : jcp_.oc_block;
 }
 
 template <cpu_isa_t isa, typename Vmm>
-dim_t jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::get_tail_size()
+int jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::get_tail_size()
         const noexcept {
     return jcp_.is_depthwise ? jcp_.ngroups % jcp_.ch_block
                              : jcp_.oc_without_padding % jcp_.oc_block;
@@ -541,7 +541,7 @@ void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::compute(
 
 template <cpu_isa_t isa, typename Vmm>
 std::function<Vmm()> jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa,
-        Vmm>::prepare_round_robin_vmm_inp_generator(dim_t ur_w) const noexcept {
+        Vmm>::prepare_round_robin_vmm_inp_generator(int ur_w) const noexcept {
 
     const int start_vmm_idx = vmm_inp(ur_w - 1, jcp_.nb_oc_blocking).getIdx();
     const int end_vmm_idx = vmm_inp(0, jcp_.nb_oc_blocking).getIdx() + 1;
@@ -558,8 +558,8 @@ std::function<Vmm()> jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa,
 
 template <cpu_isa_t isa, typename Vmm>
 void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa,
-        Vmm>::apply_zp_src_pad_str_comp(dim_t ur_w, dim_t l_overflow,
-        dim_t r_overflow, bool h_padded) {
+        Vmm>::apply_zp_src_pad_str_comp(int ur_w, int l_overflow,
+        int r_overflow, bool h_padded) {
     Xbyak::Label end_zp_pad, no_tail;
 
     // apply once per icb loop, zp src stride paddding compensation calculate as
@@ -589,8 +589,8 @@ void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa,
 
 template <cpu_isa_t isa, typename Vmm>
 void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa,
-        Vmm>::append_zp_src_pad_str_comp(dim_t ur_w, dim_t l_overflow,
-        dim_t r_overflow, bool h_padded, bool last_oc_block) {
+        Vmm>::append_zp_src_pad_str_comp(int ur_w, int l_overflow,
+        int r_overflow, bool h_padded, bool last_oc_block) {
 
     const auto &reg_zp_src_pad_comp = reg_scratch_;
     const auto get_next_comp_vmm = prepare_round_robin_vmm_inp_generator(ur_w);
@@ -681,8 +681,8 @@ void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa,
 }
 
 template <cpu_isa_t isa, typename Vmm>
-void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::compute_ker(dim_t ur_w,
-        dim_t l_overflow, dim_t r_overflow, ker_block_t last_ic_block_flag,
+void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::compute_ker(int ur_w,
+        int l_overflow, int r_overflow, ker_block_t last_ic_block_flag,
         bool h_padded) {
 
     const bool signed_input_or_src_zp
@@ -805,8 +805,8 @@ void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::compute_ker(dim_t ur_w,
 }
 
 template <cpu_isa_t isa, typename Vmm>
-void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::kh_loop(dim_t ur_w,
-        dim_t l_overflow, dim_t r_overflow, ker_block_t last_ic_block_flag) {
+void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::kh_loop(int ur_w,
+        int l_overflow, int r_overflow, ker_block_t last_ic_block_flag) {
 
     const bool signed_input_or_src_zp
             = (jcp_.signed_input || jcp_.src_zero_point);
@@ -1004,7 +1004,7 @@ void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::kh_loop(dim_t ur_w,
 
 template <cpu_isa_t isa, typename Vmm>
 void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::prepare_output(
-        dim_t ur_w) {
+        int ur_w) {
     for (int ocb = 0; ocb < jcp_.nb_oc_blocking; ocb++) {
         for (int ur = 0; ur < ur_w; ur++) {
             const Vmm vmm = vmm_out(ur, ocb);
@@ -1021,17 +1021,16 @@ void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::prepare_output(
 
 template <cpu_isa_t isa, typename Vmm>
 void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::cvt2ps(
-        data_type_t type_in, const Vmm vmm_in, const Reg64 reg, dim_t offset,
-        dim_t load_size) {
+        data_type_t type_in, const Vmm vmm_in, const Reg64 reg, int offset,
+        int load_size) {
 
     load_data(type_in, vmm_in, reg, offset, load_size);
     if (type_in != data_type::f32) uni_vcvtdq2ps(vmm_in, vmm_in);
 }
 
 template <cpu_isa_t isa, typename Vmm>
-void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::apply_postops(
-        dim_t ur_w, bool last_oc_block, const float *p_sum_scale,
-        const int32_t *p_sum_zp) {
+void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::apply_postops(int ur_w,
+        bool last_oc_block, const float *p_sum_scale, const int32_t *p_sum_zp) {
     const auto sum_injector = [&]() {
         if (p_sum_scale) { // post_op: sum
             for (int k = 0; k < jcp_.nb_oc_blocking; k++) {
@@ -1094,9 +1093,11 @@ void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::apply_postops(
     }
     depthwise_injector::dynamic_params_t ddp {vmm_d_weights.getIdx(),
             vmm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
-            ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off};
+            ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, this->rsp,
+            base_post_ops_data_offset};
     quantization_injector::dynamic_params_t qdp {
-            ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, jcp_.dst_dt};
+            ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, jcp_.dst_dt,
+            this->rsp, base_post_ops_data_offset};
 
     const int nb_oc_block
             = jcp_.is_depthwise ? jcp_.nb_ch_blocking : jcp_.nb_oc_blocking;
@@ -1106,7 +1107,7 @@ void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::apply_postops(
 
 template <cpu_isa_t isa, typename Vmm>
 void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::store_output(
-        dim_t ur_w, bool last_oc_block) {
+        int ur_w, bool last_oc_block) {
     mov(reg_bias_, ptr[param1_ + GET_OFF(bias)]);
 
     if (jcp_.signed_input)
@@ -1325,7 +1326,7 @@ void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::store_output(
 
 template <cpu_isa_t isa, typename Vmm>
 void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::icb_loop(
-        dim_t ur_w, dim_t l_overflow, dim_t r_overflow, bool is_last_sp_block) {
+        int ur_w, int l_overflow, int r_overflow, bool is_last_sp_block) {
 
     const int shift_src_icb = jcp_.typesize_in * jcp_.ic_block;
     const size_t shift_filt_icb = (size_t)jcp_.typesize_in * jcp_.kd * jcp_.kh
@@ -1407,8 +1408,14 @@ template <cpu_isa_t isa, typename Vmm>
 void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::generate() {
     preamble();
 
-    if (zp::should_calculate_deconv_zp_src_pad_str_comp(jcp_))
+    if (postops_injector_)
+        postops_injector_->push_post_ops_data_on_stack(param1,
+                GET_OFF(post_ops_binary_rhs_arg_vec), reg_src_, reg_filt_);
+
+    if (zp::should_calculate_deconv_zp_src_pad_str_comp(jcp_)) {
         sub(rsp, reserved_stack_size_);
+        base_post_ops_data_offset += reserved_stack_size_;
+    }
 
     const auto vmm_one_128 = Xbyak::Xmm(vmm_one_.getIdx());
     mov(reg_scratch_, 0x10001);
@@ -1424,17 +1431,16 @@ void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::generate() {
     const int src_shift = jcp_.typesize_in * (jcp_.ur_w / jcp_.stride_w)
             * jcp_.ngroups * jcp_.ic_without_padding;
 
-    const int l_overflow = static_cast<int>(max<dim_t>(0,
-            ((jcp_.kw - 1) * (jcp_.dilate_w + 1) - jcp_.l_pad)
-                    / jcp_.stride_w));
-    const int r_overflow = static_cast<int>(max<dim_t>(0,
-            ((jcp_.kw - 1) * (jcp_.dilate_w + 1) - max<dim_t>(0, jcp_.r_pad))
-                    / jcp_.stride_w));
+    const int l_overflow = max(0,
+            ((jcp_.kw - 1) * (jcp_.dilate_w + 1) - jcp_.l_pad) / jcp_.stride_w);
+    const int r_overflow = max(0,
+            ((jcp_.kw - 1) * (jcp_.dilate_w + 1) - max(0, jcp_.r_pad))
+                    / jcp_.stride_w);
 
-    const int r_overflow1 = static_cast<int>(nstl::max<dim_t>(0,
-            ((jcp_.kw - 1) * (jcp_.dilate_w + 1)
-                    - nstl::max<dim_t>(0, jcp_.r_pad) - jcp_.ur_w_tail)
-                    / jcp_.stride_w));
+    const int r_overflow1 = nstl::max(0,
+            ((jcp_.kw - 1) * (jcp_.dilate_w + 1) - nstl::max(0, jcp_.r_pad)
+                    - jcp_.ur_w_tail)
+                    / jcp_.stride_w);
     int nur_w = jcp_.ow / jcp_.ur_w;
     if (r_overflow1 > 0) nur_w--;
 
@@ -1475,8 +1481,12 @@ void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::generate() {
         }
     }
 
-    if (zp::should_calculate_deconv_zp_src_pad_str_comp(jcp_))
+    if (zp::should_calculate_deconv_zp_src_pad_str_comp(jcp_)) {
         add(rsp, reserved_stack_size_);
+        base_post_ops_data_offset -= reserved_stack_size_;
+    }
+
+    if (postops_injector_) postops_injector_->reset_stack_pointer();
 
     postamble();
 
@@ -1804,25 +1814,23 @@ status_t jit_uni_x8s8s32x_deconvolution_fwd_t<isa>::execute_forward_2d(
                     /* dilation */
                     const int dilate_h = jcp.dilate_h + 1;
                     // Note: use div_up to account for "holes" in filter
-                    const int o_t_overflow = static_cast<int>(div_up(
-                            nstl::max<dim_t>(0,
-                                    (jcp.kh - 1) * dilate_h - oj - jcp.t_pad),
-                            static_cast<dim_t>(dilate_h)));
-                    const int o_b_overflow = static_cast<int>(
-                            div_up(nstl::max<dim_t>(0,
-                                           (jcp.kh - 1) * dilate_h + 1 - jcp.oh
-                                                   + oj - jcp.b_pad),
-                                    static_cast<dim_t>(dilate_h)));
+                    const int o_t_overflow = div_up(
+                            max(0, (jcp.kh - 1) * dilate_h - oj - jcp.t_pad),
+                            dilate_h);
+                    const int o_b_overflow
+                            = div_up(max(0,
+                                             (jcp.kh - 1) * dilate_h + 1
+                                                     - jcp.oh + oj - jcp.b_pad),
+                                    dilate_h);
                     kh_len = jcp.kh - o_t_overflow - o_b_overflow;
                     kh_lo = o_b_overflow;
                     ih_max = oj + jcp.t_pad - o_b_overflow * dilate_h;
                 } else {
-                    const int o_t_overflow = static_cast<int>(nstl::max<dim_t>(
-                            0, (jcp.kh - (oj + 1 + jcp.t_pad)) / jcp.stride_h));
-                    const int o_b_overflow
-                            = static_cast<int>(nstl::max<dim_t>(0,
-                                    ((oj + jcp.kh) - (jcp.oh + jcp.b_pad))
-                                            / jcp.stride_h));
+                    const int o_t_overflow = max(
+                            0, (jcp.kh - (oj + 1 + jcp.t_pad)) / jcp.stride_h);
+                    const int o_b_overflow = max(0,
+                            ((oj + jcp.kh) - (jcp.oh + jcp.b_pad))
+                                    / jcp.stride_h);
                     const int overflow_kh_hi = jcp.kh - 1
                             - modulo(jcp.oh + jcp.b_pad - (oj + 1),
                                     jcp.stride_h);
@@ -1845,12 +1853,12 @@ status_t jit_uni_x8s8s32x_deconvolution_fwd_t<isa>::execute_forward_2d(
                 p.compensation = compensation_w;
                 p.t_overflow = jcp.dilate_h > 0
                         ? jcp.kh - kh_len - kh_lo
-                        : static_cast<int>(nstl::max<dim_t>(0,
+                        : max(0,
                                   jcp.kh
                                           - (kh_lo
                                                   + max(0, kh_len - 1)
                                                           * jcp.stride_h
-                                                  + 1)));
+                                                  + 1));
                 p.b_overflow = kh_lo;
                 p.kh_padding = kh_len;
                 p.src_scales = src_scales;
@@ -1991,24 +1999,23 @@ status_t jit_uni_x8s8s32x_deconvolution_fwd_t<isa>::execute_forward_3d(
                 /* dilation */
                 int dilate_d = jcp.dilate_d + 1;
                 // Note: use div_up to account for "holes" in filter
-                d_t_overflow = static_cast<int>(div_up(
-                        nstl::max<dim_t>(
-                                0, (jcp.kd - 1) * dilate_d - od_s - jcp.f_pad),
-                        static_cast<dim_t>(dilate_d)));
-                d_back_overflow = static_cast<int>(
-                        div_up(nstl::max<dim_t>(0,
-                                       (jcp.kd - 1) * dilate_d + 1 - jcp.od
-                                               + od_s - jcp.back_pad),
-                                static_cast<dim_t>(dilate_d)));
+                d_t_overflow = div_up(
+                        max(0, (jcp.kd - 1) * dilate_d - od_s - jcp.f_pad),
+                        dilate_d);
+                d_back_overflow
+                        = div_up(max(0,
+                                         (jcp.kd - 1) * dilate_d + 1 - jcp.od
+                                                 + od_s - jcp.back_pad),
+                                dilate_d);
                 kd_len = jcp.kd - d_t_overflow - d_back_overflow;
                 kd_lo = d_back_overflow;
                 input_d_s = od_s + jcp.f_pad - d_back_overflow * dilate_d;
             } else {
-                const int d_t_overflow = static_cast<int>(nstl::max<dim_t>(
-                        0, (jcp.kd - (od_s + 1 + jcp.f_pad)) / jcp.stride_d));
-                const int d_back_overflow = static_cast<int>(nstl::max<dim_t>(0,
+                const int d_t_overflow = max(
+                        0, (jcp.kd - (od_s + 1 + jcp.f_pad)) / jcp.stride_d);
+                const int d_back_overflow = max(0,
                         ((od_s + jcp.kd) - (jcp.od + jcp.back_pad))
-                                / jcp.stride_d));
+                                / jcp.stride_d);
                 const int overflow_kd_hi = jcp.kd - 1
                         - modulo(jcp.od + jcp.back_pad - (od_s + 1),
                                 jcp.stride_d);
@@ -2040,25 +2047,23 @@ status_t jit_uni_x8s8s32x_deconvolution_fwd_t<isa>::execute_forward_3d(
                     /* dilation */
                     const int dilate_h = jcp.dilate_h + 1;
                     // Note: use div_up to account for "holes" in filter
-                    const int o_t_overflow = static_cast<int>(div_up(
-                            nstl::max<dim_t>(0,
-                                    (jcp.kh - 1) * dilate_h - oj - jcp.t_pad),
-                            static_cast<dim_t>(dilate_h)));
-                    const int o_b_overflow = static_cast<int>(
-                            div_up(nstl::max<dim_t>(0,
-                                           (jcp.kh - 1) * dilate_h + 1 - jcp.oh
-                                                   + oj - jcp.b_pad),
-                                    static_cast<dim_t>(dilate_h)));
+                    const int o_t_overflow = div_up(
+                            max(0, (jcp.kh - 1) * dilate_h - oj - jcp.t_pad),
+                            dilate_h);
+                    const int o_b_overflow
+                            = div_up(max(0,
+                                             (jcp.kh - 1) * dilate_h + 1
+                                                     - jcp.oh + oj - jcp.b_pad),
+                                    dilate_h);
                     kh_len = jcp.kh - o_t_overflow - o_b_overflow;
                     kh_lo = o_b_overflow;
                     ih_max = oj + jcp.t_pad - o_b_overflow * dilate_h;
                 } else {
-                    const int o_t_overflow = static_cast<int>(nstl::max<dim_t>(
-                            0, (jcp.kh - (oj + 1 + jcp.t_pad)) / jcp.stride_h));
-                    const int o_b_overflow
-                            = static_cast<int>(nstl::max<dim_t>(0,
-                                    ((oj + jcp.kh) - (jcp.oh + jcp.b_pad))
-                                            / jcp.stride_h));
+                    const int o_t_overflow = max(
+                            0, (jcp.kh - (oj + 1 + jcp.t_pad)) / jcp.stride_h);
+                    const int o_b_overflow = max(0,
+                            ((oj + jcp.kh) - (jcp.oh + jcp.b_pad))
+                                    / jcp.stride_h);
                     const int overflow_kh_hi = jcp.kh - 1
                             - modulo(jcp.oh + jcp.b_pad - (oj + 1),
                                     jcp.stride_h);
@@ -2083,21 +2088,21 @@ status_t jit_uni_x8s8s32x_deconvolution_fwd_t<isa>::execute_forward_3d(
                 strides together */
                 p.t_overflow = jcp.dilate_h > 0
                         ? jcp.kh - kh_len - kh_lo
-                        : static_cast<int>(nstl::max<dim_t>(0,
+                        : max(0,
                                   jcp.kh
                                           - (kh_lo
                                                   + max(0, kh_len - 1)
                                                           * jcp.stride_h
-                                                  + 1)));
+                                                  + 1));
                 p.b_overflow = kh_lo;
                 p.f_overflow = jcp.dilate_d > 0
                         ? jcp.kd - kd_len - kd_lo
-                        : static_cast<int>(nstl::max<dim_t>(0,
+                        : max(0,
                                   jcp.kd
                                           - (kd_lo
                                                   + max(0, kd_len - 1)
                                                           * jcp.stride_d
-                                                  + 1)));
+                                                  + 1));
                 p.back_overflow = kd_lo;
                 p.kh_padding = kh_len;
                 p.kd_padding = kd_len;

@@ -89,7 +89,7 @@ jit_avx512_core_x8s8s32x_1x1_conv_kernel_vmm_t<Vmm>::
 
 template <typename Vmm>
 void jit_avx512_core_x8s8s32x_1x1_conv_kernel_vmm_t<Vmm>::bcast_loop(
-        dim_t load_loop_blk) {
+        int load_loop_blk) {
     mov(aux1_reg_bcast_data, reg_bcast_data);
     mov(aux_reg_bcast_data, reg_bcast_data);
 
@@ -180,7 +180,7 @@ static void iterate(const int load_loop_blk, const int ur, const F &f) {
 
 template <typename Vmm>
 Address jit_avx512_core_x8s8s32x_1x1_conv_kernel_vmm_t<Vmm>::output_ptr(
-        const dim_t i_load, const dim_t i_ur) {
+        const int i_load, const int i_ur) {
     const size_t ur_stride = jcp.with_dw_conv
             ? jcp.nb_load_blocking * jcp.oc_block * i_ur
             : jcp.oc_without_padding * jcp.ngroups * i_ur;
@@ -191,19 +191,19 @@ Address jit_avx512_core_x8s8s32x_1x1_conv_kernel_vmm_t<Vmm>::output_ptr(
 
 template <typename Vmm>
 int jit_avx512_core_x8s8s32x_1x1_conv_kernel_vmm_t<Vmm>::vreg_accum_idx(
-        const dim_t load_loop_blk, dim_t i_load, dim_t i_ur) const {
+        const int load_loop_blk, int i_load, int i_ur) const {
     return (i_ur * load_loop_blk + i_load);
 }
 
 template <typename Vmm>
 Vmm jit_avx512_core_x8s8s32x_1x1_conv_kernel_vmm_t<Vmm>::vreg_accum(
-        const dim_t load_loop_blk, dim_t i_load, dim_t i_ur) const {
+        const int load_loop_blk, int i_load, int i_ur) const {
     return Vmm(vreg_accum_idx(load_loop_blk, i_load, i_ur));
 }
 
 template <typename Vmm>
 void jit_avx512_core_x8s8s32x_1x1_conv_kernel_vmm_t<Vmm>::apply_sum(
-        const dim_t load_loop_blk, const dim_t ur, const bool mask_flag_in,
+        const int load_loop_blk, const int ur, const bool mask_flag_in,
         const float *p_sum_scale, const int32_t *p_sum_zp) {
     if (jcp.with_sum) {
         const float sum_scale = *p_sum_scale;
@@ -234,7 +234,7 @@ void jit_avx512_core_x8s8s32x_1x1_conv_kernel_vmm_t<Vmm>::apply_sum(
 
 template <typename Vmm>
 void jit_avx512_core_x8s8s32x_1x1_conv_kernel_vmm_t<Vmm>::apply_postops(
-        const dim_t load_loop_blk, const dim_t ur, const bool mask_flag_in,
+        const int load_loop_blk, const int ur, const bool mask_flag_in,
         const float *p_sum_scale, const int32_t *p_sum_zp) {
     if (jcp.with_eltwise || jcp.with_binary || jcp.with_sum
             || jcp.with_depthwise || jcp.with_quantization) {
@@ -246,9 +246,9 @@ void jit_avx512_core_x8s8s32x_1x1_conv_kernel_vmm_t<Vmm>::apply_postops(
         });
         depthwise_injector::dynamic_params_t ddp {zmm_d_weights.getIdx(),
                 zmm_d_bias.getIdx(), reg_d_weights, reg_d_bias, reg_oc_off,
-                vmm_idx_off};
-        quantization_injector::dynamic_params_t qdp {
-                reg_oc_off, vmm_idx_off, jcp.dst_dt};
+                vmm_idx_off, this->rsp, base_post_ops_data_offset};
+        quantization_injector::dynamic_params_t qdp {reg_oc_off, vmm_idx_off,
+                jcp.dst_dt, this->rsp, base_post_ops_data_offset};
 
         apply_sum(load_loop_blk, ur, mask_flag_in, p_sum_scale, p_sum_zp);
 
@@ -313,7 +313,7 @@ void jit_avx512_core_x8s8s32x_1x1_conv_kernel_vmm_t<Vmm>::apply_postops(
 
 template <typename Vmm>
 void jit_avx512_core_x8s8s32x_1x1_conv_kernel_vmm_t<Vmm>::reduce_loop(
-        dim_t load_loop_blk, dim_t ur, bool wraparound) {
+        int load_loop_blk, int ur, bool wraparound) {
     auto vreg_load = [ur, load_loop_blk](int i_load) {
         return Vmm(ur * load_loop_blk + i_load);
     };
@@ -522,8 +522,11 @@ void jit_avx512_core_x8s8s32x_1x1_conv_kernel_vmm_t<Vmm>::reduce_loop(
             }
         }
 
-        if (jcp.dst_dt == data_type::bf16 && !isa_has_bf16(jcp.isa))
-            bf16_emu_->init_vcvtneps2bf16();
+        if (jcp.dst_dt == data_type::bf16 && !isa_has_bf16(jcp.isa)) {
+            // bf16_emu_reserv_4 is used as reg_oc_off in these postOps
+            bool preserve_scrach = jcp.with_depthwise || jcp.with_quantization;
+            bf16_emu_->init_vcvtneps2bf16(preserve_scrach);
+        }
 
         // store to the destination
         if (jcp.dst_dt == data_type::bf16 && isa_has_bf16(jcp.isa)) {
@@ -690,6 +693,11 @@ void jit_avx512_core_x8s8s32x_1x1_conv_kernel_vmm_t<Vmm>::generate() {
 
     preamble();
 
+    if (postops_injector_)
+        postops_injector_->push_post_ops_data_on_stack(this->param1,
+                GET_OFF(post_ops_binary_rhs_arg_vec), reg_load_data,
+                reg_output_data);
+
     const int simd_w = jcp.ic_block;
     xor_(reg_scratch, reg_scratch);
     Reg16 _t = reg_scratch.cvt16();
@@ -697,6 +705,8 @@ void jit_avx512_core_x8s8s32x_1x1_conv_kernel_vmm_t<Vmm>::generate() {
     vpbroadcastw(vmm_one, _t);
 
     sub(rsp, stack_space_needed);
+    base_post_ops_data_offset += stack_space_needed;
+
     if (jcp.with_binary)
         mov(EVEX_compress_addr(rsp, reg_abi_param1_backup), abi_param1);
 
@@ -723,7 +733,7 @@ void jit_avx512_core_x8s8s32x_1x1_conv_kernel_vmm_t<Vmm>::generate() {
         mov(EVEX_compress_addr(rsp, reg_wei_scales_off), reg_wei_scales);
     }
     if (jcp.with_dst_scales) {
-        if (!jcp.signed_input)
+        if (!jcp.signed_input && !jcp.with_input_zp)
             mov(EVEX_compress_addr(rsp, reg_bias_data_off), reg_bias_data);
         mov(reg_dst_scales, ptr[param1 + GET_OFF(dst_scales)]);
         mov(EVEX_compress_addr(rsp, reg_dst_scales_off), reg_dst_scales);
@@ -884,7 +894,10 @@ void jit_avx512_core_x8s8s32x_1x1_conv_kernel_vmm_t<Vmm>::generate() {
     }
     L(load_loop_blk[num_ur_cases]);
 
+    base_post_ops_data_offset -= stack_space_needed;
     add(rsp, stack_space_needed);
+
+    if (postops_injector_) postops_injector_->reset_stack_pointer();
 
     postamble();
 
@@ -1176,8 +1189,7 @@ status_t jit_avx512_core_x8s8s32x_1x1_conv_kernel_t::init_conf(
             }
         }
     }
-    if (jcp.with_dw_conv)
-        jcp.ur = static_cast<int>(nstl::min<dim_t>(jcp.ow, jcp.ur));
+    if (jcp.with_dw_conv) jcp.ur = nstl::min(jcp.ow, jcp.ur);
 
     jcp.reduce_dim = jcp.ic;
     jcp.reduce_block = jcp.ic_block;
@@ -1295,8 +1307,7 @@ status_t jit_avx512_core_x8s8s32x_1x1_conv_kernel_t::init_conf(
     if (jcp.mb == 1 && jcp.nb_load % 4 == 0 && jcp.ic / jcp.oc >= 4
             && jcp.ic * jcp.oc <= L2_size && jcp.nthr <= ncores_per_socket) {
         jcp.nb_load_chunk = 4;
-        jcp.load_grp_count = static_cast<int>(
-                nstl::max<dim_t>(jcp.nb_load / 4, jcp.load_grp_count));
+        jcp.load_grp_count = nstl::max(jcp.nb_load / 4, jcp.load_grp_count);
     }
 
     /* adjust the thread decomposition

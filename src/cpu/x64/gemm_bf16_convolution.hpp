@@ -229,6 +229,7 @@ private:
         using Vmm = typename cpu_isa_traits_t<avx512_core>::Vmm;
         Xbyak::Reg64 reg_oc_offset = r10;
         Xbyak::Reg64 reg_dw = r9;
+        Xbyak::Reg64 reg_post_ops_data = reg_bias;
         Xbyak::Opmask kmask = k7;
 
         Xbyak::Reg64 reserved_eltwise_gpr = r10;
@@ -255,7 +256,7 @@ private:
         nstl::vector<jit_uni_eltwise_injector_t<avx512_core> *>
                 jit_eltwise_injectors_;
 
-        void apply_postops(const bool apply_mask, const dim_t out_offset,
+        void apply_postops(const bool apply_mask, const size_t out_offset,
                 const int vmm_idx);
         void generate() override;
         int vreg_dst_idx(int iter) {
@@ -378,7 +379,8 @@ private:
     status_t execute_backward_data_thr_nspc(const int ithr, const int nthr,
             diff_src_data_t *diff_src_base, const wei_data_t *wei_base,
             const diff_dst_data_t *diff_dst_base,
-            const memory_tracking::grantor_t &scratchpad) const;
+            const memory_tracking::grantor_t &scratchpad,
+            const std::vector<const void *> &post_ops_binary_rhs_arg_vec) const;
 
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 
@@ -454,7 +456,7 @@ private:
             const conv_gemm_conf_t &jcp, const acc_data_t *weights_reduce_base,
             diff_wei_data_t *weights_base) const;
     void bf16_bwd_weights_reduction_par_nspc(int ithr_mb, int nthr_mb,
-            dim_t g_start, dim_t g_end, const conv_gemm_conf_t &jcp,
+            size_t g_start, size_t g_end, const conv_gemm_conf_t &jcp,
             const acc_data_t *weights_reduce_base,
             diff_wei_data_t *weights_base) const;
 

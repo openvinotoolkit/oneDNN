@@ -82,8 +82,21 @@ struct ref_pp_kernel_t : pp_kernel_t {
     }
 
     virtual void operator()(float *dst, const float *bias, const int len,
-            const int oc_start, const int oc_work,
-            const int oc_stride) const override;
+            const int oc_start, const int oc_work, const int oc_stride,
+            const std::vector<const void *> &post_ops_binary_rhs_arg_vec)
+            const override;
+
+    static bool post_ops_ok(const convolution_pd_t *pd) {
+        using namespace dnnl::impl::primitive_kind;
+        const auto &po = pd->attr()->post_ops_;
+        for (int i = 0; i < po.len(); i++) {
+            if (!utils::one_of(
+                        po.entry_[i].kind, eltwise, depthwise, quantization)) {
+                return false;
+            }
+        }
+        return true;
+    }
 
 private:
     nstl::vector<ref_eltwise_scalar_fwd_t *> ref_eltwise_injectors_;
@@ -91,13 +104,15 @@ private:
 };
 
 void ref_pp_kernel_t::operator()(float *dst, const float *bias, const int len,
-        const int oc_start, const int oc_work, const int oc_stride) const {
+        const int oc_start, const int oc_work, const int oc_stride,
+        const std::vector<const void *> &post_ops_binary_rhs_arg_vec) const {
     // TODO: for "outer threading" we have parallel section within
     // outermost "parallel". It is not good. Consider to use
     // "parallel" here with number of threads passed as parameter
     const auto &p = post_ops_;
     bool need_bias = do_bias_;
     if (p.len() > 0) {
+        std::size_t post_ops_data_idx = 0;
         int eltwise_inj_idx = 0;
         int depthwise_inj_idx = 0;
 
@@ -118,8 +133,12 @@ void ref_pp_kernel_t::operator()(float *dst, const float *bias, const int len,
                 eltwise_inj_idx++;
                 need_bias = false;
             } else if (post_op.is_depthwise()) {
-                auto depthwise_weights = post_op.depthwise.weights_data;
-                auto depthwise_bias = post_op.depthwise.biases_data;
+                auto depthwise_base = reinterpret_cast<const float *>(
+                        post_ops_binary_rhs_arg_vec[post_ops_data_idx]);
+                auto depthwise_weights = depthwise_base
+                        + post_op.depthwise.offset[post_op.depthwise.scales];
+                auto depthwise_bias = depthwise_base
+                        + post_op.depthwise.offset[post_op.depthwise.shifts];
 
                 parallel_nd(oc_work, [&](const int oc) {
                     float b = need_bias ? bias[oc_start + oc] : 0;
@@ -135,16 +154,25 @@ void ref_pp_kernel_t::operator()(float *dst, const float *bias, const int len,
                     }
                 });
 
+                post_ops_data_idx++;
                 depthwise_inj_idx++;
                 need_bias = false;
             } else if (post_op.is_quantization()) {
                 auto quant = post_op.quantization;
-                auto pcl = quant.data[quant.crop_low];
-                auto pch = quant.data[quant.crop_high];
-                auto pisc = quant.data[quant.inp_scale];
-                auto pish = quant.data[quant.inp_shift];
-                auto posc = quant.data[quant.output_scale];
-                auto posh = quant.data[quant.output_shift];
+                auto quantization_base = reinterpret_cast<const float *>(
+                        post_ops_binary_rhs_arg_vec[post_ops_data_idx]);
+                auto pcl = quantization_base
+                        + post_op.quantization.offset[quant.crop_low];
+                auto pch = quantization_base
+                        + post_op.quantization.offset[quant.crop_high];
+                auto pisc = quantization_base
+                        + post_op.quantization.offset[quant.inp_scale];
+                auto pish = quantization_base
+                        + post_op.quantization.offset[quant.inp_shift];
+                auto posc = quantization_base
+                        + post_op.quantization.offset[quant.output_scale];
+                auto posh = quantization_base
+                        + post_op.quantization.offset[quant.output_shift];
 
                 parallel_nd(oc_work, [&](const int oc) {
                     float b = need_bias ? bias[oc_start + oc] : 0;
@@ -181,6 +209,7 @@ void ref_pp_kernel_t::operator()(float *dst, const float *bias, const int len,
                     }
                 });
 
+                post_ops_data_idx++;
                 need_bias = false;
             }
         }
@@ -211,16 +240,19 @@ pp_kernel_t *pp_kernel_t::create(
     if (res) return res;
 #endif
 
-    return new ref_pp_kernel_t(pd, jcp);
-}
+    if (ref_pp_kernel_t::post_ops_ok(pd)) {
+        return new ref_pp_kernel_t(pd, jcp);
+    }
 
+    return nullptr;
+}
 } // namespace gemm_convolution_utils
 
 namespace jit_gemm_convolution_utils {
 
 template <typename data_type_t>
 void im2col_3d(const conv_gemm_conf_t &jcp, const data_type_t *im,
-        data_type_t *col, dim_t od, dim_t spatial_step, dim_t spatial_block) {
+        data_type_t *col, dim_t od, int spatial_step, int spatial_block) {
     using data_t =
             typename conditional<data_traits_t<data_type_t>::data_type == bf16,
                     uint16_t, data_type_t>::type;
@@ -391,10 +423,10 @@ void im2col_3d(const conv_gemm_conf_t &jcp, const data_type_t *im,
 }
 
 template void im2col_3d(const conv_gemm_conf_t &jcp, const float *im,
-        float *col, dim_t od, dim_t spatial_step, dim_t spatial_block);
+        float *col, dim_t od, int spatial_step, int spatial_block);
 
 template void im2col_3d(const conv_gemm_conf_t &jcp, const bfloat16_t *im,
-        bfloat16_t *col, dim_t od, dim_t spatial_step, dim_t spatial_block);
+        bfloat16_t *col, dim_t od, int spatial_step, int spatial_block);
 
 /* imtr[ic][od][oh][ow] <-- im[id][ih][iw][ic]*/
 template <typename T>
@@ -1013,7 +1045,7 @@ template void col2im_dt<bfloat16_t>(const conv_gemm_conf_t &jcp,
         const bfloat16_t *__restrict col, bfloat16_t *__restrict im);
 
 void col2im_3d(const conv_gemm_conf_t &jcp, const float *col, float *im,
-        dim_t od, dim_t spatial_step, dim_t spatial_block) {
+        dim_t od, int spatial_step, int spatial_block) {
 
     auto sp_blocked_ker = [&](dim_t ic) {
         const size_t col_step = jcp.ks * spatial_block;
@@ -1115,7 +1147,7 @@ void col2im_3d(const conv_gemm_conf_t &jcp, const float *col, float *im,
 }
 
 void col2im(const conv_gemm_conf_t &jcp, const float *col, float *im,
-        dim_t spatial_step, dim_t spatial_block) {
+        int spatial_step, int spatial_block) {
     const size_t col_step = jcp.ks * spatial_block;
     const size_t im_step = jcp.ih * jcp.iw;
     const dim_t iS = jcp.ih * jcp.iw;
@@ -1403,9 +1435,9 @@ status_t init_conf(conv_gemm_conf_t &jcp,
 
         VDISPATCH_CONV_IC(
                 post_ops_ok(post_ops_ok_args_t(x64::avx512_core,
-                        {binary, eltwise, sum}, attr.post_ops_, &dst_d,
-                        sum_at_pos_0_only, sum_requires_scale_one,
-                        sum_requires_zp_zero)),
+                        {binary, eltwise, sum, depthwise, prelu},
+                        attr.post_ops_, &dst_d, sum_at_pos_0_only,
+                        sum_requires_scale_one, sum_requires_zp_zero)),
                 VERBOSE_UNSUPPORTED_POSTOP);
     }
 #endif
@@ -1419,6 +1451,8 @@ status_t init_conf(conv_gemm_conf_t &jcp,
     jcp.with_binary = !everyone_is(-1, binary_ind, prelu_ind);
     const int sum_ind = jcp.post_ops.find(primitive_kind::sum);
     jcp.with_sum = sum_ind != -1;
+    const int depthwise_ind = jcp.post_ops.find(primitive_kind::depthwise);
+    jcp.with_depthwise = depthwise_ind != -1;
 
     bool is_bf16_conv = false
             || (is_fwd

@@ -96,34 +96,33 @@ public:
             const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params)
             = 0;
     virtual void compute_vector_range(int start_idx, int end_idx) = 0;
-    virtual void compute_vector_range(size_t start_idx, size_t end_idx) = 0;
 
     virtual void compute_vector_range(
             const injector_utils::vmm_index_set_t &vmm_idxs,
             const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
-            const depthwise_injector::dynamic_params_t &ddp,
-            const quantization_injector::dynamic_params_t &qdp,
-            bool is_broadcast)
-            = 0;
-
-    virtual void compute_vector_range(
-            const injector_utils::vmm_index_set_t &vmm_idxs,
-            const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
-            const depthwise_injector::dynamic_params_t &ddp,
-            const quantization_injector::dynamic_params_t &qdp)
-            = 0;
-
-    virtual void compute_vector(size_t idx,
             const depthwise_injector::dynamic_params_t &ddp,
             const quantization_injector::dynamic_params_t &qdp,
             bool is_broadcast = false)
             = 0;
 
-    virtual void compute_vector(size_t idx,
+    virtual void compute_vector_range(int start_idx, int end_idx,
             const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
             const depthwise_injector::dynamic_params_t &ddp,
             const quantization_injector::dynamic_params_t &qdp)
             = 0;
+
+    virtual void compute_vector(int idx,
+            const depthwise_injector::dynamic_params_t &ddp,
+            const quantization_injector::dynamic_params_t &qdp,
+            bool is_broadcast = false)
+            = 0;
+
+    virtual void compute_vector(int idx,
+            const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
+            const depthwise_injector::dynamic_params_t &ddp,
+            const quantization_injector::dynamic_params_t &qdp)
+            = 0;
+
     // Generates code of post_ops chain injected to host primitive. Applied to
     // a single vector register index.
     // @rhs_arg_params: see jit_uni_binary_injector description
@@ -196,20 +195,16 @@ public:
             const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
             const depthwise_injector::dynamic_params_t &ddp,
             const quantization_injector::dynamic_params_t &qdp,
-            bool is_broadcast) override;
-    void compute_vector_range(const injector_utils::vmm_index_set_t &vmm_idxs,
+            bool is_broadcast = false) override;
+    void compute_vector_range(int start_idx, int end_idx,
             const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
             const depthwise_injector::dynamic_params_t &ddp,
             const quantization_injector::dynamic_params_t &qdp) override;
-    void compute_vector_range(size_t start_idx, size_t end_idx,
-            const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
-            const depthwise_injector::dynamic_params_t &ddp,
-            const quantization_injector::dynamic_params_t &qdp);
-    void compute_vector(size_t idx,
+    void compute_vector(int idx,
             const depthwise_injector::dynamic_params_t &ddp,
             const quantization_injector::dynamic_params_t &qdp,
             bool is_broadcast = false) override;
-    void compute_vector(size_t idx,
+    void compute_vector(int idx,
             const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
             const depthwise_injector::dynamic_params_t &ddp,
             const quantization_injector::dynamic_params_t &qdp) override;
@@ -227,7 +222,6 @@ public:
             override;
 
     void compute_vector_range(int start_idx, int end_idx) override;
-    void compute_vector_range(size_t start_idx, size_t end_idx) override;
 
     // See `jit_uni_postops_injector_base_t::compute_vector(...)`
     void compute_vector(int idx,
@@ -242,6 +236,11 @@ public:
     void set_lambda_injector(lambda_jit_injectors_t::key_type,
             const lambda_jit_injectors_t::mapped_type &jit_injector) override;
 
+    void push_post_ops_data_on_stack(const Xbyak::Reg64 &post_ops_data_reg,
+            std::size_t post_ops_data_offset, const Xbyak::Reg64 &aux_reg0,
+            const Xbyak::Reg64 &aux_reg1);
+    void reset_stack_pointer();
+
 private:
     post_ops_t post_ops_;
     jit_generator_t *host_;
@@ -255,6 +254,7 @@ private:
             depthwise_injectors;
     nstl::vector<std::unique_ptr<jit_uni_quantization_injector_f32<isa, Vmm>>>
             quantization_injectors;
+    std::size_t post_ops_pointers_count = 0;
 };
 
 enum post_op_type { sum = 0, eltwise, binary, prelu, depthwise, quantization };

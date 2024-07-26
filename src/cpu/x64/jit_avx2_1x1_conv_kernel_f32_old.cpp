@@ -211,6 +211,7 @@ void jit_avx2_1x1_conv_kernel_f32_old::generate_reduce_loop(
         int eltwise_inj_idx = 0;
         int depthwise_inj_idx = 0;
         int quantization_inj_idx = 0;
+        std::size_t post_ops_data_offset = 0;
         const auto &p = attr_.post_ops_;
 
         int end_idx = jcp.with_dw_conv ? p.find(primitive_kind::convolution)
@@ -222,15 +223,8 @@ void jit_avx2_1x1_conv_kernel_f32_old::generate_reduce_loop(
                         0, ur * load_loop_blk);
                 eltwise_inj_idx++;
             } else if (post_op.is_depthwise()) {
-                mov(reg_d_weights,
-                        reinterpret_cast<size_t>(
-                                post_op.depthwise.weights_data));
-                mov(reg_d_bias,
-                        reinterpret_cast<size_t>(
-                                post_op.depthwise.biases_data));
-
+                mov(reg_d_weights, ptr[this->rsp + post_ops_data_offset]);
                 add(reg_d_weights, reg_oc_off);
-                add(reg_d_bias, reg_oc_off);
 
                 for (int j = 0; j < load_loop_blk; ++j) {
                     int start_idx = vreg_accum(j, 0).getIdx();
@@ -238,16 +232,19 @@ void jit_avx2_1x1_conv_kernel_f32_old::generate_reduce_loop(
 
                     depthwise_injectors[depthwise_inj_idx]
                             ->compute_vector_range(start_idx, end_idx,
-                                    reg_d_weights, reg_d_bias);
+                                    reg_d_weights, reg_d_weights);
 
                     add(reg_d_weights, jcp.oc_block * sizeof(float));
-                    add(reg_d_bias, jcp.oc_block * sizeof(float));
                 }
 
+                post_ops_data_offset
+                        += depthwise_injectors[depthwise_inj_idx]->memoryStep();
                 depthwise_inj_idx++;
             } else if (post_op.is_quantization()) {
+                const Xbyak::RegExp quant_arg_base
+                        = this->rsp + post_ops_data_offset;
                 quantization_injectors[quantization_inj_idx]->init_crop_ptrs(
-                        reg_oc_off);
+                        quant_arg_base, reg_oc_off);
                 for (int ii = 0; ii < load_loop_blk; ii++) {
                     int s_idx = vreg_accum(ii, 0).getIdx();
                     quantization_injectors[quantization_inj_idx]->compute_crop(
@@ -256,7 +253,8 @@ void jit_avx2_1x1_conv_kernel_f32_old::generate_reduce_loop(
                 }
 
                 quantization_injectors[quantization_inj_idx]
-                        ->init_input_scale_shift_ptrs(reg_oc_off);
+                        ->init_input_scale_shift_ptrs(
+                                quant_arg_base, reg_oc_off);
                 for (int ii = 0; ii < load_loop_blk; ii++) {
                     int s_idx = vreg_accum(ii, 0).getIdx();
                     quantization_injectors[quantization_inj_idx]
@@ -265,7 +263,8 @@ void jit_avx2_1x1_conv_kernel_f32_old::generate_reduce_loop(
                 }
 
                 quantization_injectors[quantization_inj_idx]
-                        ->init_output_scale_shift_ptrs(reg_oc_off);
+                        ->init_output_scale_shift_ptrs(
+                                quant_arg_base, reg_oc_off);
                 for (int ii = 0; ii < load_loop_blk; ii++) {
                     int s_idx = vreg_accum(ii, 0).getIdx();
                     quantization_injectors[quantization_inj_idx]
@@ -273,6 +272,9 @@ void jit_avx2_1x1_conv_kernel_f32_old::generate_reduce_loop(
                                     ii * jcp.oc_block * sizeof(float));
                 }
 
+                post_ops_data_offset
+                        += quantization_injectors[quantization_inj_idx]
+                                   ->memoryStep();
                 quantization_inj_idx++;
             }
         }
@@ -400,8 +402,7 @@ void jit_avx2_1x1_conv_kernel_f32_old::generate() {
                     this, post_op.eltwise));
         } else if (post_op.is_depthwise()) {
             depthwise_injectors.push_back(
-                    new jit_uni_depthwise_injector_f32<avx2>(
-                            this, post_op.depthwise.alg));
+                    new jit_uni_depthwise_injector_f32<avx2>(this, post_op));
         } else if (post_op.is_quantization()) {
             quantization_injectors.push_back(
                     new jit_uni_quantization_injector_f32<avx2>(this, post_op,
@@ -411,6 +412,26 @@ void jit_avx2_1x1_conv_kernel_f32_old::generate() {
     }
 
     preamble();
+
+    std::size_t post_ops_pointers_count = 0;
+    for (int i = 0; i < p.len(); i++) {
+        if (p.entry_[i].is_depthwise() || p.entry_[i].is_quantization()) {
+            post_ops_pointers_count++;
+        }
+    }
+
+    if (post_ops_pointers_count != 0) {
+        sub(rsp, post_ops_pointers_count * sizeof(float *));
+
+        auto aux_reg0 = reg_bcast_data;
+        auto aux_reg1 = reg_load_data;
+
+        mov(aux_reg0, ptr[this->param1 + GET_OFF(post_ops_binary_rhs_arg_vec)]);
+        for (size_t i = 0; i < post_ops_pointers_count; i++) {
+            mov(aux_reg1, ptr[aux_reg0 + i * sizeof(float *)]);
+            mov(ptr[rsp + i * sizeof(float *)], aux_reg1);
+        }
+    }
 
     mov(reg_bcast_data, ptr[param1 + GET_OFF(bcast_data)]);
     mov(reg_load_data, ptr[param1 + GET_OFF(load_data)]);
@@ -510,6 +531,10 @@ void jit_avx2_1x1_conv_kernel_f32_old::generate() {
 
     if (jcp.with_bias && jcp.prop_kind == backward_weights) add(rsp, 8);
 
+    if (post_ops_pointers_count != 0) {
+        add(rsp, post_ops_pointers_count * sizeof(float *));
+    }
+
     postamble();
 
     for (auto &inj : eltwise_injectors)
@@ -600,11 +625,14 @@ status_t jit_avx2_1x1_conv_kernel_f32_old::init_conf(jit_1x1_conv_conf_t &jcp,
 
     int dw_conv_ind = p.find(primitive_kind::convolution);
     jcp.with_dw_conv = dw_conv_ind != -1;
-    jcp.with_dw_conv = dw_conv_ind != -1;
 
     if (jcp.with_dw_conv && !mayiuse(avx2)) return status::unimplemented;
 
     if (jcp.with_dw_conv) {
+        // dw_conv and post_ops after it are handled externally, so skip them
+        jcp.post_ops.entry_.assign(
+                p.entry_.cbegin(), p.entry_.cbegin() + dw_conv_ind);
+
         jcp.dw_conv_oh = jcp.oh;
         jcp.dw_conv_ow = jcp.ow;
         jcp.oh = p.entry_[dw_conv_ind].depthwise_conv_old.in_h;
@@ -699,10 +727,10 @@ status_t jit_avx2_1x1_conv_kernel_f32_old::init_conf(jit_1x1_conv_conf_t &jcp,
         jcp.load_loop_iter_step = jcp.oc_block;
 
         load_blocking = jcp.with_dw_conv
-                ? static_cast<int>(nstl::min<dim_t>(3 * jcp.load_block, jcp.oc))
+                ? nstl::min(3 * jcp.load_block, jcp.oc)
                 : 120; // assumes the kernel is jcp.ur x 3
         load_blocking_max = jcp.with_dw_conv
-                ? static_cast<int>(nstl::min<dim_t>(3 * jcp.load_block, jcp.oc))
+                ? nstl::min(3 * jcp.load_block, jcp.oc)
                 : 144;
         bcast_blocking = 128; // affects load balancing across threads
         bcast_blocking_max = 192;

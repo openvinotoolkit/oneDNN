@@ -20,6 +20,7 @@
 
 #include "common/bfloat16.hpp"
 
+#include "cpu/x64/injectors/jit_uni_binary_injector.hpp"
 #include "jit_uni_fork_dw_convolution.hpp"
 
 namespace dnnl {
@@ -37,13 +38,14 @@ void jit_uni_fork_dw_convolution_fwd_t<isa, src_type,
     auto src = CTX_IN_MEM(const data_t *, DNNL_ARG_SRC);
     auto weights = CTX_IN_MEM(const data_t *, DNNL_ARG_WEIGHTS);
     auto dst = CTX_OUT_MEM(dst_data_t *, DNNL_ARG_DST);
+    const auto &jcp = pd()->jcp_;
+    const auto post_ops_binary_rhs_arg_vec
+            = binary_injector::prepare_binary_args(jcp.post_ops, ctx);
 
     const memory_desc_wrapper src_d(pd()->src_md());
     const memory_desc_wrapper dst_d(pd()->dst_md());
     const memory_desc_wrapper weights_d(pd()->weights_md(0));
     const memory_desc_wrapper bias_d(pd()->weights_md(1));
-
-    const auto &jcp = pd()->jcp_;
 
     f32_data_t *bias = nullptr;
     if (pd()->desc()->bias_desc.data_type == data_type::bf16) {
@@ -74,32 +76,33 @@ void jit_uni_fork_dw_convolution_fwd_t<isa, src_type,
     int str_h = jcp.stride_h;
     int str_w = jcp.stride_w;
 
-    const auto is_src_layout_nxc
-            = one_of(jcp.src_tag, format_tag::nhwc, format_tag::ndhwc);
-    const auto is_dst_layout_nxc
-            = one_of(jcp.dst_tag, format_tag::nhwc, format_tag::ndhwc);
+    const auto is_src_layout_nxc = one_of(
+            jcp.src_tag, format_tag::nwc, format_tag::nhwc, format_tag::ndhwc);
+    const auto is_dst_layout_nxc = one_of(
+            jcp.dst_tag, format_tag::nwc, format_tag::nhwc, format_tag::ndhwc);
 
-    auto kernel_params = [&](dim_t ur_w_step, dim_t ow, dim_t oh, dim_t od,
-                                 dim_t ih, dim_t id, dim_t kh, dim_t kd,
-                                 dim_t kh_padding, dim_t kd_padding, dim_t ch,
-                                 dim_t ch_step, dim_t n, dim_t work_rem) {
+    auto kernel_params
+            = [&](int ur_w_step, int ow, int oh, int od, int ih, int id, int kh,
+                      int kd, int kh_padding, int kd_padding, int ch,
+                      int ch_step, int n, int work_rem) {
         auto par_conv = jit_conv_args_t();
 
-        const dim_t i_l_overflow = nstl::max<dim_t>(0, jcp.l_pad - ow * str_w);
-        const dim_t i_r_overflow
-                = nstl::max<dim_t>(jcp.iw,
-                          ow * str_w + (jcp.kw - 1) * dil_w - jcp.l_pad + 1)
+        const int i_l_overflow = nstl::max(0, (jcp.l_pad - ow * str_w));
+        const int i_r_overflow
+                = nstl::max(jcp.iw,
+                          (ow * str_w + (jcp.kw - 1) * dil_w - jcp.l_pad + 1))
                 - jcp.iw;
 
-        const dim_t iw = nstl::max<dim_t>(0,
-                ow * str_w - jcp.l_pad + div_up(i_l_overflow, dil_w) * dil_w);
-        const dim_t kw = div_up(i_l_overflow, dil_w);
+        const int iw = nstl::max(
+                (ow * str_w - jcp.l_pad + div_up(i_l_overflow, dil_w) * dil_w),
+                0);
+        const int kw = div_up(i_l_overflow, dil_w);
 
-        const dim_t kw_padding = jcp.kw - div_up(i_l_overflow, dil_w)
+        const int kw_padding = jcp.kw - div_up(i_l_overflow, dil_w)
                 - div_up(i_r_overflow, dil_w);
 
-        const dim_t ic_off_idx = is_src_layout_nxc ? ch * jcp.ch_block : ch;
-        const dim_t oc_off_idx = is_dst_layout_nxc ? ch * jcp.ch_block : ch;
+        const auto ic_off_idx = is_src_layout_nxc ? ch * jcp.ch_block : ch;
+        const auto oc_off_idx = is_dst_layout_nxc ? ch * jcp.ch_block : ch;
 
         size_t src_off = (jcp.ndims == 3) ? src_d.blk_off(n, ic_off_idx, iw)
                 : (jcp.ndims == 4)        ? src_d.blk_off(n, ic_off_idx, ih, iw)
@@ -117,9 +120,9 @@ void jit_uni_fork_dw_convolution_fwd_t<isa, src_type,
 
         if (bias) par_conv.bias = &bias[bias_d.blk_off(ch * jcp.ch_block)];
 
-        par_conv.kd_padding = (size_t)nstl::max<dim_t>(0, kd_padding);
-        par_conv.kh_padding = (size_t)nstl::max<dim_t>(0, kh_padding);
-        par_conv.kw_padding = (size_t)nstl::max<dim_t>(0, kw_padding);
+        par_conv.kd_padding = (size_t)nstl::max(0, kd_padding);
+        par_conv.kh_padding = (size_t)nstl::max(0, kh_padding);
+        par_conv.kw_padding = (size_t)nstl::max(0, kw_padding);
 
         par_conv.ur_w = (size_t)ur_w_step;
 
@@ -130,21 +133,23 @@ void jit_uni_fork_dw_convolution_fwd_t<isa, src_type,
                 (is_src_layout_nxc ? work_rem * ch_step : ch_step)
                         * jcp.ch_block);
         par_conv.oc_off = ch * jcp.ch_block * sizeof(float);
+        par_conv.post_ops_binary_rhs_arg_vec
+                = post_ops_binary_rhs_arg_vec.data();
 
         return par_conv;
     };
 
-    const dim_t ch_step = jcp.nb_ch_blocking;
-    const dim_t chb_work = utils::div_up(jcp.nb_ch, ch_step);
+    const int ch_step = jcp.nb_ch_blocking;
+    const int chb_work = utils::div_up(jcp.nb_ch, ch_step);
 
-    const dim_t work_amount = jcp.mb * chb_work * jcp.od * jcp.oh;
+    const int work_amount = jcp.mb * chb_work * jcp.od * jcp.oh;
     const auto nthr = jcp.nthr;
 
-    parallel(nthr, [= COMPAT_THIS_CAPTURE](const int ithr, const int nthr) {
-        dim_t start {0}, end {0};
+    parallel(nthr, [&](const int ithr, const int nthr) {
+        int start {0}, end {0};
         balance211(work_amount, nthr, ithr, start, end);
 
-        dim_t n {0}, chb {0}, od {0}, oh {0};
+        int n {0}, chb {0}, od {0}, oh {0};
         if (jcp.loop_order == loop_ngcw)
             utils::nd_iterator_init(
                     start, n, jcp.mb, chb, chb_work, od, jcp.od, oh, jcp.oh);
@@ -156,41 +161,44 @@ void jit_uni_fork_dw_convolution_fwd_t<isa, src_type,
 
         auto iwork = start;
         while (iwork < end) {
-            const dim_t ch = chb * ch_step;
+            int ch = chb * ch_step;
 
-            const dim_t i_front_overflow
-                    = nstl::max<dim_t>(0, jcp.f_pad - od * str_d);
-            const dim_t i_back_overflow
-                    = nstl::max<dim_t>(jcp.id,
-                              od * str_d + (jcp.kd - 1) * dil_d - jcp.f_pad + 1)
+            const int i_front_overflow
+                    = nstl::max(0, (int)(jcp.f_pad - od * str_d));
+            const int i_back_overflow
+                    = nstl::max(jcp.id,
+                              (int)(od * str_d + (jcp.kd - 1) * dil_d
+                                      - jcp.f_pad + 1))
                     - jcp.id;
 
-            const dim_t i_t_overflow
-                    = nstl::max<dim_t>(0, jcp.t_pad - oh * str_h);
-            const dim_t i_b_overflow
-                    = nstl::max<dim_t>(jcp.ih,
-                              oh * str_h + (jcp.kh - 1) * dil_h - jcp.t_pad + 1)
+            const int i_t_overflow
+                    = nstl::max(0, (int)(jcp.t_pad - oh * str_h));
+            const int i_b_overflow
+                    = nstl::max(jcp.ih,
+                              (int)(oh * str_h + (jcp.kh - 1) * dil_h
+                                      - jcp.t_pad + 1))
                     - jcp.ih;
 
-            const dim_t id = nstl::max<dim_t>(0,
-                    od * str_d - jcp.f_pad
-                            + div_up(i_front_overflow, dil_d) * dil_d);
-            const dim_t kd = div_up(i_front_overflow, dil_d);
-            const dim_t kd_padding = jcp.kd - div_up(i_front_overflow, dil_d)
+            const int id = nstl::max(
+                    (int)(od * str_d - jcp.f_pad
+                            + div_up(i_front_overflow, dil_d) * dil_d),
+                    0);
+            const int kd = div_up(i_front_overflow, dil_d);
+            const int kd_padding = jcp.kd - div_up(i_front_overflow, dil_d)
                     - div_up(i_back_overflow, dil_d);
 
-            const dim_t ih = nstl::max<dim_t>(0,
-                    oh * str_h - jcp.t_pad
-                            + div_up(i_t_overflow, dil_h) * dil_h);
-            const dim_t kh = div_up(i_t_overflow, dil_h);
-            const dim_t kh_padding = jcp.kh - div_up(i_t_overflow, dil_h)
+            const int ih
+                    = nstl::max((int)(oh * str_h - jcp.t_pad
+                                        + div_up(i_t_overflow, dil_h) * dil_h),
+                            0);
+            const int kh = div_up(i_t_overflow, dil_h);
+            const int kh_padding = jcp.kh - div_up(i_t_overflow, dil_h)
                     - div_up(i_b_overflow, dil_h);
 
             // left border
-            dim_t ow = 0;
-            const dim_t l_border
-                    = nstl::min<dim_t>(div_up(jcp.l_pad, str_w), jcp.ow);
-            dim_t ur_w_step = 1;
+            int ow = 0;
+            int l_border = nstl::min(div_up(jcp.l_pad, str_w), jcp.ow);
+            int ur_w_step = 1;
             for (; ow < l_border; ow++) {
                 jit_conv_args_t par_conv = kernel_params(ur_w_step, ow, oh, od,
                         ih, id, kh, kd, kh_padding, kd_padding, ch, ch_step, n,
@@ -252,25 +260,25 @@ void jit_uni_fork_dw_convolution_bwd_data_t<isa, diff_dst_type,
     auto weights = CTX_IN_MEM(const wei_data_t *, DNNL_ARG_WEIGHTS);
     auto diff_src = CTX_OUT_MEM(diff_src_data_t *, DNNL_ARG_DIFF_SRC);
 
+    const auto &jcp = pd()->jcp_;
+    const auto post_ops_binary_rhs_arg_vec
+            = binary_injector::prepare_binary_args(jcp.post_ops, ctx);
+
     const memory_desc_wrapper diff_dst_d(pd()->diff_dst_md());
     const memory_desc_wrapper diff_src_d(pd()->diff_src_md());
     const memory_desc_wrapper weights_d(pd()->weights_md(0));
 
-    const auto &jcp = pd()->jcp_;
-
-    auto kernel_params
-            = [&](dim_t ur_str_w, dim_t iw, dim_t oh, dim_t ih,
-                      dim_t i_t_overflow, dim_t i_b_overflow,
-                      dim_t stride_off_h, dim_t ch, dim_t ch_num, dim_t n) {
+    auto kernel_params = [&](int ur_str_w, int iw, int oh, int ih,
+                                 int i_t_overflow, int i_b_overflow,
+                                 int stride_off_h, int ch, int ch_num, int n) {
         auto par_conv = jit_conv_args_t();
 
-        const dim_t i_l_overflow
-                = nstl::max<dim_t>(0, jcp.kw - 1 - iw - jcp.l_pad);
-        const dim_t i_r_overflow = nstl::max<dim_t>(
-                0, jcp.kw - 1 - (jcp.iw - 1 - iw) - jcp.r_pad);
+        const int i_l_overflow = nstl::max(0, (jcp.kw - 1 - iw - jcp.l_pad));
+        const int i_r_overflow
+                = nstl::max(0, (jcp.kw - 1 - (jcp.iw - 1 - iw) - jcp.r_pad));
 
-        dim_t ow = iw + jcp.l_pad - i_r_overflow;
-        const dim_t stride_off_w = ow % jcp.stride_w;
+        int ow = iw + jcp.l_pad - i_r_overflow;
+        int stride_off_w = ow % jcp.stride_w;
         ow /= jcp.stride_w;
 
         par_conv.src = &diff_src[diff_src_d.blk_off(n, ch, ih, iw)];
@@ -278,40 +286,40 @@ void jit_uni_fork_dw_convolution_bwd_data_t<isa, diff_dst_type,
         par_conv.filt = &weights[weights_d.blk_off(ch, 0, 0,
                 i_b_overflow + stride_off_h, i_r_overflow + stride_off_w)];
 
-        par_conv.kh_padding = nstl::max<dim_t>(
+        par_conv.kh_padding = nstl::max(
                 0, jcp.kh - i_t_overflow - i_b_overflow - stride_off_h);
-        par_conv.kw_padding = nstl::max<dim_t>(
+        par_conv.kw_padding = nstl::max(
                 0, jcp.kw - i_l_overflow - i_r_overflow - stride_off_w);
 
         par_conv.ur_str_w = ur_str_w;
 
-        par_conv.ch_blocks = nstl::min<dim_t>(ch + ch_num, jcp.nb_ch) - ch;
+        par_conv.ch_blocks = nstl::min(ch + ch_num, jcp.nb_ch) - ch;
         par_conv.ic_off = ch * jcp.ch_block * sizeof(float);
+        par_conv.post_ops_binary_rhs_arg_vec
+                = post_ops_binary_rhs_arg_vec.data();
 
         return par_conv;
     };
 
-    const dim_t chb_work = utils::div_up(jcp.nb_ch, jcp.nb_ch_blocking);
-    parallel_nd(jcp.mb, chb_work, jcp.ih,
-            [= COMPAT_THIS_CAPTURE](dim_t n, dim_t chb, dim_t ih) {
-        const dim_t ch = chb * jcp.nb_ch_blocking;
-        const dim_t ch_num = jcp.nb_ch_blocking;
+    const int chb_work = utils::div_up(jcp.nb_ch, jcp.nb_ch_blocking);
+    parallel_nd(jcp.mb, chb_work, jcp.ih, [&](int n, int chb, int ih) {
+        int ch = chb * jcp.nb_ch_blocking;
+        int ch_num = jcp.nb_ch_blocking;
 
-        const dim_t i_t_overflow
-                = nstl::max<dim_t>(0, jcp.kh - 1 - ih - jcp.t_pad);
-        const dim_t i_b_overflow = nstl::max<dim_t>(
-                0, jcp.kh - 1 - (jcp.ih - 1 - ih) - jcp.b_pad);
+        const int i_t_overflow
+                = nstl::max(0, (int)(jcp.kh - 1 - ih - jcp.t_pad));
+        const int i_b_overflow = nstl::max(
+                0, (int)(jcp.kh - 1 - (jcp.ih - 1 - ih) - jcp.b_pad));
 
-        dim_t oh = ih + jcp.t_pad - i_b_overflow;
-        const dim_t stride_off_h = oh % jcp.stride_h;
+        int oh = ih + jcp.t_pad - i_b_overflow;
+        int stride_off_h = oh % jcp.stride_h;
         oh /= jcp.stride_h;
 
-        for (dim_t i_str_w = 0; i_str_w < jcp.stride_w; i_str_w++) {
+        for (int i_str_w = 0; i_str_w < jcp.stride_w; i_str_w++) {
             // left border
-            dim_t iw = i_str_w;
-            const dim_t l_border
-                    = nstl::min<dim_t>(jcp.kw - 1 - jcp.l_pad, jcp.iw);
-            dim_t ur_str_w = 1;
+            int iw = i_str_w;
+            int l_border = nstl::min(jcp.kw - 1 - jcp.l_pad, jcp.iw);
+            int ur_str_w = 1;
             for (; iw < l_border; iw += jcp.stride_w) {
                 jit_conv_args_t par_conv
                         = kernel_params(ur_str_w, iw, oh, ih, i_t_overflow,

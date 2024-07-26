@@ -43,6 +43,7 @@ struct conv_gemm_conf_t {
     bool with_bias;
     bool with_eltwise;
     bool with_binary;
+    bool with_depthwise;
     bool with_sum;
     post_ops_t post_ops;
     bool is_nspc;
@@ -96,7 +97,8 @@ struct pp_kernel_t {
     virtual ~pp_kernel_t() = default;
 
     virtual void operator()(float *dst, const float *bias, const int len,
-            const int oc_start, const int oc_work, const int oc_stride) const
+            const int oc_start, const int oc_work, const int oc_stride,
+            const std::vector<const void *> &post_ops_binary_rhs_arg_vec) const
             = 0;
 
     virtual status_t create_kernel() { return status::success; }
@@ -113,7 +115,7 @@ protected:
 namespace jit_gemm_convolution_utils {
 template <typename data_type_t>
 void im2col_3d(const conv_gemm_conf_t &jcp, const data_type_t *im,
-        data_type_t *col, dim_t od, dim_t spatial_step, dim_t spatial_block);
+        data_type_t *col, dim_t od, int spatial_step, int spatial_block);
 
 template <typename T>
 void transpose_dt(const conv_gemm_conf_t &jcp, const T *__restrict im,
@@ -137,9 +139,9 @@ template <typename T>
 void col2im_dt(
         const conv_gemm_conf_t &jcp, const T *__restrict col, T *__restrict im);
 void col2im_3d(const conv_gemm_conf_t &jcp, const float *col, float *im,
-        dim_t od, dim_t spatial_step, dim_t spatial_block);
+        dim_t od, int spatial_step, int spatial_block);
 void col2im(const conv_gemm_conf_t &jcp, const float *col, float *im,
-        dim_t spatial_step, dim_t spatial_block);
+        int spatial_step, int spatial_block);
 
 status_t init_conf(conv_gemm_conf_t &jcp,
         memory_tracking::registrar_t &scratchpad, const convolution_desc_t &cd,

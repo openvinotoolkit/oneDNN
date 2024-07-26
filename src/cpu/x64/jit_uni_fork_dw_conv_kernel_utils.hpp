@@ -113,7 +113,6 @@ status_t jit_uni_fork_dw_conv_fwd_kernel<isa, kernel_dt>::init_conf(
     const memory_desc_wrapper bias_d(&bias_md);
 
     const int ndims = src_d.ndims();
-    if (ndims != 3 && ndims != 4 && ndims != 5) return status::unimplemented;
 
     const auto blocked_tag = one_of(isa, avx512_core)
             ? pick(ndims - 3, nCw16c, nChw16c, nCdhw16c)
@@ -217,6 +216,8 @@ status_t jit_uni_fork_dw_conv_fwd_kernel<isa, kernel_dt>::init_conf(
     const int eltwise_ind = p.find(primitive_kind::eltwise);
     jcp.with_eltwise = eltwise_ind != -1;
     if (jcp.with_eltwise) jcp.eltwise = p.entry_[eltwise_ind].eltwise;
+
+    jcp.post_ops = p;
 
     bool ok_to_pad_channels = true && !is_data_layout_nxc
             && jcp.oc == jcp.ngroups && jcp.ic == jcp.ngroups
@@ -379,6 +380,8 @@ status_t jit_uni_fork_dw_conv_bwd_data_kernel<isa, kernel_dt>::init_conf(
 
     if (!post_ops_ok(attr)) return status::unimplemented;
 
+    jcp.post_ops = attr.post_ops_;
+
     bool ok_to_pad_channels = true && jcp.oc == jcp.ngroups
             && jcp.ic == jcp.ngroups
             && one_of(isa, avx512_core, avx512_core, avx2);
@@ -443,4 +446,4 @@ template struct jit_uni_fork_dw_conv_bwd_data_kernel<sse41, data_type::f32>;
 } // namespace impl
 } // namespace dnnl
 
-#endif // CPU_X64_JIT_UNI_FORK_DW_CONV_KERNEL_UTILS_HPP
+#endif /* CPU_X64_JIT_uni_fork_dw_CONV_KERNEL_UTILS_HPP */

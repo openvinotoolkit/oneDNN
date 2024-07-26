@@ -14,8 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#ifndef CPU_X64_JIT_UNI_FORK_DW_CONV_KERNEL_F32_HPP
-#define CPU_X64_JIT_UNI_FORK_DW_CONV_KERNEL_F32_HPP
+#ifndef CPU_X64_JIT_UNI_FORK_DW_CONV_KERNEL_HPP
+#define CPU_X64_JIT_UNI_FORK_DW_CONV_KERNEL_HPP
 
 #include "common/c_types_map.hpp"
 #include "common/memory_tracking.hpp"
@@ -88,6 +88,8 @@ private:
 
     reg64_t reg_d_weights = imm_addr64;
     reg64_t reg_d_bias = iter_kh;
+    int base_post_ops_data_offset = 0;
+    constexpr static int reg64_size = 8;
 
     reg64_t reg_kd = aux_reg_blocks_offset;
     reg64_t aux_reg_inp_d = reg_input;

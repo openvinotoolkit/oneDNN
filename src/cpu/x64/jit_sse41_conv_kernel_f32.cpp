@@ -169,9 +169,9 @@ void jit_sse41_conv_fwd_kernel_f32_t::apply_postops(
     });
     depthwise_injector::dynamic_params_t ddp {xmm_d_weights.getIdx(),
             xmm_d_bias.getIdx(), reg_d_weights, reg_d_bias, reg_oc_off,
-            vmm_idx_off};
+            vmm_idx_off, this->rsp};
     quantization_injector::dynamic_params_t qdp {
-            reg_oc_off, vmm_idx_off, jcp.dst_dt};
+            reg_oc_off, vmm_idx_off, jcp.dst_dt, this->rsp};
 
     injector_utils::vmm_index_set_t vmm_idxs;
     if (jcp.with_binary) {
@@ -323,7 +323,7 @@ inline void jit_sse41_conv_fwd_kernel_f32_t::solve_common(int oc_blocks) {
     int str_w = jcp.stride_w;
 
     int l_pad = jcp.l_pad;
-    int r_pad = static_cast<int>(nstl::max<dim_t>(0, jcp.r_pad));
+    int r_pad = nstl::max(0, jcp.r_pad);
     int r_pad1 = calculate_end_padding(l_pad, ur_w * n_oi, iw, str_w,
             calculate_extended_filter_size(kw, jcp.dilate_w));
     if (r_pad1 > 0) n_oi--;
@@ -366,6 +366,10 @@ inline void jit_sse41_conv_fwd_kernel_f32_t::solve_common(int oc_blocks) {
 void jit_sse41_conv_fwd_kernel_f32_t::generate() {
     this->preamble();
 
+    if (postops_injector_)
+        postops_injector_->push_post_ops_data_on_stack(this->param1,
+                GET_OFF(post_ops_binary_rhs_arg_vec), reg_input, reg_output);
+
     mov(reg_input, ptr[this->param1 + GET_OFF(src)]);
     mov(reg_output, ptr[this->param1 + GET_OFF(dst)]);
     mov(reg_kernel, ptr[this->param1 + GET_OFF(filt)]);
@@ -392,6 +396,8 @@ void jit_sse41_conv_fwd_kernel_f32_t::generate() {
     }
 
     L(exit);
+
+    if (postops_injector_) postops_injector_->reset_stack_pointer();
 
     this->postamble();
 
@@ -550,26 +556,24 @@ status_t jit_sse41_conv_fwd_kernel_f32_t::init_conf(jit_conv_conf_t &jcp,
             && IMPLICATION(mimo, jcp.ic % simd_w == 0);
     VDISPATCH_CONV_IC(args_ok, VERBOSE_BLOCKING_FAIL, "bad parameters");
 
-    int r_pad_no_tail = static_cast<int>(nstl::max<dim_t>(0,
+    int r_pad_no_tail = nstl::max(0,
             calculate_end_padding(jcp.l_pad, jcp.ow - jcp.ur_w_tail, jcp.iw,
-                    jcp.stride_w, ext_kw)));
+                    jcp.stride_w, ext_kw));
 
     // kernel needs 1 temporary YMM register
     const int num_avail_regs = 15;
     if (r_pad_no_tail > jcp.ur_w * jcp.stride_w && jcp.ow / jcp.ur_w > 1) {
         /* recalculate ur_w, nb_oc_blocking and ur_w_tail */
-        jcp.ur_w = static_cast<int>(
-                nstl::min<dim_t>(r_pad_no_tail / jcp.stride_w + jcp.ur_w_tail,
-                        nstl::min<dim_t>(jcp.ow, num_avail_regs / 2)));
+        jcp.ur_w = nstl::min(r_pad_no_tail / jcp.stride_w + jcp.ur_w_tail,
+                nstl::min(jcp.ow, num_avail_regs / 2));
         jcp.nb_oc_blocking = (num_avail_regs - jcp.ur_w) / jcp.ur_w;
         jcp.ur_w_tail = jcp.ow % jcp.ur_w;
         /* check again ... */
-        r_pad_no_tail = static_cast<int>(nstl::max<dim_t>(0,
+        r_pad_no_tail = nstl::max(0,
                 calculate_end_padding(jcp.l_pad, jcp.ow - jcp.ur_w_tail, jcp.iw,
-                        jcp.stride_w, ext_kw)));
+                        jcp.stride_w, ext_kw));
 
-        VDISPATCH_CONV_IC(
-                jcp.ur_w >= nstl::max<dim_t>(jcp.l_pad, r_pad_no_tail),
+        VDISPATCH_CONV_IC(jcp.ur_w >= nstl::max(jcp.l_pad, r_pad_no_tail),
                 VERBOSE_UNSUPPORTED_PAD_FEATURE,
                 "width unroll exceeds padding size");
     }

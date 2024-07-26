@@ -77,7 +77,7 @@ jit_avx512_common_1x1_conv_kernel_t::jit_avx512_common_1x1_conv_kernel_t(
     }
 }
 
-void jit_avx512_common_1x1_conv_kernel_t::bcast_loop(dim_t load_loop_blk) {
+void jit_avx512_common_1x1_conv_kernel_t::bcast_loop(int load_loop_blk) {
     mov(aux1_reg_bcast_data, EVEX_compress_addr(rsp, reg_bcast_data_off));
     mov(aux_reg_bcast_data, EVEX_compress_addr(rsp, reg_bcast_data_off));
 
@@ -135,7 +135,7 @@ void jit_avx512_common_1x1_conv_kernel_t::bcast_loop(dim_t load_loop_blk) {
 }
 
 Address jit_avx512_common_1x1_conv_kernel_t::output_ptr(
-        const bool is_out_layout_nxc, const dim_t i_load, const dim_t i_ur) {
+        const bool is_out_layout_nxc, const int i_load, const int i_ur) {
     if (one_of(jcp.prop_kind, forward_training, forward_inference,
                 backward_data)) {
         auto i_load_shift = is_out_layout_nxc
@@ -172,8 +172,7 @@ static void iterate(const int load_loop_blk, const int ur, const F &fun) {
 }
 
 void jit_avx512_common_1x1_conv_kernel_t::apply_postops(
-        const bool is_out_layout_nxc, const dim_t load_loop_blk,
-        const dim_t ur) {
+        const bool is_out_layout_nxc, const int load_loop_blk, const int ur) {
     std::map<size_t, int> vmm_idx_off;
     iterate(load_loop_blk, ur,
             [&](const bool, const int i_load, const int i_ur) {
@@ -183,9 +182,9 @@ void jit_avx512_common_1x1_conv_kernel_t::apply_postops(
 
     depthwise_injector::dynamic_params_t ddp {zmm_d_weights.getIdx(),
             zmm_d_bias.getIdx(), reg_d_weights, reg_d_bias, reg_oc_off,
-            vmm_idx_off};
-    quantization_injector::dynamic_params_t qdp {
-            reg_oc_off, vmm_idx_off, jcp.dst_dt};
+            vmm_idx_off, this->rsp, base_post_ops_data_offset};
+    quantization_injector::dynamic_params_t qdp {reg_oc_off, vmm_idx_off,
+            jcp.dst_dt, this->rsp, base_post_ops_data_offset};
 
     injector_utils::vmm_index_set_t vmm_idxs;
     if (jcp.with_binary) {
@@ -226,7 +225,7 @@ void jit_avx512_common_1x1_conv_kernel_t::apply_postops(
 }
 
 void jit_avx512_common_1x1_conv_kernel_t::reduce_loop(
-        dim_t load_loop_blk, dim_t ur, dim_t substep, bool wraparound) {
+        int load_loop_blk, int ur, int substep, bool wraparound) {
     const bool out_layout_nxc = is_out_layout_nxc(jcp);
     const bool load_layout_nxc = is_load_layout_nxc(jcp);
     const bool bcast_layout_nxc = is_bcast_layout_nxc(jcp);
@@ -426,7 +425,14 @@ void jit_avx512_common_1x1_conv_kernel_t::reduce_loop(
 void jit_avx512_common_1x1_conv_kernel_t::generate() {
     preamble();
 
+    if (postops_injector_)
+        postops_injector_->push_post_ops_data_on_stack(this->param1,
+                GET_OFF(post_ops_binary_rhs_arg_vec), reg_bcast_data,
+                reg_load_data);
+
     sub(rsp, stack_space_needed);
+    base_post_ops_data_offset += stack_space_needed;
+
     if (jcp.with_binary) {
         mov(EVEX_compress_addr(rsp, reg_abi_param1_backup), abi_param1);
         if (jcp.with_dw_conv) {
@@ -568,6 +574,9 @@ void jit_avx512_common_1x1_conv_kernel_t::generate() {
     L(load_loop_blk[num_ur_cases]);
 
     add(rsp, stack_space_needed);
+    base_post_ops_data_offset -= stack_space_needed;
+
+    if (postops_injector_) postops_injector_->reset_stack_pointer();
 
     postamble();
 
@@ -763,8 +772,7 @@ status_t jit_avx512_common_1x1_conv_kernel_t::init_conf(
     if (one_of(jcp.prop_kind, forward_training, forward_inference,
                 backward_data)) {
         if (one_of(jcp.prop_kind, forward_training, forward_inference)) {
-            if (jcp.with_dw_conv)
-                jcp.ur = static_cast<int>(nstl::min<dim_t>(jcp.ow, jcp.ur));
+            if (jcp.with_dw_conv) jcp.ur = nstl::min(jcp.ow, jcp.ur);
             jcp.reduce_dim = jcp.ic;
             jcp.reduce_block = jcp.ic_block;
 
@@ -1132,14 +1140,12 @@ status_t jit_avx512_common_1x1_conv_kernel_t::init_conf(
         // for reduction balance
         if (is_data_layout_nxc && jcp.reduce_dim >= BIG_SPATIAL * BIG_SPATIAL
                 && jcp.load_dim >= BIG_LOAD_DIM / 2) {
-            reduce_blocking
-                    = rnd_up(static_cast<int>(nstl::min<dim_t>(jcp.ow, 256)),
-                            jcp.reduce_block);
+            reduce_blocking = rnd_up(nstl::min(jcp.ow, 256), jcp.reduce_block);
         } else {
             int max_reduce_blocking
                     = nstl::min<dim_t>(L1_capacity / jcp.ur, jcp.reduce_dim);
-            int min_reduce_blocking = static_cast<int>(nstl::min<dim_t>(
-                    L1_capacity / jcp.ur, nstl::max(jcp.iw, jcp.ih)));
+            int min_reduce_blocking = nstl::min(
+                    L1_capacity / jcp.ur, nstl::max(jcp.iw, jcp.ih));
             reduce_blocking = best_divider(jcp.reduce_dim, min_reduce_blocking,
                     max_reduce_blocking, true);
             reduce_blocking
@@ -1257,8 +1263,7 @@ void jit_avx512_common_1x1_conv_kernel_t::balance(jit_1x1_conv_conf_t &jcp) {
     auto best_mem_cost = calc_mem_cost(nthr_mb, nthr_oc_b, nthr_ic_b);
 
     /* step 1: find the best thread distribution with lowest memory cost */
-    const int nthr_mb_max
-            = static_cast<int>(nstl::min<dim_t>(nthr, jcp.mb * nb_reduce));
+    const int nthr_mb_max = nstl::min(nthr, jcp.mb * nb_reduce);
     for (nthr_mb = 1; nthr_mb <= nthr_mb_max; ++nthr_mb) {
         const int nthr_par = nthr / nthr_mb;
         const int nthr_oc_b_max = nstl::min(nthr_par, nb_load);
@@ -1274,7 +1279,7 @@ void jit_avx512_common_1x1_conv_kernel_t::balance(jit_1x1_conv_conf_t &jcp) {
         }
     }
     if (jcp.nthr_mb > nthreads / 2 && jcp.nthr_mb < nthreads)
-        jcp.nthr_mb = static_cast<int>(nstl::min<dim_t>(jcp.mb, nthreads));
+        jcp.nthr_mb = nstl::min(jcp.mb, nthreads);
 
     jcp.nthr = jcp.nthr_mb * jcp.nthr_g * jcp.nthr_oc_b * jcp.nthr_ic_b;
     assert(jcp.nthr <= nthreads);

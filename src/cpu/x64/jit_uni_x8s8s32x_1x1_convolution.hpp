@@ -215,8 +215,7 @@ struct jit_uni_x8s8s32x_1x1_convolution_fwd_t : public primitive_t {
             CHECK_BOOL(memory_desc_init_by_tag(want_wei_md, wei_tag));
 
             if (is_src_s8) {
-                want_wei_md.extra.flags
-                        = 0 | compensation_conv_s8s8;
+                want_wei_md.extra.flags = 0 | compensation_conv_s8s8;
                 want_wei_md.extra.compensation_mask
                         = with_groups() ? g_mask : c_mask;
                 want_wei_md.extra.scale_adjust = 1.0f;
@@ -314,8 +313,8 @@ struct jit_uni_x8s8s32x_1x1_convolution_fwd_t : public primitive_t {
             while (jcp_1x1.nb_load_blocking % jcp_dw_->nb_ch_blocking != 0)
                 --jcp_dw_->nb_ch_blocking;
 
-            jcp_dw_->dw_conv_buffer_oc = static_cast<int>(
-                    jcp_1x1.nb_load_blocking * jcp_1x1.oc_block);
+            jcp_dw_->dw_conv_buffer_oc
+                    = jcp_1x1.nb_load_blocking * jcp_1x1.oc_block;
             jcp_1x1.bcast_loop_output_step = jcp_1x1.ur
                     * (jcp_1x1.nb_load_blocking * jcp_1x1.oc_block)
                     * jcp_1x1.typesize_out;
@@ -382,7 +381,8 @@ private:
             const int32_t *src_zero_point, const int32_t *dst_zero_point,
             const memory_tracking::grantor_t &scratchpad,
             const void *post_ops_binary_rhs_arg_vec,
-            const void *post_ops_binary_rhs_arg_vec_dw) const;
+            const void *post_ops_binary_rhs_arg_vec_dw,
+            const int32_t *output_compensation) const;
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 
     std::unique_ptr<jit_uni_x8s8s32x_1x1_conv_kernel_t<isa>> kernel_;

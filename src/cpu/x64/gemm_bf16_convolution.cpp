@@ -149,7 +149,6 @@ void gemm_bf16_convolution_fwd_t<dst_data_type>::pp_ker_t::generate() {
     mov(reg_oc_offset, ptr[reg_param + PARAM_OFF(oc_offset)]);
     if (do_sum_)
         vbroadcastss(vreg_sum_scale, ptr[reg_param + PARAM_OFF(sum_scale)]);
-#undef PARAM_OFF
 
     // Load accumulated value, apply sum (if any), bias (if any)
     // and relu (if any); then convert to destination type and store
@@ -186,7 +185,14 @@ void gemm_bf16_convolution_fwd_t<dst_data_type>::pp_ker_t::generate() {
             vfmadd231ps(vreg_dst(idx), vreg_prev_dst(idx), vreg_sum_scale);
         }
 
+        if (jcp_.with_depthwise) {
+            push(reg_post_ops_data);
+            mov(reg_post_ops_data,
+                    ptr[reg_param + PARAM_OFF(post_ops_binary_rhs_arg_vec)]);
+        }
+
         int eltwise_inj_idx = 0;
+        std::size_t post_ops_data_offset = 0;
         const auto &p = attr_->post_ops_;
         for (int i = 0; i < p.len(); i++) {
             auto &post_op = p.entry_[i];
@@ -195,34 +201,47 @@ void gemm_bf16_convolution_fwd_t<dst_data_type>::pp_ker_t::generate() {
                         vreg_dst_idx(idx));
                 eltwise_inj_idx++;
             } else if (post_op.is_depthwise()) {
-                mov(reg_dw,
-                        reinterpret_cast<size_t>(
-                                post_op.depthwise.weights_data));
+                mov(reg_dw, ptr[reg_post_ops_data + post_ops_data_offset]);
                 lea(reg_dw, ptr[reg_dw + reg_oc_offset]);
 
                 switch (post_op.depthwise.alg) {
                     case alg_kind::depthwise_scale_shift: {
-                        vbroadcastss(vreg_dw, ptr[reg_dw]);
+                        vbroadcastss(vreg_dw,
+                                ptr[reg_dw
+                                        + post_op.depthwise.offset
+                                                        [post_op.depthwise
+                                                                        .scales]
+                                                * sizeof(float)]);
                         vmulps(vreg_dst(idx), vreg_dst(idx), vreg_dw);
-                        mov(reg_dw,
-                                reinterpret_cast<size_t>(
-                                        post_op.depthwise.biases_data));
-                        lea(reg_dw, ptr[reg_dw + reg_oc_offset]);
-                        vbroadcastss(vreg_dw, ptr[reg_dw]);
+                        vbroadcastss(vreg_dw,
+                                ptr[reg_dw
+                                        + post_op.depthwise.offset
+                                                        [post_op.depthwise
+                                                                        .shifts]
+                                                * sizeof(float)]);
                         vaddps(vreg_dst(idx), vreg_dst(idx), vreg_dw);
                         break;
                     }
                     case alg_kind::depthwise_prelu: {
                         vpxord(vreg_dw, vreg_dw, vreg_dw);
                         vcmpps(kmask, vreg_dst(idx), vreg_dw, _cmp_lt_os);
-                        vbroadcastss(vreg_dw, ptr[reg_dw]);
+                        vbroadcastss(vreg_dw,
+                                ptr[reg_dw
+                                        + post_op.depthwise.offset
+                                                        [post_op.depthwise
+                                                                        .scales]
+                                                * sizeof(float)]);
                         vmulps(vreg_dst(idx) | kmask, vreg_dst(idx), vreg_dw);
                         break;
                     }
                     default: assert(!"unsupported depthwise algorithm");
                 }
+
+                post_ops_data_offset += sizeof(float *);
             }
         }
+
+        if (jcp_.with_depthwise) { pop(reg_post_ops_data); }
 
         if (dst_data_type == data_type::bf16) {
             // TODO: implement store by zmm registers for bf16
@@ -305,7 +324,9 @@ void gemm_bf16_convolution_fwd_t<dst_data_type>::pp_ker_t::generate() {
 
     postamble();
     for (auto &inj : jit_eltwise_injectors_)
-        inj->prepare_table(true);
+        inj->prepare_table();
+
+#undef PARAM_OFF
 }
 
 // operator () specialized for nspc format
@@ -682,13 +703,18 @@ status_t gemm_bf16_convolution_bwd_data_t<diff_src_data_type>::
     auto wei_base = CTX_IN_MEM(const wei_data_t *, DNNL_ARG_WEIGHTS);
     auto diff_src_base = CTX_OUT_MEM(diff_src_data_t *, DNNL_ARG_DIFF_SRC);
 
+    const auto post_ops_binary_rhs_arg_vec
+            = x64::binary_injector::prepare_binary_args(
+                    pd()->jcp_.post_ops, ctx);
+
     const auto &scratchpad = ctx.get_scratchpad_grantor();
     const conv_gemm_conf_t &jcp = pd()->jcp_;
 
     std::atomic<status_t> st(status::success);
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
-        status_t st_thr = execute_backward_data_thr_nspc(
-                ithr, nthr, diff_src_base, wei_base, diff_dst_base, scratchpad);
+        status_t st_thr = execute_backward_data_thr_nspc(ithr, nthr,
+                diff_src_base, wei_base, diff_dst_base, scratchpad,
+                post_ops_binary_rhs_arg_vec);
         if (st_thr != status::success) st = st_thr;
     });
 
@@ -700,7 +726,8 @@ status_t gemm_bf16_convolution_bwd_data_t<
         diff_src_data_type>::execute_backward_data_thr_nspc(const int ithr,
         const int nthr, diff_src_data_t *diff_src_base,
         const wei_data_t *wei_base, const diff_dst_data_t *diff_dst_base,
-        const memory_tracking::grantor_t &scratchpad) const {
+        const memory_tracking::grantor_t &scratchpad,
+        const std::vector<const void *> &post_ops_binary_rhs_arg_vec) const {
 
     const conv_gemm_conf_t &jcp = pd()->jcp_;
 
@@ -756,12 +783,20 @@ status_t gemm_bf16_convolution_bwd_data_t<
             jit_gemm_convolution_utils::col2im_dt<acc_data_t>(jcp, col, acc);
 
         if (p.len() > 0) {
+            std::size_t post_ops_data_idx = 0;
             int depthwise_inj_idx = 0;
             for (int i = 0; i < p.len(); i++) {
                 auto &post_op = p.entry_[i];
                 if (post_op.is_depthwise()) {
-                    auto depthwise_weights = post_op.depthwise.weights_data;
-                    auto depthwise_bias = post_op.depthwise.biases_data;
+                    auto depthwise_base = reinterpret_cast<const float *>(
+                            post_ops_binary_rhs_arg_vec[post_ops_data_idx]);
+                    auto depthwise_weights = depthwise_base
+                            + post_op.depthwise
+                                      .offset[post_op.depthwise.scales];
+                    auto depthwise_bias = depthwise_base
+                            + post_op.depthwise
+                                      .offset[post_op.depthwise.shifts];
+
                     parallel_nd(static_cast<size_t>(jcp.is) * jcp.id,
                             [&](size_t is) {
                         diff_src_data_t *__restrict diff_src_arr
@@ -777,6 +812,7 @@ status_t gemm_bf16_convolution_bwd_data_t<
                                                               + ic);
                         }
                     });
+                    post_ops_data_idx++;
                     depthwise_inj_idx++;
                 }
             }
@@ -821,6 +857,10 @@ status_t gemm_bf16_convolution_bwd_data_t<diff_src_data_type>::
     auto diff_dst = CTX_IN_MEM(const diff_dst_data_t *, DNNL_ARG_DIFF_DST);
     auto weights = CTX_IN_MEM(const wei_data_t *, DNNL_ARG_WEIGHTS);
     auto diff_src = CTX_OUT_MEM(diff_src_data_t *, DNNL_ARG_DIFF_SRC);
+
+    const auto post_ops_binary_rhs_arg_vec
+            = x64::binary_injector::prepare_binary_args(
+                    pd()->jcp_.post_ops, ctx);
 
     auto col = ctx.get_scratchpad_grantor().template get<acc_data_t>(
             key_conv_gemm_col);
@@ -900,12 +940,20 @@ status_t gemm_bf16_convolution_bwd_data_t<diff_src_data_type>::
             }
 
             if (p.len() > 0) {
+                std::size_t post_ops_data_idx = 0;
                 int depthwise_inj_idx = 0;
                 for (int i = 0; i < p.len(); i++) {
                     auto &post_op = p.entry_[i];
                     if (post_op.is_depthwise()) {
-                        auto depthwise_weights = post_op.depthwise.weights_data;
-                        auto depthwise_bias = post_op.depthwise.biases_data;
+                        auto depthwise_base = reinterpret_cast<const float *>(
+                                post_ops_binary_rhs_arg_vec[post_ops_data_idx]);
+                        auto depthwise_weights = depthwise_base
+                                + post_op.depthwise
+                                          .offset[post_op.depthwise.scales];
+                        auto depthwise_bias = depthwise_base
+                                + post_op.depthwise
+                                          .offset[post_op.depthwise.shifts];
+
                         parallel_nd(jcp.ic, [&](const int ic) {
                             for (int id = 0; id < jcp.id; ++id) {
                                 acc_data_t *d_ = acc + ic * jcp.id * jcp.is
@@ -922,6 +970,7 @@ status_t gemm_bf16_convolution_bwd_data_t<diff_src_data_type>::
                                 }
                             }
                         });
+                        post_ops_data_idx++;
                         depthwise_inj_idx++;
                     }
                 }
@@ -943,7 +992,7 @@ status_t gemm_bf16_convolution_bwd_data_t<diff_src_data_type>::
 template <data_type_t diff_wei_data_type>
 void gemm_bf16_convolution_bwd_weights_t<
         diff_wei_data_type>::bf16_bwd_weights_reduction_par_nspc(int ithr_mb,
-        int nthr_mb, dim_t g_start, dim_t g_end, const conv_gemm_conf_t &jcp,
+        int nthr_mb, size_t g_start, size_t g_end, const conv_gemm_conf_t &jcp,
         const acc_data_t *weights_reduce_base,
         diff_wei_data_t *weights_base) const {
     assert(nthr_mb > 1); // no reduction for nthr_mb == 1

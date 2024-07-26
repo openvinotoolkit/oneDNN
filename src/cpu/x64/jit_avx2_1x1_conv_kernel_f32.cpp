@@ -167,9 +167,9 @@ void jit_avx2_1x1_conv_kernel_f32_t::apply_postops(
         });
         depthwise_injector::dynamic_params_t ddp {ymm_d_weights.getIdx(),
                 ymm_d_bias.getIdx(), reg_d_weights, reg_d_bias, reg_oc_off,
-                vmm_idx_off};
+                vmm_idx_off, this->rsp};
         quantization_injector::dynamic_params_t qdp {
-                reg_oc_off, vmm_idx_off, jcp.dst_dt};
+                reg_oc_off, vmm_idx_off, jcp.dst_dt, this->rsp};
 
         injector_utils::vmm_index_set_t vmm_idxs;
         if (jcp.with_binary) {
@@ -587,6 +587,11 @@ void jit_avx2_1x1_conv_kernel_f32_t::generate() {
 
     sub(rsp, stack_space_needed);
 
+    if (postops_injector_)
+        postops_injector_->push_post_ops_data_on_stack(this->param1,
+                GET_OFF(post_ops_binary_rhs_arg_vec), reg_bcast_data,
+                reg_load_data);
+
     if (jcp.with_binary) {
         mov(ptr[rsp + reg_abi_param1_backup], abi_param1);
         if (jcp.with_dw_conv) {
@@ -697,6 +702,8 @@ void jit_avx2_1x1_conv_kernel_f32_t::generate() {
     L(load_loop_blk_end);
 
     add(rsp, stack_space_needed);
+
+    if (postops_injector_) postops_injector_->reset_stack_pointer();
 
     postamble();
 
@@ -864,8 +871,7 @@ status_t jit_avx2_1x1_conv_kernel_f32_t::init_conf(jit_1x1_conv_conf_t &jcp,
     jcp.ic_block = jcp.oc_block = simd_w;
 
     jcp.ur = jcp.isa == avx2 ? 4 : 3; // Intel AVX support
-    if (jcp.with_dw_conv)
-        jcp.ur = static_cast<int>(nstl::min<dim_t>(jcp.ow, jcp.ur));
+    if (jcp.with_dw_conv) jcp.ur = nstl::min(jcp.ow, jcp.ur);
 
     int load_blocking {0};
     int load_blocking_max {0};
@@ -1018,8 +1024,7 @@ status_t jit_avx2_1x1_conv_kernel_f32_t::init_conf(jit_1x1_conv_conf_t &jcp,
                 !is_data_layout_nxc, jcp.bcast_dim % bcast_blocking == 0));
 
         reduce_blocking = is_data_layout_nxc
-                ? rnd_up(static_cast<int>(nstl::min<dim_t>(jcp.ow, 128)),
-                          jcp.reduce_block)
+                ? rnd_up(nstl::min(jcp.ow, 128), jcp.reduce_block)
                 : 128; // affects L1$ utilization
         reduce_blocking_max = rnd_dn(reduce_blocking * 3 / 2, jcp.reduce_block);
     } else

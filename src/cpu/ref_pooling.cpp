@@ -137,7 +137,7 @@ status_t ref_pooling_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
                 }
             }
         }
-        dim_t num_summands;
+        int num_summands;
         if (alg == alg_kind::pooling_avg_include_padding)
             num_summands = KW * KH * KD;
         else {
@@ -172,28 +172,37 @@ status_t ref_pooling_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
             auto &post_op = p.entry_[i];
             if (post_op.is_quantization()) {
                 auto quant = post_op.quantization;
-                float cl = quant.data[quant.crop_low]
-                                     [!quant.per_channel[quant.crop_low] ? 0
-                                                                         : oc];
-                float ch = quant.data[quant.crop_high]
-                                     [!quant.per_channel[quant.crop_high] ? 0
-                                                                          : oc];
-                float isc
-                        = quant.data[quant.inp_scale]
-                                    [!quant.per_channel[quant.inp_scale] ? 0
-                                                                         : oc];
-                float ish
-                        = quant.data[quant.inp_shift]
-                                    [!quant.per_channel[quant.inp_shift] ? 0
-                                                                         : oc];
-                float osc = quant.data[quant.output_scale]
-                                      [!quant.per_channel[quant.output_scale]
-                                                      ? 0
-                                                      : oc];
-                float osh = quant.data[quant.output_shift]
-                                      [!quant.per_channel[quant.output_shift]
-                                                      ? 0
-                                                      : oc];
+                auto quantization_base = CTX_IN_MEM(const float *,
+                        (DNNL_ARG_ATTR_MULTIPLE_POST_OP(i) | DNNL_ARG_SRC_1));
+                const auto crop_low_data
+                        = quantization_base + quant.offset[quant.crop_low];
+                const auto crop_high_data
+                        = quantization_base + quant.offset[quant.crop_high];
+                const auto inp_scale_data
+                        = quantization_base + quant.offset[quant.inp_scale];
+                const auto inp_shift_data
+                        = quantization_base + quant.offset[quant.inp_shift];
+                const auto output_scale_data
+                        = quantization_base + quant.offset[quant.output_scale];
+                const auto output_shift_data
+                        = quantization_base + quant.offset[quant.output_shift];
+
+                float cl = crop_low_data[!quant.per_channel[quant.crop_low]
+                                ? 0
+                                : oc];
+                float ch = crop_high_data[!quant.per_channel[quant.crop_high]
+                                ? 0
+                                : oc];
+                float isc = inp_scale_data[!quant.per_channel[quant.inp_scale]
+                                ? 0
+                                : oc];
+                float ish = inp_shift_data[!quant.per_channel[quant.inp_shift]
+                                ? 0
+                                : oc];
+                float osc = output_scale_data
+                        [!quant.per_channel[quant.output_scale] ? 0 : oc];
+                float osh = output_shift_data
+                        [!quant.per_channel[quant.output_shift] ? 0 : oc];
 
                 d = nstl::min(ch, nstl::max(cl, d));
                 d = d * isc + ish;
@@ -374,7 +383,7 @@ status_t ref_pooling_bwd_t::execute(const exec_ctx_t &ctx) const {
         balance211(diff_src_d.nelems(true), nthr, ithr, start, end);
         if (start == end) return;
 
-        for (dim_t i = start; i < end; i++)
+        for (auto i = start; i < end; i++)
             io::store_float_value(data_type::f32, 0, diff_src, i);
     });
 

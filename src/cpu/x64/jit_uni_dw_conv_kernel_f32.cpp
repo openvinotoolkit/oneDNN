@@ -280,6 +280,7 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<isa>::apply_postops(
     if (this->jcp.with_eltwise || this->jcp.with_binary
             || this->jcp.with_depthwise || this->jcp.with_quantization) {
         push(aux_reg_blocks_offset);
+        base_post_ops_data_offset += reg64_size;
         add(aux_reg_blocks_offset,
                 ptr[this->param1
                         + GET_OFF(oc_off)]); //add offset of processed blocks
@@ -297,9 +298,10 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<isa>::apply_postops(
 
         depthwise_injector::dynamic_params_t ddp {vmm_d_weights.getIdx(),
                 vmm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
-                aux_reg_blocks_offset, vmm_idx_off};
-        quantization_injector::dynamic_params_t qdp {
-                aux_reg_blocks_offset, vmm_idx_off, jcp.dst_dt};
+                aux_reg_blocks_offset, vmm_idx_off, this->rsp,
+                base_post_ops_data_offset};
+        quantization_injector::dynamic_params_t qdp {aux_reg_blocks_offset,
+                vmm_idx_off, jcp.dst_dt, this->rsp, base_post_ops_data_offset};
 
         injector_utils::vmm_index_set_t vmm_idxs;
         if (jcp.with_binary) {
@@ -369,6 +371,7 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<isa>::apply_postops(
                     binary_injector::rhs_arg_dynamic_params_t(), ddp, qdp);
         }
         pop(aux_reg_blocks_offset);
+        base_post_ops_data_offset -= reg64_size;
     }
 }
 
@@ -503,7 +506,11 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<isa>::compute_loop(
         push(reg_kernel);
         push(reg_input);
         push(reg_output);
-        if (jcp.with_bias) push(reg_bias);
+        base_post_ops_data_offset += 3 * reg64_size;
+        if (jcp.with_bias) {
+            push(reg_bias);
+            base_post_ops_data_offset += reg64_size;
+        }
 
         if ((jcp.oc / jcp.ch_block) >= jcp.nb_ch_blocking) {
             if (ch_block_tail) {
@@ -537,10 +544,14 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<isa>::compute_loop(
             L(skip_ch_tail_label);
         }
 
-        if (jcp.with_bias) pop(reg_bias);
+        if (jcp.with_bias) {
+            pop(reg_bias);
+            base_post_ops_data_offset -= reg64_size;
+        }
         pop(reg_output);
         pop(reg_input);
         pop(reg_kernel);
+        base_post_ops_data_offset -= 3 * reg64_size;
 
     } else {
         compute(ur_ch_blocks, jcp.oc % jcp.ch_block);
@@ -566,7 +577,7 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<isa>::ow_loop(int ur_ch_blocks) {
     int inp_shift_pad
             = jcp.typesize_in * (ur_w * stride_w - l_pad) * dat_c_stride;
 
-    int r_pad = static_cast<int>(nstl::max<dim_t>(0, jcp.r_pad));
+    int r_pad = nstl::max(0, jcp.r_pad);
     int n_oi = ow / ur_w;
     int r_pad1 = calculate_end_padding(l_pad, ur_w * n_oi, iw, stride_w,
             calculate_extended_filter_size(kw, jcp.dilate_w));
@@ -620,6 +631,10 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<isa>::ow_loop(int ur_ch_blocks) {
 template <cpu_isa_t isa>
 void jit_uni_dw_conv_fwd_kernel_f32_t<isa>::generate() {
     this->preamble();
+
+    if (postops_injector_)
+        postops_injector_->push_post_ops_data_on_stack(this->param1,
+                GET_OFF(post_ops_binary_rhs_arg_vec), reg_input, reg_output);
 
     if (jcp.is_fused_conv) {
         mov(reg_input_buffer_ptr, ptr[this->param1 + GET_OFF(src)]);
@@ -680,6 +695,8 @@ void jit_uni_dw_conv_fwd_kernel_f32_t<isa>::generate() {
 
         L(exit_label);
     }
+
+    if (postops_injector_) postops_injector_->reset_stack_pointer();
 
     this->postamble();
 
@@ -840,17 +857,17 @@ void jit_uni_dw_conv_bwd_data_kernel_f32_t<isa>::apply_postprocess(
     int repeats = isa == sse41 ? 2 : 1;
 
     const auto &p = jcp.post_ops;
+    std::size_t post_ops_data_offset = 0;
     int depthwise_inj_idx = 0;
+    base_post_ops_data_offset += reg64_size;
+    push(reg_d_weights);
     for (int i = 0; i < p.len(); i++) {
         auto &post_op = p.entry_[i];
         if (post_op.is_depthwise()) {
             mov(reg_d_weights,
-                    reinterpret_cast<size_t>(post_op.depthwise.weights_data));
-            mov(reg_d_bias,
-                    reinterpret_cast<size_t>(post_op.depthwise.biases_data));
-
+                    ptr[this->rsp + base_post_ops_data_offset
+                            + post_ops_data_offset]);
             add(reg_d_weights, ptr[this->param1 + GET_OFF(ic_off)]);
-            add(reg_d_bias, ptr[this->param1 + GET_OFF(ic_off)]);
 
             for (int ch = 0; ch < ur_ch_blocks; ch++) {
                 for (int k = 0; k < repeats; k++) {
@@ -863,15 +880,18 @@ void jit_uni_dw_conv_bwd_data_kernel_f32_t<isa>::apply_postprocess(
 
                     depthwise_injectors[depthwise_inj_idx]
                             ->compute_vector_range(start_idx, end_idx,
-                                    reg_d_weights, reg_d_bias);
+                                    reg_d_weights, reg_d_weights);
 
                     add(reg_d_weights, jcp.ch_block / repeats * sizeof(float));
-                    add(reg_d_bias, jcp.ch_block / repeats * sizeof(float));
                 }
             }
+            post_ops_data_offset
+                    += depthwise_injectors[depthwise_inj_idx]->memoryStep();
+            depthwise_inj_idx++;
         }
-        depthwise_inj_idx++;
     }
+    pop(reg_d_weights);
+    base_post_ops_data_offset -= reg64_size;
 }
 
 template <cpu_isa_t isa>
@@ -941,6 +961,7 @@ inline void jit_uni_dw_conv_bwd_data_kernel_f32_t<isa>::ch_loop_body(
                 = (size_t)jcp.nb_ch_blocking * jcp.ch_block * sizeof(float);
 
         mov(aux_reg_ch_blocks, reg_ch_blocks);
+        base_post_ops_data_offset += 3 * reg64_size;
         push(reg_dsrc);
         push(reg_ddst);
         push(reg_kernel);
@@ -977,6 +998,7 @@ inline void jit_uni_dw_conv_bwd_data_kernel_f32_t<isa>::ch_loop_body(
         pop(reg_kernel);
         pop(reg_ddst);
         pop(reg_dsrc);
+        base_post_ops_data_offset -= 3 * reg64_size;
 
     } else {
         call_compute_body(ur_ch_blocks, unroll_w, jcp.ch_tail > 0);
@@ -1020,12 +1042,31 @@ void jit_uni_dw_conv_bwd_data_kernel_f32_t<isa>::generate() {
         auto &post_op = p.entry_[i];
         if (post_op.is_depthwise()) {
             depthwise_injectors.push_back(
-                    new jit_uni_depthwise_injector_f32<isa>(
-                            this, post_op.depthwise.alg));
+                    new jit_uni_depthwise_injector_f32<isa>(this, post_op));
         }
     }
 
     preamble();
+
+    std::size_t post_ops_pointers_count = 0;
+    for (int i = 0; i < p.len(); i++) {
+        if (p.entry_[i].is_depthwise() || p.entry_[i].is_quantization()) {
+            post_ops_pointers_count++;
+        }
+    }
+
+    if (post_ops_pointers_count != 0) {
+        sub(rsp, post_ops_pointers_count * sizeof(float *));
+
+        auto aux_reg0 = reg_dsrc;
+        auto aux_reg1 = reg_ddst;
+
+        mov(aux_reg0, ptr[this->param1 + GET_OFF(post_ops_binary_rhs_arg_vec)]);
+        for (size_t i = 0; i < post_ops_pointers_count; i++) {
+            mov(aux_reg1, ptr[aux_reg0 + i * sizeof(float *)]);
+            mov(ptr[rsp + i * sizeof(float *)], aux_reg1);
+        }
+    }
 
     mov(reg_dsrc, ptr[this->param1 + GET_OFF(src)]);
     mov(reg_ddst, ptr[this->param1 + GET_OFF(dst)]);
@@ -1065,6 +1106,10 @@ void jit_uni_dw_conv_bwd_data_kernel_f32_t<isa>::generate() {
 
         int ch_blocks_tail = jcp.nb_ch % jcp.nb_ch_blocking;
         if (ch_blocks_tail) { ch_blocks_loop(ch_blocks_tail); }
+    }
+
+    if (post_ops_pointers_count != 0) {
+        add(rsp, post_ops_pointers_count * sizeof(float *));
     }
 
     this->postamble();
@@ -1246,8 +1291,7 @@ jit_uni_dw_conv_bwd_weights_kernel_f32_t<isa>::compute_unroll_ow_step_nxc(
     const int cascade_input = nstl::min(jcp.stride_w, jcp.kw);
 
     /* preamble count for number of cascaded LOAD + FMA operation */
-    const int input_overlap
-            = static_cast<int>(nstl::max<dim_t>(jcp.kw - l_pad, 0));
+    const int input_overlap = nstl::max(jcp.kw - l_pad, 0);
     const bool is_last_block = (unroll_w + ow_block == jcp.ow);
 
     /* LOAD initial input registers, then cascade LOADs and FMAs*/
@@ -1344,8 +1388,7 @@ jit_uni_dw_conv_bwd_weights_kernel_f32_t<isa>::compute_unroll_ow_step(
     const int cascade_input = nstl::min(jcp.stride_w, jcp.kw);
 
     /* preamble count for number of cascaded LOAD + FMA operation */
-    const int input_overlap
-            = static_cast<int>(nstl::max<dim_t>(jcp.kw - l_pad, 0));
+    const int input_overlap = nstl::max(jcp.kw - l_pad, 0);
     const bool is_last_block = (unroll_w + ow_block == jcp.ow);
     const bool nxc_sse41_offset = is_layout_nxc() && isa == sse41;
 
@@ -1557,8 +1600,7 @@ jit_uni_dw_conv_bwd_weights_kernel_f32_t<isa>::compute_spatial_loop_bias(
     Label oh_label;
     Label ow_blk_label;
 
-    const int unroll_w
-            = static_cast<int>(nstl::min<dim_t>(max_unroll_w_, jcp.ow));
+    const int unroll_w = nstl::min(max_unroll_w_, jcp.ow);
     const int unroll_w_trips = jcp.ow / unroll_w;
     const int tail_w = jcp.ow > max_unroll_w_ ? jcp.ow % max_unroll_w_ : 0;
 
@@ -1996,7 +2038,7 @@ void jit_uni_dw_conv_bwd_weights_kernel_f32_t<isa>::calculate_w_unrolling(
 
     const bool do_unroll_w = jcp.ow > max_unroll_w_;
     if (do_unroll_w) {
-        unroll_w = static_cast<int>(nstl::min<dim_t>(block_size_, jcp.ow));
+        unroll_w = nstl::min(block_size_, jcp.ow);
         unroll_trips = jcp.ow / unroll_w;
         /* calculate tail */
         unroll_w_tail = jcp.ow % unroll_w;

@@ -74,6 +74,8 @@ private:
 
     reg64_t reg_d_weights = abi_not_param1;
     reg64_t reg_d_bias = iter_kh;
+    int base_post_ops_data_offset = 0;
+    constexpr static int reg64_size = 8;
 
     Xbyak::Zmm zmm_d_weights = Xbyak::Zmm(31);
     Xbyak::Zmm zmm_d_bias = Xbyak::Zmm(30);
@@ -95,17 +97,16 @@ private:
     Xbyak::Zmm get_acc_reg(int idx);
 
     int get_ow_start(int ki, int pad_l) const {
-        return static_cast<int>(utils::div_up(
-                nstl::max<dim_t>(0, pad_l - ki * (jcp.dilate_w + 1)),
-                jcp.stride_w));
+        return utils::div_up(
+                nstl::max(0, pad_l - ki * (jcp.dilate_w + 1)), jcp.stride_w);
     }
 
     int get_ow_end(int ur_w, int ki, int pad_r) const {
         return ur_w
-                - static_cast<int>(utils::div_up(
-                        nstl::max<dim_t>(0,
+                - utils::div_up(
+                        nstl::max(0,
                                 pad_r - (jcp.kw - 1 - ki) * (jcp.dilate_w + 1)),
-                        jcp.stride_w));
+                        jcp.stride_w);
     }
 
     inline bool is_src_layout_nxc() const {
@@ -191,6 +192,8 @@ private:
 
     reg64_t reg_d_weights = r15;
     reg64_t reg_d_bias = iter_kh;
+    int base_post_ops_data_offset = 0;
+    constexpr static int reg64_size = 8;
 
     Xbyak::Zmm bf16_emu_reserv_1 = Xbyak::Zmm(26);
     Xbyak::Zmm bf16_emu_reserv_2 = Xbyak::Zmm(27);
@@ -261,7 +264,7 @@ private:
         return Xbyak::Zmm(idx + idx_start);
     }
     inline Xbyak::Zmm get_input_reg(int idx) const {
-        const int i_idx = static_cast<int>(idx_start + jcp.kw + idx % jcp.kw);
+        const int i_idx = idx_start + jcp.kw + idx % jcp.kw;
         assert(i_idx <= get_max_regs());
         return Xbyak::Zmm(i_idx);
     }
@@ -332,7 +335,7 @@ private:
     void store_bias(bool is_last_ch);
     void compute_bias();
     void calculate_w_unrolling(
-            int &unroll_trips, int &unroll_w, int &unroll_w_tail) const;
+            int &unroll_trips, int &unroll_w, int &unroll_w_tail);
 
     void generate() override;
 

@@ -93,6 +93,7 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::apply_filter(
     mov(iter_kh, reg_kh);
     Label kh_label;
     push(aux1_reg_kernel);
+    base_post_ops_data_offset += reg64_size;
     L(kh_label);
     {
         mov(iter_kw, reg_kw);
@@ -141,6 +142,7 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::apply_filter(
         cmp(iter_kh, 0);
         jg(kh_label, T_NEAR);
         pop(aux1_reg_kernel);
+        base_post_ops_data_offset -= reg64_size;
     }
 
     L(iter_exit_label);
@@ -211,6 +213,7 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::apply_postprocess(
         int ur_ch_blocks, int ur_w) {
     int eltwise_inj_idx = 0;
     int depthwise_inj_idx = 0;
+    std::size_t post_ops_data_offset = 0;
     const auto &p = attr_.post_ops_;
 
     for (int i = 0; i < p.len(); i++) {
@@ -224,31 +227,31 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::apply_postprocess(
             eltwise_inj_idx++;
         } else if (post_op.is_depthwise()) {
             push(aux_reg_blocks_offset);
+            base_post_ops_data_offset += reg64_size;
             add(aux_reg_blocks_offset,
                     ptr[this->param1
                             + GET_OFF(
                                     oc_off)]); //add offset of processed blocks
 
             mov(reg_d_weights,
-                    reinterpret_cast<size_t>(post_op.depthwise.weights_data));
-            mov(reg_d_bias,
-                    reinterpret_cast<size_t>(post_op.depthwise.biases_data));
-
+                    ptr[this->rsp + base_post_ops_data_offset
+                            + post_ops_data_offset]);
             add(reg_d_weights, aux_reg_blocks_offset);
-            add(reg_d_bias, aux_reg_blocks_offset);
 
             for (int ch = 0; ch < ur_ch_blocks; ch++) {
                 int start_idx = get_acc_reg(ur_w * ch).getIdx();
                 int end_idx = get_acc_reg(ur_w * ch + ur_w).getIdx();
 
                 depthwise_injectors[depthwise_inj_idx]->compute_vector_range(
-                        start_idx, end_idx, reg_d_weights, reg_d_bias);
+                        start_idx, end_idx, reg_d_weights, reg_d_weights);
 
                 add(reg_d_weights, jcp.ch_block * sizeof(float));
-                add(reg_d_bias, jcp.ch_block * sizeof(float));
             }
             pop(aux_reg_blocks_offset);
+            base_post_ops_data_offset -= reg64_size;
 
+            post_ops_data_offset
+                    += depthwise_injectors[depthwise_inj_idx]->memoryStep();
             depthwise_inj_idx++;
         }
     }
@@ -406,7 +409,11 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::compute_loop(
         push(reg_kernel);
         push(reg_input);
         push(reg_output);
-        if (jcp.with_bias) push(reg_bias);
+        base_post_ops_data_offset += 4 * reg64_size;
+        if (jcp.with_bias) {
+            push(reg_bias);
+            base_post_ops_data_offset += reg64_size;
+        }
 
         if (nb_ch >= jcp.nb_ch_blocking) {
             if (nb_ch_blocking_tail) {
@@ -440,11 +447,15 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::compute_loop(
             L(skip_ch_tail_label);
         }
 
-        if (jcp.with_bias) pop(reg_bias);
+        if (jcp.with_bias) {
+            pop(reg_bias);
+            base_post_ops_data_offset -= reg64_size;
+        }
         pop(reg_output);
         pop(reg_input);
         pop(reg_kernel);
         pop(aux_reg_ch_blocks);
+        base_post_ops_data_offset -= 4 * reg64_size;
 
     } else {
         compute(ur_ch_blocks, masked_ch_block_tail);
@@ -514,11 +525,31 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::generate() {
         } else if (post_op.is_depthwise()) {
             depthwise_injectors.push_back(
                     new jit_uni_depthwise_injector_f32<avx512_core>(
-                            this, post_op.depthwise.alg));
+                            this, post_op));
         }
     }
 
     this->preamble();
+
+    std::size_t post_ops_pointers_count = 0;
+    for (int i = 0; i < p.len(); i++) {
+        if (p.entry_[i].is_depthwise() || p.entry_[i].is_quantization()) {
+            post_ops_pointers_count++;
+        }
+    }
+
+    if (post_ops_pointers_count != 0) {
+        sub(rsp, post_ops_pointers_count * sizeof(float *));
+
+        auto aux_reg0 = reg_input;
+        auto aux_reg1 = reg_output;
+
+        mov(aux_reg0, ptr[this->param1 + GET_OFF(post_ops_binary_rhs_arg_vec)]);
+        for (size_t i = 0; i < post_ops_pointers_count; i++) {
+            mov(aux_reg1, ptr[aux_reg0 + i * sizeof(float *)]);
+            mov(ptr[rsp + i * sizeof(float *)], aux_reg1);
+        }
+    }
 
     mov(reg_input, ptr[this->param1 + GET_OFF(src)]);
     mov(reg_output, ptr[this->param1 + GET_OFF(dst)]);
@@ -581,6 +612,10 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::generate() {
         }
 
         L(exit_label);
+    }
+
+    if (post_ops_pointers_count != 0) {
+        add(rsp, post_ops_pointers_count * sizeof(float *));
     }
 
     this->postamble();

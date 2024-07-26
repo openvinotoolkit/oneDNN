@@ -319,8 +319,8 @@ jit_uni_postops_injector_t<isa, Vmm>::jit_uni_postops_injector_t(
               lambda_jit_injectors_t()) {}
 
 template <cpu_isa_t isa, typename Vmm>
-void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(int start_idx,
-        int end_idx,
+void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
+        int start_idx, int end_idx,
         const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params) {
 
     injector_utils::vmm_index_set_t vmm_idxs;
@@ -331,20 +331,13 @@ void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(int start_idx,
 
 template <cpu_isa_t isa, typename Vmm>
 void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
-        size_t start_idx, size_t end_idx) {
-    compute_vector_range(static_cast<int>(start_idx), static_cast<int>(end_idx),
-            binary_injector::rhs_arg_dynamic_params_t());
-}
-
-template <cpu_isa_t isa, typename Vmm>
-void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
-        size_t start_idx, size_t end_idx,
+        int start_idx, int end_idx,
         const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
         const depthwise_injector::dynamic_params_t &ddp,
         const quantization_injector::dynamic_params_t &qdp) {
 
     injector_utils::vmm_index_set_t vmm_idxs;
-    for (size_t i = start_idx; i < end_idx; i++)
+    for (int i = start_idx; i < end_idx; i++)
         vmm_idxs.emplace(i);
     compute_vector_range(vmm_idxs, rhs_arg_params, ddp, qdp);
 }
@@ -361,20 +354,12 @@ void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
         const injector_utils::vmm_index_set_t &vmm_idxs,
         const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
         const depthwise_injector::dynamic_params_t &ddp,
-        const quantization_injector::dynamic_params_t &qdp) {
-    compute_vector_range(vmm_idxs, rhs_arg_params, ddp, qdp, false);
-}
-
-template <cpu_isa_t isa, typename Vmm>
-void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
-        const injector_utils::vmm_index_set_t &vmm_idxs,
-        const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
-        const depthwise_injector::dynamic_params_t &ddp,
         const quantization_injector::dynamic_params_t &qdp, bool is_broadcast) {
 
     std::size_t rhs_arg_idx = 0;
     std::size_t quantization_inj_idx = 0;
     std::size_t depthwise_inj_idx = 0;
+    std::size_t post_ops_data_offset = 0;
     for (int i = 0; i < post_ops_.len(); i++) {
         const auto &post_op = post_ops_.entry_[i];
 
@@ -388,14 +373,16 @@ void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
             // skipping one more.
             if (post_op.is_binary_with_ternary_op()) ++rhs_arg_idx;
         } else if (post_op.is_depthwise()) {
+            const Xbyak::RegExp depthwise_arg_base = ddp.reg_post_ops_data
+                    + ddp.base_post_ops_data_offset + post_ops_data_offset;
             if (ddp.useAddr)
                 depthwise_injectors[depthwise_inj_idx]->init_ptrs(
-                        ddp.reg_d_weights, ddp.reg_d_bias,
+                        depthwise_arg_base, ddp.reg_d_weights, ddp.reg_d_bias,
                         ddp.reg_init_off_addr, false);
             else
                 depthwise_injectors[depthwise_inj_idx]->init_ptrs(
-                        ddp.reg_d_weights, ddp.reg_d_bias, ddp.reg_init_off,
-                        false);
+                        depthwise_arg_base, ddp.reg_d_weights, ddp.reg_d_bias,
+                        ddp.reg_init_off, false);
 
             bool need_to_preserve = false;
             if (post_op.depthwise.alg == dnnl_depthwise_prelu && isa == sse41)
@@ -410,77 +397,89 @@ void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
                         need_to_preserve);
             }
 
+            post_ops_data_offset
+                    += depthwise_injectors[depthwise_inj_idx]->memoryStep();
+            ++rhs_arg_idx;
             depthwise_inj_idx++;
         } else if (post_op.is_quantization()) {
+            std::vector<std::pair<int, std::set<size_t>>> vecOfVmmIdxsSets;
+
+            std::multimap<int, size_t> offsetVmmIdxMap;
+            for (auto vmm_idx : vmm_idxs) {
+                offsetVmmIdxMap.insert({qdp.vmm_idx_off.at(vmm_idx), vmm_idx});
+            }
+
+            auto externalIt = offsetVmmIdxMap.begin();
+            while (externalIt != offsetVmmIdxMap.end()) {
+                auto internalIt = externalIt;
+                auto endInternalIt
+                        = offsetVmmIdxMap.upper_bound(externalIt->first);
+
+                std::set<size_t> vmmIndexesToProcess;
+                while (internalIt != endInternalIt) {
+                    vmmIndexesToProcess.insert(internalIt->second);
+                    internalIt++;
+                }
+                vecOfVmmIdxsSets.push_back(
+                        {externalIt->first, vmmIndexesToProcess});
+
+                externalIt = endInternalIt;
+            }
+
             bool do_dequantization = post_op.quantization.alg
                     == alg_kind::quantization_quantize_dequantize;
             bool do_rounding = do_dequantization || qdp.dst_dt == dnnl_f32
                     || i != post_ops_.len() - 1;
 
-            std::vector<std::pair<int, std::set<size_t>>> vec_of_vmm_idx_sets;
-            std::multimap<int, size_t> offset_vmm_idx_map;
-            for (auto vmm_idx : vmm_idxs) {
-                offset_vmm_idx_map.insert(
-                        {qdp.vmm_idx_off.at(vmm_idx), vmm_idx});
-            }
-
-            auto external_it = offset_vmm_idx_map.begin();
-            while (external_it != offset_vmm_idx_map.end()) {
-                auto internal_it = external_it;
-                auto end_internal_it
-                        = offset_vmm_idx_map.upper_bound(external_it->first);
-
-                std::set<size_t> vmm_indexes_to_process;
-                while (internal_it != end_internal_it) {
-                    vmm_indexes_to_process.insert(internal_it->second);
-                    internal_it++;
-                }
-                vec_of_vmm_idx_sets.push_back(
-                        {external_it->first, vmm_indexes_to_process});
-
-                external_it = end_internal_it;
-            }
-
+            const Xbyak::RegExp quant_arg_base = qdp.reg_post_ops_data
+                    + qdp.base_post_ops_data_offset + post_ops_data_offset;
             if (qdp.useAddr)
                 quantization_injectors[quantization_inj_idx]->init_crop_ptrs(
-                        qdp.reg_oc_off_addr);
+                        quant_arg_base, qdp.reg_oc_off_addr);
             else
                 quantization_injectors[quantization_inj_idx]->init_crop_ptrs(
-                        qdp.reg_oc_off);
+                        quant_arg_base, qdp.reg_oc_off);
 
-            for (auto &idx_set_pair : vec_of_vmm_idx_sets) {
+            for (auto &IdxSetPair : vecOfVmmIdxsSets) {
                 quantization_injectors[quantization_inj_idx]->compute_crop(
-                        idx_set_pair.second, idx_set_pair.first, false,
+                        IdxSetPair.second, IdxSetPair.first, false,
                         is_broadcast);
             }
 
             if (qdp.useAddr)
                 quantization_injectors[quantization_inj_idx]
-                        ->init_input_scale_shift_ptrs(qdp.reg_oc_off_addr);
+                        ->init_input_scale_shift_ptrs(
+                                quant_arg_base, qdp.reg_oc_off_addr);
             else
                 quantization_injectors[quantization_inj_idx]
-                        ->init_input_scale_shift_ptrs(qdp.reg_oc_off);
+                        ->init_input_scale_shift_ptrs(
+                                quant_arg_base, qdp.reg_oc_off);
 
-            for (auto &idx_set_pair : vec_of_vmm_idx_sets) {
+            for (auto &IdxSetPair : vecOfVmmIdxsSets) {
                 quantization_injectors[quantization_inj_idx]
-                        ->compute_input_scale_shift(idx_set_pair.second,
-                                idx_set_pair.first, do_rounding, false,
+                        ->compute_input_scale_shift(IdxSetPair.second,
+                                IdxSetPair.first, do_rounding, false,
                                 is_broadcast);
             }
 
             if (qdp.useAddr)
                 quantization_injectors[quantization_inj_idx]
-                        ->init_output_scale_shift_ptrs(qdp.reg_oc_off_addr);
+                        ->init_output_scale_shift_ptrs(
+                                quant_arg_base, qdp.reg_oc_off_addr);
             else
                 quantization_injectors[quantization_inj_idx]
-                        ->init_output_scale_shift_ptrs(qdp.reg_oc_off);
+                        ->init_output_scale_shift_ptrs(
+                                quant_arg_base, qdp.reg_oc_off);
 
-            for (auto &idx_set_pair : vec_of_vmm_idx_sets) {
+            for (auto &IdxSetPair : vecOfVmmIdxsSets) {
                 quantization_injectors[quantization_inj_idx]
-                        ->compute_output_scale_shift(idx_set_pair.second,
-                                idx_set_pair.first, false, is_broadcast);
+                        ->compute_output_scale_shift(IdxSetPair.second,
+                                IdxSetPair.first, false, is_broadcast);
             }
 
+            post_ops_data_offset += quantization_injectors[quantization_inj_idx]
+                                            ->memoryStep();
+            ++rhs_arg_idx;
             quantization_inj_idx++;
         } else {
             const auto lam = lambda_jit_injectors_.find(post_op.kind);
@@ -521,7 +520,7 @@ void jit_uni_postops_injector_t<isa, Vmm>::compute_vector(int idx) {
 }
 
 template <cpu_isa_t isa, typename Vmm>
-void jit_uni_postops_injector_t<isa, Vmm>::compute_vector(size_t idx,
+void jit_uni_postops_injector_t<isa, Vmm>::compute_vector(int idx,
         const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
         const depthwise_injector::dynamic_params_t &ddp,
         const quantization_injector::dynamic_params_t &qdp) {
@@ -531,7 +530,7 @@ void jit_uni_postops_injector_t<isa, Vmm>::compute_vector(size_t idx,
 }
 
 template <cpu_isa_t isa, typename Vmm>
-void jit_uni_postops_injector_t<isa, Vmm>::compute_vector(size_t idx,
+void jit_uni_postops_injector_t<isa, Vmm>::compute_vector(int idx,
         const depthwise_injector::dynamic_params_t &ddp,
         const quantization_injector::dynamic_params_t &qdp, bool is_broadcast) {
     compute_vector_range(
@@ -544,6 +543,36 @@ template <cpu_isa_t isa, typename Vmm>
 void jit_uni_postops_injector_t<isa, Vmm>::set_lambda_injector(
         dnnl_primitive_kind_t kind, const std::function<void()> &jit_injector) {
     lambda_jit_injectors_[kind] = jit_injector;
+}
+
+template <cpu_isa_t isa, typename Vmm>
+void jit_uni_postops_injector_t<isa, Vmm>::push_post_ops_data_on_stack(
+        const Xbyak::Reg64 &post_ops_data_reg, std::size_t post_ops_data_offset,
+        const Xbyak::Reg64 &aux_reg0, const Xbyak::Reg64 &aux_reg1) {
+    for (int i = 0; i < post_ops_.len(); i++) {
+        if (post_ops_.entry_[i].is_depthwise()
+                || post_ops_.entry_[i].is_quantization()) {
+            post_ops_pointers_count++;
+        }
+    }
+
+    if (post_ops_pointers_count != 0) {
+        host_->sub(host_->rsp, post_ops_pointers_count * sizeof(float *));
+
+        host_->mov(
+                aux_reg0, host_->ptr[post_ops_data_reg + post_ops_data_offset]);
+        for (size_t i = 0; i < post_ops_pointers_count; i++) {
+            host_->mov(aux_reg1, host_->ptr[aux_reg0 + i * sizeof(float *)]);
+            host_->mov(host_->ptr[host_->rsp + i * sizeof(float *)], aux_reg1);
+        }
+    }
+}
+
+template <cpu_isa_t isa, typename Vmm>
+void jit_uni_postops_injector_t<isa, Vmm>::reset_stack_pointer() {
+    if (post_ops_pointers_count != 0) {
+        host_->add(host_->rsp, post_ops_pointers_count * sizeof(float *));
+    }
 }
 
 post_ops_ok_args_t::post_ops_ok_args_t(const cpu_isa_t isa,

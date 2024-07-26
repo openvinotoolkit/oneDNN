@@ -53,7 +53,9 @@ struct dynamic_params_t {
             Xbyak::Reg64 reg_d_weights = Xbyak::Reg64(0),
             Xbyak::Reg64 reg_d_bias = Xbyak::Reg64(0),
             Xbyak::Reg64 reg_init_off = Xbyak::Reg64(0),
-            const std::map<size_t, int> vmm_idx_off = {})
+            const std::map<size_t, int> vmm_idx_off = {},
+            Xbyak::Reg64 reg_post_ops_data = Xbyak::Reg64(0),
+            int base_post_ops_data_offset = 0)
         : vmm_d_weights_idx(vmm_d_weights_idx)
         , vmm_d_bias_idx(vmm_d_bias_idx)
         , reg_d_weights(reg_d_weights)
@@ -61,12 +63,16 @@ struct dynamic_params_t {
         , reg_init_off(reg_init_off)
         , reg_init_off_addr()
         , vmm_idx_off(vmm_idx_off)
-        , useAddr(false) {}
+        , useAddr(false)
+        , reg_post_ops_data(reg_post_ops_data)
+        , base_post_ops_data_offset(base_post_ops_data_offset) {}
 
     dynamic_params_t(int vmm_d_weights_idx, int vmm_d_bias_idx,
             Xbyak::Reg64 reg_d_weights, Xbyak::Reg64 reg_d_bias,
             Xbyak::Address reg_init_off,
-            const std::map<size_t, int> vmm_idx_off)
+            const std::map<size_t, int> vmm_idx_off,
+            Xbyak::Reg64 reg_post_ops_data = Xbyak::Reg64(0),
+            int base_post_ops_data_offset = 0)
         : vmm_d_weights_idx(vmm_d_weights_idx)
         , vmm_d_bias_idx(vmm_d_bias_idx)
         , reg_d_weights(reg_d_weights)
@@ -74,7 +80,9 @@ struct dynamic_params_t {
         , reg_init_off(0)
         , reg_init_off_addr(reg_init_off)
         , vmm_idx_off(vmm_idx_off)
-        , useAddr(true) {}
+        , useAddr(true)
+        , reg_post_ops_data(reg_post_ops_data)
+        , base_post_ops_data_offset(base_post_ops_data_offset) {}
 
     int vmm_d_weights_idx;
     int vmm_d_bias_idx;
@@ -84,6 +92,8 @@ struct dynamic_params_t {
     Xbyak::Address reg_init_off_addr;
     std::map<size_t, int> vmm_idx_off;
     bool useAddr;
+    Xbyak::Reg64 reg_post_ops_data;
+    int base_post_ops_data_offset;
 };
 
 } // namespace depthwise_injector
@@ -92,13 +102,6 @@ template <cpu_isa_t isa>
 struct jit_uni_depthwise_injector_f32 {
     using Vmm = typename utils::conditional3<isa == sse41, Xbyak::Xmm,
             isa == avx2, Xbyak::Ymm, Xbyak::Zmm>::type;
-
-    jit_uni_depthwise_injector_f32(jit_generator_t *host,
-            alg_kind_t depthwise_alg_, Xbyak::Opmask k_mask_ = Xbyak::Opmask(1))
-        : h(host), depthwise_alg(depthwise_alg_), k_mask(k_mask_) {
-        assert(utils::one_of(depthwise_alg, alg_kind::depthwise_scale_shift,
-                alg_kind::depthwise_prelu));
-    }
 
     jit_uni_depthwise_injector_f32(jit_generator_t *host,
             dnnl_post_ops::entry_t post_op,
@@ -111,15 +114,18 @@ struct jit_uni_depthwise_injector_f32 {
 
     void compute_vector_range(int start_idx, int end_idx,
             const Xbyak::Reg64 &p_weights, const Xbyak::Reg64 &p_bias,
-            bool is_broadcast = false);
+            bool is_broadcast = false, bool scale_only = false);
 
-    void init_ptrs(const Xbyak::Reg64 &reg_d_weights,
-            const Xbyak::Reg64 &reg_d_bias, const Xbyak::Operand &ch_off,
-            bool is_broadcast);
+    void init_ptrs(const Xbyak::RegExp &ptr_data,
+            const Xbyak::Reg64 &reg_d_weights, const Xbyak::Reg64 &reg_d_bias,
+            const Xbyak::Operand &ch_off, bool is_broadcast);
+
     void compute(int start_idx, int end_idx, int vmm_d_weights_idx,
             int vmm_d_bias_idx, const Xbyak::Reg64 &reg_d_weights,
             const Xbyak::Reg64 &reg_d_bias, bool is_broadcast = false,
             int offset = 0, bool need_to_preserve = false);
+
+    static constexpr size_t memoryStep() { return sizeof(float *); }
 
 private:
     jit_generator_t *h;
@@ -146,7 +152,7 @@ private:
 
     void compute_body(size_t start_idx, size_t end_idx,
             const Xbyak::Reg64 &p_weights, const Xbyak::Reg64 &p_bias,
-            bool is_broadcast = false);
+            bool is_broadcast = false, bool scale_only = false);
     void injector_preamble(
             size_t start_idx, size_t end_idx, bool is_broadcast = false);
     void injector_preamble_tail(size_t start_idx, size_t end_idx);
@@ -155,7 +161,7 @@ private:
 
     void scale_shift_compute_vector(const Vmm &vmm_src,
             const Xbyak::Reg64 &p_weights, const Xbyak::Reg64 &p_bias,
-            bool is_broadcast = false, int offset = 0);
+            bool is_broadcast = false, int offset = 0, bool scale_only = false);
     void prelu_compute_vector(const Vmm &vmm_src, const Xbyak::Reg64 &p_weights,
             const Xbyak::Reg64 &p_bias, bool is_broadcast = false,
             int offset = 0);

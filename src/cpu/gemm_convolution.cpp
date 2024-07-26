@@ -23,6 +23,9 @@
 #include "common/type_helpers.hpp"
 #include "common/utils.hpp"
 #include "cpu/gemm_convolution.hpp"
+#if DNNL_X64
+#include "cpu/x64/injectors/jit_uni_postops_injector.hpp"
+#endif
 
 namespace dnnl {
 namespace impl {
@@ -50,6 +53,13 @@ status_t gemm_convolution_fwd_t::execute_forward_nspc(
     auto wei_base = CTX_IN_MEM(const data_t *, DNNL_ARG_WEIGHTS);
     auto bia_base = CTX_IN_MEM(const data_t *, DNNL_ARG_BIAS);
     auto dst_base = CTX_OUT_MEM(data_t *, DNNL_ARG_DST);
+#if DNNL_X64
+    const auto post_ops_binary_rhs_arg_vec
+            = x64::binary_injector::prepare_binary_args(
+                    pd()->jcp_.post_ops, ctx);
+#else
+    const auto post_ops_binary_rhs_arg_vec = std::vector<const void *>();
+#endif
 
     const auto &scratchpad = ctx.get_scratchpad_grantor();
     const conv_gemm_conf_t &jcp = pd()->jcp_;
@@ -57,7 +67,8 @@ status_t gemm_convolution_fwd_t::execute_forward_nspc(
 
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
         status_t st_thr = execute_forward_thr_nspc(ctx, ithr, nthr, src_base,
-                wei_base, bia_base, dst_base, scratchpad);
+                wei_base, bia_base, dst_base, scratchpad,
+                post_ops_binary_rhs_arg_vec);
         if (st_thr != status::success) st = st_thr;
     });
 
@@ -67,7 +78,8 @@ status_t gemm_convolution_fwd_t::execute_forward_nspc(
 status_t gemm_convolution_fwd_t::execute_forward_thr_nspc(const exec_ctx_t &ctx,
         const int ithr, const int nthr, const data_t *src_base,
         const data_t *wei_base, const data_t *bia_base, data_t *dst_base,
-        const memory_tracking::grantor_t &scratchpad) const {
+        const memory_tracking::grantor_t &scratchpad,
+        const std::vector<const void *> &post_ops_binary_rhs_arg_vec) const {
     const conv_gemm_conf_t &jcp = pd()->jcp_;
 
     // Src Format: mb-spatial-groups-input_channels
@@ -116,8 +128,8 @@ status_t gemm_convolution_fwd_t::execute_forward_thr_nspc(const exec_ctx_t &ctx,
                 = src_base + n * src_mb_stride + g * src_g_stride;
         const data_t *__restrict wei = wei_base + g * wei_g_stride;
 
-        const dim_t h_step = nstl::min(jcp.oh_block, jcp.oh - oh);
-        const dim_t w_step = nstl::min(jcp.ow_block, jcp.ow - ow);
+        const auto h_step = nstl::min(jcp.oh_block, jcp.oh - oh);
+        const auto w_step = nstl::min(jcp.ow_block, jcp.ow - ow);
         if (jcp.im2col_sz && is_problem_3d) {
             jit_gemm_convolution_utils::transpose_dt(jcp, src, imtr);
         }
@@ -159,7 +171,8 @@ status_t gemm_convolution_fwd_t::execute_forward_thr_nspc(const exec_ctx_t &ctx,
 
                 for (size_t os = first_os; os < last_os; ++os) {
                     data_t *dst_local = dst + os * dst_os_stride;
-                    (*pp_kernel_)(dst_local, bia_base, 1, first_oc, last_oc, 1);
+                    (*pp_kernel_)(dst_local, bia_base, 1, first_oc, last_oc, 1,
+                            post_ops_binary_rhs_arg_vec);
                 }
             }
         }
@@ -174,6 +187,14 @@ status_t gemm_convolution_fwd_t::execute_forward_ncsp(
     auto weights = CTX_IN_MEM(const data_t *, DNNL_ARG_WEIGHTS);
     auto bias = CTX_IN_MEM(const data_t *, DNNL_ARG_BIAS);
     auto dst = CTX_OUT_MEM(data_t *, DNNL_ARG_DST);
+
+#if DNNL_X64
+    const auto post_ops_binary_rhs_arg_vec
+            = x64::binary_injector::prepare_binary_args(
+                    pd()->jcp_.post_ops, ctx);
+#else
+    const auto post_ops_binary_rhs_arg_vec = std::vector<const void *>();
+#endif
 
     auto col = ctx.get_scratchpad_grantor().get<data_t>(key_conv_gemm_col);
 
@@ -212,9 +233,8 @@ status_t gemm_convolution_fwd_t::execute_forward_ncsp(
             for (ptrdiff_t i = 0; i < jcp.im2col_sz; i++)
                 _col[i] = (data_t)0;
         }
-        auto inner_ker
-                = [&](dim_t spatial, const im_pos_t &curr, im_pos_t &prev,
-                          im_pos_t &step, const im_pos_t &end) {
+        auto inner_ker = [&](dim_t spatial, const im_pos_t &curr, im_pos_t &prev,
+                                 im_pos_t &step, const im_pos_t &end) {
             const data_t *_src
                     = src + curr.n * src_mb_stride + curr.g * src_g_stride;
             step.oc = nstl::min(
@@ -258,8 +278,8 @@ status_t gemm_convolution_fwd_t::execute_forward_ncsp(
             if (st != status::success) return st;
 
             if (pp_kernel_ && curr.ic == jcp.ic - step.ic) {
-                (*pp_kernel_)(
-                        _dst, bias, m, curr.g *jcp.oc + curr.oc, step.oc, M);
+                (*pp_kernel_)(_dst, bias, m, curr.g *jcp.oc + curr.oc, step.oc,
+                        M, post_ops_binary_rhs_arg_vec);
             }
 
             return status::success;
@@ -287,7 +307,7 @@ status_t gemm_convolution_fwd_t::execute_forward_ncsp(
 
         if (jcp.loop_order == gemm_loop_rlb)
             for (curr.ic = 0; curr.ic < jcp.ic; curr.ic += step.ic)
-                for (dim_t spatial = start.sp; spatial < end.sp;
+                for (auto spatial = start.sp; spatial < end.sp;
                         spatial += step.sp) {
                     nd_iterator_init(spatial, curr.n, jcp.mb, curr.g,
                             jcp.ngroups, curr.od, jcp.od, curr.sp, jcp.os);
@@ -302,8 +322,7 @@ status_t gemm_convolution_fwd_t::execute_forward_ncsp(
                     }
                 }
         else if (jcp.loop_order == gemm_loop_lrb)
-            for (dim_t spatial = start.sp; spatial < end.sp;
-                    spatial += step.sp) {
+            for (dim_t spatial = start.sp; spatial < end.sp; spatial += step.sp) {
                 nd_iterator_init(spatial, curr.n, jcp.mb, curr.g, jcp.ngroups,
                         curr.od, jcp.od, curr.sp, jcp.os);
                 for (curr.ic = 0; curr.ic < jcp.ic; curr.ic += step.ic)
@@ -332,13 +351,22 @@ status_t gemm_convolution_bwd_data_t::execute_backward_data_nspc(
     auto bia_base = CTX_IN_MEM(const data_t *, DNNL_ARG_BIAS);
     auto diff_src_base = CTX_OUT_MEM(data_t *, DNNL_ARG_DIFF_SRC);
 
+#if DNNL_X64
+    const auto post_ops_binary_rhs_arg_vec
+            = x64::binary_injector::prepare_binary_args(
+                    pd()->jcp_.post_ops, ctx);
+#else
+    const auto post_ops_binary_rhs_arg_vec = std::vector<const void *>();
+#endif
+
     const auto &scratchpad = ctx.get_scratchpad_grantor();
     const conv_gemm_conf_t &jcp = pd()->jcp_;
     std::atomic<status_t> st(status::success);
 
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
         status_t st_thr = execute_backward_data_thr_nspc(ithr, nthr,
-                diff_dst_base, wei_base, bia_base, diff_src_base, scratchpad);
+                diff_dst_base, wei_base, bia_base, diff_src_base, scratchpad,
+                post_ops_binary_rhs_arg_vec);
         if (st_thr != status::success) st = st_thr;
     });
 
@@ -348,7 +376,8 @@ status_t gemm_convolution_bwd_data_t::execute_backward_data_nspc(
 status_t gemm_convolution_bwd_data_t::execute_backward_data_thr_nspc(
         const int ithr, const int nthr, const data_t *diff_dst_base,
         const data_t *wei_base, const data_t *bia_base, data_t *diff_src_base,
-        const memory_tracking::grantor_t &scratchpad) const {
+        const memory_tracking::grantor_t &scratchpad,
+        const std::vector<const void *> &post_ops_binary_rhs_arg_vec) const {
     const conv_gemm_conf_t &jcp = pd()->jcp_;
 
     // Diff_dst Format: mb-spatial-groups-output_channels
@@ -413,18 +442,29 @@ status_t gemm_convolution_bwd_data_t::execute_backward_data_thr_nspc(
                         = diff_src + is * diff_src_os_stride;
                 const data_t *__restrict acc_arr = acc + is * jcp.ic;
                 PRAGMA_OMP_SIMD()
-                for (dim_t ic = 0; ic < jcp.ic; ic++) {
+                for (int ic = 0; ic < jcp.ic; ic++) {
                     diff_src_arr[ic] = acc_arr[ic];
                 }
             });
         }
         if (p.len() > 0) {
+            std::size_t post_ops_data_idx = 0;
             int depthwise_inj_idx = 0;
             for (int i = 0; i < p.len(); i++) {
                 auto &post_op = p.entry_[i];
                 if (post_op.is_depthwise()) {
-                    auto depthwise_weights = post_op.depthwise.weights_data;
-                    auto depthwise_bias = post_op.depthwise.biases_data;
+                    auto depthwise_base = reinterpret_cast<const float *>(
+                            post_ops_binary_rhs_arg_vec[post_ops_data_idx]);
+                    auto depthwise_weights = depthwise_base
+                            + post_op.depthwise
+                                      .offset[post_op.depthwise.scales];
+                    auto depthwise_bias = post_op.depthwise.alg
+                                    == alg_kind::depthwise_scale_shift
+                            ? depthwise_base
+                                    + post_op.depthwise
+                                              .offset[post_op.depthwise.shifts]
+                            : nullptr;
+
                     parallel_nd(static_cast<size_t>(jcp.is) * jcp.id,
                             [&](size_t is) {
                         data_t *__restrict diff_src_arr
@@ -440,6 +480,7 @@ status_t gemm_convolution_bwd_data_t::execute_backward_data_thr_nspc(
                                                               + ic);
                         }
                     });
+                    post_ops_data_idx++;
                     depthwise_inj_idx++;
                 }
             }
@@ -454,6 +495,14 @@ status_t gemm_convolution_bwd_data_t::execute_backward_data_ncsp(
     auto diff_dst = CTX_IN_MEM(const data_t *, DNNL_ARG_DIFF_DST);
     auto weights = CTX_IN_MEM(const data_t *, DNNL_ARG_WEIGHTS);
     auto diff_src = CTX_OUT_MEM(data_t *, DNNL_ARG_DIFF_SRC);
+
+#if DNNL_X64
+    const auto post_ops_binary_rhs_arg_vec
+            = x64::binary_injector::prepare_binary_args(
+                    pd()->jcp_.post_ops, ctx);
+#else
+    const auto post_ops_binary_rhs_arg_vec = std::vector<const void *>();
+#endif
 
     auto col = ctx.get_scratchpad_grantor().get<data_t>(key_conv_gemm_col);
 
@@ -476,7 +525,7 @@ status_t gemm_convolution_bwd_data_t::execute_backward_data_ncsp(
     const dim_t K = jcp.oc;
     const dim_t N = jcp.ic * jcp.ks;
 
-    const dim_t work_amount = jcp.ngroups * jcp.mb;
+    const dim_t work_amount = (size_t)jcp.ngroups * jcp.mb;
     const bool is_problem_3d = pd()->ndims() == 5;
 
     const auto &p = pd()->attr()->post_ops_;
@@ -529,6 +578,7 @@ status_t gemm_convolution_bwd_data_t::execute_backward_data_ncsp(
                 }
             }
             if (p.len() > 0) {
+                std::size_t post_ops_data_idx = 0;
                 int depthwise_inj_idx = 0;
                 for (int i = 0; i < p.len(); i++) {
                     auto &post_op = p.entry_[i];
@@ -560,6 +610,7 @@ status_t gemm_convolution_bwd_data_t::execute_backward_data_ncsp(
                                 }
                             }
                         });
+                        post_ops_data_idx++;
                         depthwise_inj_idx++;
                     }
                 }
@@ -600,13 +651,11 @@ status_t gemm_convolution_bwd_weights_t::execute_backward_weights_nspc(
     std::atomic<status_t> st(status::success);
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
         int ithr_g, nthr_g, ithr_mb, nthr_mb;
-        dim_t g_start {0}, g_end {0}, mb_start {0}, mb_end {0};
+        size_t g_start {0}, g_end {0}, mb_start {0}, mb_end {0};
 
-        const int mb_for_balance
-                = jcp.need_wei_reduction ? static_cast<int>(jcp.mb) : 1;
-        jit_gemm_convolution_utils::bwd_weights_balance(ithr, nthr,
-                static_cast<int>(jcp.ngroups), mb_for_balance, ithr_g, nthr_g,
-                ithr_mb, nthr_mb);
+        const auto mb_for_balance = jcp.need_wei_reduction ? static_cast<int>(jcp.mb) : 1;
+        jit_gemm_convolution_utils::bwd_weights_balance(ithr, nthr, static_cast<int>(jcp.ngroups),
+                mb_for_balance, ithr_g, nthr_g, ithr_mb, nthr_mb);
 
         assert(IMPLICATION(!jcp.need_wei_reduction, nthr_mb == 1));
 
@@ -617,8 +666,8 @@ status_t gemm_convolution_bwd_weights_t::execute_backward_weights_nspc(
                 + (ptrdiff_t)ithr * jcp.id * jcp.ic * jcp.is;
 
         if (ithr_g != -1 && ithr_mb != -1) {
-            balance211(jcp.ngroups, nthr_g, ithr_g, g_start, g_end);
-            balance211(jcp.mb, nthr_mb, ithr_mb, mb_start, mb_end);
+            balance211((size_t)jcp.ngroups, nthr_g, ithr_g, g_start, g_end);
+            balance211((size_t)jcp.mb, nthr_mb, ithr_mb, mb_start, mb_end);
 
             assert(IMPLICATION((g_end - g_start) > 1, need_reduction == 0));
 
@@ -636,17 +685,17 @@ status_t gemm_convolution_bwd_weights_t::execute_backward_weights_nspc(
             data_t *weights_reduce = weights_reduce_base
                     + ithr_mb * weights_g_size * jcp.ks * jcp.ic;
 
-            for (dim_t g = g_start; g < g_end; ++g) {
+            for (size_t g = g_start; g < g_end; ++g) {
                 data_t *_diff_weights = need_reduction
                         ? weights_reduce
                         : diff_weights + g * weights_g_size;
-                for (dim_t mb = mb_start; mb < mb_end; ++mb) {
+                for (size_t mb = mb_start; mb < mb_end; ++mb) {
                     const data_t *_src
                             = src + mb * jcp.ngroups * src_step + g * jcp.ic;
                     if (jcp.im2col_sz && is_problem_3d)
                         jit_gemm_convolution_utils::transpose_dt(
                                 jcp, _src, imtr);
-                    for (dim_t od = 0; od < jcp.od; ++od) {
+                    for (int od = 0; od < jcp.od; ++od) {
                         const data_t *_diff_dst = diff_dst
                                 + mb * jcp.ngroups * dst_step
                                 + od * k * jcp.ngroups * jcp.oc + g * jcp.oc;
@@ -696,11 +745,10 @@ status_t gemm_convolution_bwd_weights_t::execute_backward_weights_nspc(
             int ithr_g, nthr_g, ithr_mb, nthr_mb;
             size_t g_start {0}, g_end {0};
             size_t mb_start {0}, mb_end {0};
-            const int mb_for_balance
-                    = jcp.need_wei_reduction ? static_cast<int>(jcp.mb) : 1;
+            const auto mb_for_balance = jcp.need_wei_reduction ? static_cast<int>(jcp.mb) : 1;
             jit_gemm_convolution_utils::bwd_weights_balance(ithr, nthr,
-                    static_cast<int>(jcp.ngroups), mb_for_balance, ithr_g,
-                    nthr_g, ithr_mb, nthr_mb);
+                    static_cast<int>(jcp.ngroups), mb_for_balance, ithr_g, nthr_g, ithr_mb,
+                    nthr_mb);
 
             assert(IMPLICATION(!jcp.need_wei_reduction, nthr_mb == 1));
             const int need_reduction = nthr_mb != 1;
@@ -732,10 +780,10 @@ status_t gemm_convolution_bwd_weights_t::execute_backward_weights_nspc(
                         + ((static_cast<size_t>(mb) * jcp.od + od) * jcp.oh
                                   + oh)
                                 * jcp.ow * jcp.ngroups * jcp.oc;
-                const dim_t width_stride = jcp.ngroups * jcp.oc;
+                const auto width_stride = static_cast<int>(jcp.ngroups * jcp.oc);
 
                 PRAGMA_OMP_SIMD(reduction(+ : db))
-                for (dim_t ow = 0; ow < jcp.ow; ++ow) {
+                for (int ow = 0; ow < jcp.ow; ++ow) {
                     db += diff_dst_arr[ow * width_stride];
                 }
             }
@@ -773,11 +821,9 @@ status_t gemm_convolution_bwd_weights_t::execute_backward_weights_ncsp(
         int ithr_g, nthr_g, ithr_mb, nthr_mb;
         size_t g_start {0}, g_end {0}, mb_start {0}, mb_end {0};
 
-        const int mb_for_balance
-                = jcp.need_wei_reduction ? static_cast<int>(jcp.mb) : 1;
-        jit_gemm_convolution_utils::bwd_weights_balance(ithr, nthr,
-                static_cast<int>(jcp.ngroups), mb_for_balance, ithr_g, nthr_g,
-                ithr_mb, nthr_mb);
+        const auto mb_for_balance = jcp.need_wei_reduction ? static_cast<int>(jcp.mb) : 1;
+        jit_gemm_convolution_utils::bwd_weights_balance(ithr, nthr, static_cast<int>(jcp.ngroups),
+                mb_for_balance, ithr_g, nthr_g, ithr_mb, nthr_mb);
 
         assert(IMPLICATION(!jcp.need_wei_reduction, nthr_mb == 1));
         const int need_reduction = nthr_mb != 1;
@@ -809,8 +855,8 @@ status_t gemm_convolution_bwd_weights_t::execute_backward_weights_ncsp(
                 for (size_t mb = mb_start; mb < mb_end; ++mb) {
                     const data_t *_src
                             = src + (mb * jcp.ngroups + g) * src_step;
-                    for_(dim_t od = 0; od < jcp.od; ++od)
-                    for (dim_t os_nb = 0; os_nb < jcp.os_nb_block; ++os_nb) {
+                    for_(int od = 0; od < jcp.od; ++od)
+                    for (int os_nb = 0; os_nb < jcp.os_nb_block; ++os_nb) {
                         auto out_off = os_nb * k + od * jcp.os;
                         const dim_t os_block = nstl::min(
                                 (dim_t)jcp.os_block, jcp.os - os_nb * k);
@@ -866,11 +912,10 @@ status_t gemm_convolution_bwd_weights_t::execute_backward_weights_ncsp(
         parallel(jcp.nthr, [&](const int ithr, const int nthr) {
             int ithr_g, nthr_g, ithr_mb, nthr_mb;
             size_t g_start {0}, g_end {0};
-            const int mb_for_balance
-                    = jcp.need_wei_reduction ? static_cast<int>(jcp.mb) : 1;
+            const auto mb_for_balance = jcp.need_wei_reduction ? static_cast<int>(jcp.mb) : 1;
             jit_gemm_convolution_utils::bwd_weights_balance(ithr, nthr,
-                    static_cast<int>(jcp.ngroups), mb_for_balance, ithr_g,
-                    nthr_g, ithr_mb, nthr_mb);
+                    static_cast<int>(jcp.ngroups), mb_for_balance, ithr_g, nthr_g, ithr_mb,
+                    nthr_mb);
 
             assert(IMPLICATION(!jcp.need_wei_reduction, nthr_mb == 1));
             const int need_reduction = nthr_mb != 1;

@@ -111,6 +111,7 @@ private:
     reg64_t reg_oc_off = abi_param1;
     reg64_t reg_d_weights = imm_addr64;
     reg64_t reg_d_bias = aux_reg_bcast_data;
+    int base_post_ops_data_offset = 0;
 
     Xbyak::Zmm zmm_d_weights = Xbyak::Zmm(31);
     Xbyak::Zmm zmm_d_bias = Xbyak::Zmm(30);
@@ -188,14 +189,14 @@ private:
         return ymm;
     }
 
-    inline dim_t get_output_offset(
+    inline size_t get_output_offset(
             const int i_load, const int i_ur, bool ignore_dw_conv) {
         const bool is_output_layout_nxc = is_out_layout_nxc();
-        const dim_t i_load_shift = is_output_layout_nxc
+        const size_t i_load_shift = is_output_layout_nxc
                 ? jcp.load_block
                 : (!ignore_dw_conv && jcp.with_dw_conv ? jcp.ow : jcp.bcast_dim)
                         * jcp.load_block;
-        const dim_t i_ur_shift
+        const size_t i_ur_shift
                 = is_output_layout_nxc ? jcp.load_dim : jcp.load_block;
         return jcp.typesize_out * (i_load * i_load_shift + i_ur * i_ur_shift);
     }
