@@ -684,9 +684,11 @@ status_t jit_sse41_1x1_conv_kernel_f32_t::init_conf(jit_1x1_conv_conf_t &jcp,
     VDISPATCH_CONV_IC(args_ok, VERBOSE_UNSUPPORTED_TAG);
 
     const int simd_w = 4;
-
-    jcp.oc = rnd_up(jcp.oc, simd_w * 2);
-    jcp.ic = rnd_up(jcp.ic, simd_w * 2);
+    bool ok_to_pad_channels = true && !is_data_layout_nxc && jcp.ngroups == 1;
+    if (ok_to_pad_channels) {
+        jcp.oc = rnd_up(jcp.oc, simd_w * 2);
+        jcp.ic = rnd_up(jcp.ic, simd_w * 2);
+    }
 
     jcp.ic_block = jcp.oc_block = simd_w * 2;
 
