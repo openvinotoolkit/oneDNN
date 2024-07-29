@@ -39,6 +39,7 @@ struct weights_decompression_compile_params_t {
     size_t ic_internal_size;
     data_type_t weights_dt;
     data_type_t decomp_buffer_dt;
+    data_type_t scales_dt;
     data_type_t zero_points_dt;
 };
 
@@ -98,10 +99,6 @@ private:
         return Vmm(ocb);
     }
 
-    Vmm vmm_mask(int ic) {
-        return Vmm(n_vregs - ic - 2);
-    }
-
     Vmm vmm_tmp(int idx) {
         return Vmm(n_vregs - idx - 1);
     }
@@ -109,6 +106,7 @@ private:
     Vmm vmm_lookup() { return vmm_tmp(0); }
     Vmm vmm_lookup_low() { return vmm_tmp(0); }
     Vmm vmm_lookup_high() { return vmm_tmp(1); }
+    Vmm vmm_mask() { return vmm_tmp(1); }
     Vmm vmm_mask8() { return vmm_tmp(2); }
     Vmm vmm_mask7() { return vmm_tmp(3); }
 
