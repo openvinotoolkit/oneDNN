@@ -259,6 +259,7 @@ public:
     // as `10...0` in bits and will avoid such situations.
     int mask_ = INT_MIN;
     bool is_set_ = false;
+    // scale
     // openvino extension
     enum entry_type {
         NONE = 0,

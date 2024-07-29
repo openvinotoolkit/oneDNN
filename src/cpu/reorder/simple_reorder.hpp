@@ -1892,7 +1892,8 @@ struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
                         tag_traits_t<tag_o>::ndims >= 4
                                 && tag_traits_t<tag_o>::ndims <= 6)
                 && (type_i != dnnl_bin && type_o != dnnl_bin)
-                && (type_i != dnnl_nf4 && type_o != dnnl_nf4)>::type> {
+                && (type_i != dnnl_nf4 && type_o != dnnl_nf4)
+                && (type_i != dnnl_f4_e2m1 && type_o != dnnl_f4_e2m1)>::type> {
     PLAIN_TO_BLOCKED_IS_APPLICABLE();
 
     GET_SCRATCHPAD_SIZE_ZERO();
@@ -2204,7 +2205,7 @@ template <SIMPLE_REORDER_TEMPL_DECL>
 struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
 typename utils::enable_if<tag_i == format_tag::any &&
                           tag_traits_t<tag_o>::block_dims == bd::_AB &&
-                          utils::one_of(type_i, data_type::nf4, data_type::s4, data_type::u4) &&
+                          utils::one_of(type_i, data_type::nf4, data_type::s4, data_type::u4, data_type::f4_e2m1) &&
                           type_i == type_o>::type>
 {
     static status_t is_applicable(const memory_desc_wrapper &input_d,
