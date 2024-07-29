@@ -330,6 +330,7 @@ struct brgemm_desc_t {
     int wei_decomp_zero_points_stride = 0;
     int wei_decomp_scales_group_size = 0;
     int wei_decomp_zero_points_group_size = 0;
+    impl::data_type_t wei_decomp_scales_dt = data_type::undef;
     impl::data_type_t wei_decomp_zero_points_dt = data_type::undef;
     bool with_src_dyn_quant = false;
     int src_scales_group_size = 0;

@@ -46,7 +46,7 @@
             const auto scales_d \
                     = ctx.memory_mdw(DNNL_ARG_ATTR_SCALES | (arg)); \
             VCHECK_ATTR( \
-                    scales_d.data_type() == data_type::f32 \
+                    utils::one_of(scales_d.data_type(), data_type::f32, data_type::e8m0) \
                     && (scales_d.ndims() == 1 || scales_d.ndims() == 2), \
                     "Unsupported scales data type"); \
             if (scales_d.dims()[0] == 1) { \

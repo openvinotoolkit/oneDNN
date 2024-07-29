@@ -109,7 +109,6 @@ struct quant_entry_t : public c_compatible {
     std::string get_verbose() const;
 
 private:
-    data_type_t data_type_ = data_type::undef;
     int group_ndims_ = 0;
     dims_t group_dims_ {};
 public:
@@ -117,6 +116,7 @@ public:
     // `(mask & bit)` expression will return `true`. `INT_MIN` is represented
     // as `10...0` in bits and will avoid such situations.
     int mask_ = INT_MIN;
+    data_type_t data_type_ = data_type::undef;
     // openvino extension
     // scale
     bool is_set_ = false;
@@ -147,15 +147,16 @@ struct quant_entries_t : public c_compatible {
     status_t set(int arg, int mask) {
         return set(arg, mask, default_data_type_, 0, {});
     }
-    status_t set(int arg, const dims_t dims, int ndims) {
+    status_t set_scales(int arg, const dims_t dims, int ndims, data_type_t data_type = data_type::f32) {
         if (!check_arg(arg)) return status::invalid_arguments;
         entries_[arg].is_set_ = true;
         entries_[arg].ndims_ = ndims;
         entries_[arg].mask_ = 1;
+        entries_[arg].data_type_ = data_type;
         utils::array_copy(entries_[arg].dims_, dims, entries_[arg].ndims_);
         return status::success;
     }
-    status_t set(int arg, const dims_t dims, int ndims, data_type_t data_type) {
+    status_t set_zero_points(int arg, const dims_t dims, int ndims, data_type_t data_type) {
         const bool supported_arg = utils::one_of(arg, DNNL_ARG_WEIGHTS);
         if (!supported_arg) return status::unimplemented;
 

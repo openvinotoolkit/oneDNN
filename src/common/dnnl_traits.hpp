@@ -100,11 +100,11 @@ struct prec_traits_t<data_type::boolean> {
 };
 
 template <> struct prec_traits_t<data_type::bin> {
-    typedef uint8_t type;
+    using type = uint8_t;
 };
 
 template <> struct prec_traits_t<data_type::nf4> {
-    typedef uint8_t type;
+    using type = uint8_t;
 };
 
 template <>

@@ -108,6 +108,7 @@ struct jit_brgemm_primitive_conf_t {
     size_t wei_zero_points_ic_group_size;
     size_t wei_decomp_scales_buffer_size;
     size_t wei_decomp_zero_points_buffer_size;
+    data_type_t wei_decomp_scales_dt;
     data_type_t wei_decomp_zero_points_dt;
 
     bool with_src_dynamic_quant;

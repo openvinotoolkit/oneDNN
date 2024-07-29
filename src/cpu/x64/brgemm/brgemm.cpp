@@ -302,6 +302,10 @@ status_t brgemm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
         brg->with_wei_decomp_scales = !wei_scales.has_default_values();
         brg->wei_decomp_scales_group_size = wei_d.dims()[1];
         if (brg->with_wei_decomp_scales) {
+            brg->wei_decomp_scales_dt = wei_scales.data_type_;
+            if (!one_of(brg->wei_decomp_scales_dt, f32, e8m0))
+                return status::unimplemented;
+
             auto ld_dim = wei_scales.dims_[0];
             brg->wei_decomp_scales_stride = ld_dim > 1 ? ld_dim : 0;
             brg->wei_decomp_scales_group_size = wei_d.dims()[1] / wei_scales.dims_[1];

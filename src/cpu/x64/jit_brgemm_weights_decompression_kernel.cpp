@@ -51,6 +51,15 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::init_decomp_params(std::fun
                     uni_vbroadcastss(vmm_params(ocb), xmm_params);
                     break;
                 }
+                case data_type::e8m0: {
+                    auto xmm_params = Xmm(vmm_params(ocb).getIdx());
+                    auto reg_tmp_32 = Reg32(reg_tmp.getIdx());
+                    movzx(reg_tmp_32,  ptr[reg_params]);
+                    uni_vmovq(xmm_params, reg_tmp);
+                    uni_vpslld(xmm_params, xmm_params, 23);
+                    uni_vbroadcastss(vmm_params(ocb), xmm_params);
+                    break;
+                }
                 default: assert(!"unsupported data type");
             }
         } else {
@@ -63,6 +72,11 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::init_decomp_params(std::fun
                 case data_type::u8: {
                     uni_vpmovzxbd(vmm_params(ocb), load_addr);
                     uni_vcvtdq2ps(vmm_params(ocb), vmm_params(ocb));
+                    break;
+                }
+                case data_type::e8m0: {
+                    uni_vpmovzxbd(vmm_params(ocb), load_addr);
+                    uni_vpslld(vmm_params(ocb), vmm_params(ocb), 23);
                     break;
                 }
                 default: assert(!"unsupported data type");
@@ -124,6 +138,31 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::load_weights(Vmm vmm_load, 
                 vpermd(vmm_load, vmm_load, vmm_lookup_high());
                 vblendvps(vmm_load, res, vmm_load, mask);
             } else {
+                vpermd(vmm_load, vmm_load, vmm_lookup());
+            }
+            break;
+        }
+        case data_type::f4_e2m1: {
+            if (isa == avx2) {
+                uni_vpmovsxbd(vmm_load, addr);
+                if (ic % 2 == 0) {
+                    vpsrad(vmm_load, vmm_load, 4);
+                } else {
+                    uni_vpslld(vmm_load, vmm_load, 28);
+                    vpsrad(vmm_load, vmm_load, 28);
+                }
+                auto mask = vmm_weights(1);
+                uni_vpand(mask, vmm_load, vmm_mask());
+                vpermd(vmm_load, vmm_load, vmm_lookup());
+                uni_vorps(vmm_load, vmm_load, mask);
+            } else {
+                uni_vpmovzxbd(vmm_load, addr);
+                if (ic % 2 == 0) {
+                    uni_vpsrld(vmm_load, vmm_load, 4);
+                } else {
+                    uni_vpslld(vmm_load, vmm_load, 28);
+                    uni_vpsrld(vmm_load, vmm_load, 28);
+                }
                 vpermd(vmm_load, vmm_load, vmm_lookup());
             }
             break;
@@ -211,10 +250,36 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::generate() {
             mov(reg_tmp, (size_t)lookup);
             uni_vmovups(vmm_lookup(), ptr[reg_tmp]);
         }
+    } else if (jcp_.weights_dt == data_type::f4_e2m1) {
+        static const float lookup[16] = {
+            0.0f,   0.5f,
+            1.0f,   1.5f,
+            2.0f,   3.0f,
+            4.0f,   6.0f,
+            -0.0f,  -0.5f,
+            -1.0f,  -1.5f,
+            -2.0f,  -3.0f,
+            -4.0f,  -6.0f
+        };
+
+        static const uint32_t mask_signed_bit[8] = {
+            0x80000000, 0x80000000, 0x80000000, 0x80000000,
+            0x80000000, 0x80000000, 0x80000000, 0x80000000,
+        };
+
+        if (isa == avx2) {
+            mov(reg_tmp, (size_t)lookup);
+            uni_vmovups(vmm_lookup(), ptr[reg_tmp]);
+            mov(reg_tmp, (size_t)mask_signed_bit);
+            uni_vmovups(vmm_mask(), ptr[reg_tmp]);
+        } else {
+            mov(reg_tmp, (size_t)lookup);
+            uni_vmovups(vmm_lookup(), ptr[reg_tmp]);
+        }
     }
 
     if (jcp_.with_scales)
-        init_decomp_params(std::bind(&jit_brgemm_weights_decompression_kernel_t::vmm_scales, this, _1), reg_scales, jcp_.broadcast_scales, data_type::f32);
+        init_decomp_params(std::bind(&jit_brgemm_weights_decompression_kernel_t::vmm_scales, this, _1), reg_scales, jcp_.broadcast_scales, jcp_.scales_dt);
 
     if (jcp_.with_zero_points)
         init_decomp_params(std::bind(&jit_brgemm_weights_decompression_kernel_t::vmm_zero_points, this, _1), reg_zero_points, jcp_.broadcast_zero_points, jcp_.zero_points_dt);
@@ -225,7 +290,7 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::generate() {
     Xbyak::Label ic_end_label;
 
     size_t weights_dt_size = types::data_type_size(jcp_.weights_dt);
-    size_t typesize_scale = one_of(jcp_.weights_dt, data_type::nf4, data_type::s4, data_type::u4) ? 2 : 1;
+    size_t typesize_scale = one_of(jcp_.weights_dt, data_type::nf4, data_type::s4, data_type::u4, data_type::f4_e2m1) ? 2 : 1;
     size_t decomp_buf_dt_size = types::data_type_size(jcp_.decomp_buffer_dt);
 
     L(ic_loop_label);

@@ -422,7 +422,7 @@ dnnl_status_t DNNL_API dnnl_primitive_attr_set_scratchpad_mode(
 dnnl_status_t DNNL_API dnnl_primitive_attr_set_scales_mask(
         dnnl_primitive_attr_t attr, int arg, int mask);
 dnnl_status_t DNNL_API dnnl_primitive_attr_set_scales_dims(
-        dnnl_primitive_attr_t attr, int arg, const dnnl_dims_t dims, int ndims);
+        dnnl_primitive_attr_t attr, int arg, const dnnl_dims_t dims, int ndims, dnnl_data_type_t data_type);
 
 /// Sets primitive attributes scaling factors for primitive operations for a
 /// given memory argument. The scaling factors must be passed at execution time

@@ -620,11 +620,11 @@ status_t dnnl_primitive_attr_set_scales_mask(
     return attr->scales_.set(arg, mask);
 }
 status_t dnnl_primitive_attr_set_scales_dims(
-        primitive_attr_t *attr, int arg, const dims_t dims, int ndims) {
+        primitive_attr_t *attr, int arg, const dims_t dims, int ndims, data_type_t data_type) {
     bool ok = attr && arg >= 0 && ndims > 0
             && attr->scales_.has_default_values();
     if (!ok) return invalid_arguments;
-    return attr->scales_.set(arg, dims, ndims);
+    return attr->scales_.set_scales(arg, dims, ndims, data_type);
 }
 
 status_t dnnl_primitive_attr_set_scales(primitive_attr_t *attr, int arg,
@@ -653,7 +653,7 @@ status_t dnnl_primitive_attr_set_zero_points_dims(
     bool ok = attr && ndims > 0;
     if (!ok) return invalid_arguments;
 
-    return attr->zero_points_.set(arg, dims, ndims, data_type);
+    return attr->zero_points_.set_zero_points(arg, dims, ndims, data_type);
 }
 
 status_t dnnl_primitive_attr_set_zero_points(dnnl_primitive_attr_t attr,
