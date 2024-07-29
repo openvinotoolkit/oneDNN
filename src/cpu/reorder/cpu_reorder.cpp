@@ -40,6 +40,7 @@ regular_impl_list_map() {
             {{f4_e3m0, data_type::undef, 0}, &regular_fp4_impl_list_map()},
             {{f8_e5m2, data_type::undef, 0}, &regular_fp8_impl_list_map()},
             {{f8_e4m3, data_type::undef, 0}, &regular_fp8_impl_list_map()},
+            {{e8m0, data_type::undef, 0}, &regular_fp8_impl_list_map()},
             {{f32, bin, 0}, &regular_f32_bin_impl_list_map()},
             {{bf16, data_type::undef, 0}, &regular_bf16_impl_list_map()},
             {{f16, data_type::undef, 0}, &regular_f16_impl_list_map()},
