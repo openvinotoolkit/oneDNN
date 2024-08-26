@@ -2005,6 +2005,9 @@ bool jit_uni_eltwise_injector_t<isa, Wmm>::need_mask_register(
             case eltwise_round: return false;
             case eltwise_hardswish: return false;
             case eltwise_hardsigmoid: return false;
+            case eltwise_hsigmoid: return false;
+            case eltwise_round_half_to_even: return false;
+            case eltwise_round_half_away_from_zero: return true;
             default: assert(!"unsupported eltwise algorithm");
         }
     } else {
