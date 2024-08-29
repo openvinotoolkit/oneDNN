@@ -203,9 +203,8 @@ bool jit_io_helper_t<Vmm>::is_data_type_supported(const data_type_t dt) {
         case data_type::u8:
         case data_type::s8: return true;
         case data_type::bf16:
-            return is_superset(isa_, avx512_core) || isa_ == avx2_vnni_2;
         case data_type::f16:
-            return is_superset(isa_, avx512_core_fp16) || isa_ == avx2_vnni_2;
+            return is_superset(isa_, avx2);
         case data_type::f8_e4m3:
         case data_type::f8_e5m2: return is_superset(isa_, avx512_core_fp16);
         default: assert(!"Unsupported data type");
@@ -844,6 +843,7 @@ void jit_io_helper_t<Vmm>::store_bf16(
     assert(bf16_supported_ && "Unsupported data type.");
     assert((src_vmm.isZMM() || src_vmm.isYMM())
             && "Store operation for bf16 is not supported for Xmms.");
+    assert(is_superset(isa_, avx512_core) || isa_ == avx2_vnni_2);
 
     const auto &cvt_lower_vmm =
             typename vreg_traits_t<Vmm>::Vmm_lower_t(src_vmm.getIdx());
