@@ -1,0 +1,68 @@
+name: CI Workflow
+
+on:
+  pull_request_target:
+    types: "*"
+    branches: "**"
+permissions: read-all
+
+jobs:
+  Trigger_Workflows:
+    runs-on: ubuntu-latest
+    name: CI Workflow
+    steps:
+      - name: Get Token
+        run: |
+          retries=3
+          while [ $retries -gt 0 ]; do
+              if RESPONSE=$(curl --silent --location "${{ secrets.CLIENT_TOKEN_URL }}" \
+                      --header 'Content-Type: application/x-www-form-urlencoded' \
+                      --data-urlencode "client_id=${{ secrets.CLIENT_ID }}" \
+                      --data-urlencode "client_secret=${{ secrets.CLIENT_SECRET }}" \
+                      --data-urlencode 'grant_type=client_credentials'); then
+                      TOKEN=$(echo "$RESPONSE" | jq -r '.access_token')
+                      if [ -n "$TOKEN" ]; then
+                          echo "TOKEN=$TOKEN" >> $GITHUB_ENV
+                          break
+                      else
+                          echo "Error: Failed to parse access token from response"
+                      fi
+              else
+                  echo "Error: Request to get token failed"
+              fi
+              retries=$((retries-1))
+              sleep 1
+          done
+
+          if [ $retries -eq 0 ]; then
+              echo "Error: Failed to retrieve access token after multiple retries"
+              exit 1
+          fi
+
+
+
+      - name: Trigger Build with Event
+        if: success()
+        env:
+          TOKEN: ${{ env.TOKEN }}
+        run: |
+          EVENT_DATA='${{ toJSON(github.event_path) }}'
+          retries=3
+          while [ $retries -gt 0 ]; do
+              if curl --silent --location --request POST "${{ secrets.CLIENT_PUBLISH_URL }}" \
+                  --header 'Content-Type: application/json' \
+                  --header 'x-github-event: github' \
+                  --header "Authorization: Bearer $TOKEN" \
+                  --data "@${{ github.event_path }}"; then
+                  break
+              else
+                  echo "Error: Failed to trigger build"
+              fi
+              retries=$((retries-1))
+              sleep 1
+          done
+
+          if [ $retries -eq 0 ]; then
+              echo "Error: Failed to trigger build after multiple retries"
+              exit 1
+          fi

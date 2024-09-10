@@ -1,0 +1,18 @@
+name: Store_Review_Event
+
+on:
+  pull_request_review:
+    types: "**"
+permissions: read-all
+
+jobs:
+  Store_Review_Event:
+    runs-on: ubuntu-latest
+    name: Store Review Event
+    steps:
+      - name: Upload event JSON as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: eventjson
+          path: "${{ github.event_path }}"
+          retention-days: 7
