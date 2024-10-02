@@ -1588,6 +1588,8 @@ status_t init_jcp(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
 
     brg_blocking_t::L1 = platform::get_per_core_cache_size(1);
     brg_blocking_t::L2 = platform::get_per_core_cache_size(2);
+    // hardcoded L2 size for Meteor Lake
+    if (isa == cpu_isa_t::avx2) { brg_blocking_t::L2 = 2 * 1024 * 1024; }
 
     const memory_desc_wrapper src_d(&src_md);
     const memory_desc_wrapper weights_d(&weights_md);
