@@ -2392,6 +2392,8 @@ status_t init_1x1_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
     if (jcp.wei_plain && is_os_blocking_ok) {
         start_ocb = div_up(jcp.oc, jcp.acc_simd_w);
     }
+    // hard-coded value for avx2
+    if (isa == cpu_isa_t::avx2 && jcp.oc % 16 == 0) { start_ocb = 2; }
 
     for (auto ocb = start_ocb; ocb >= finish_ocb; ocb--) {
         brg_blocking_t cur_brgb = zero<decltype(cur_brgb)>();
