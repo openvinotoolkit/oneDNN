@@ -387,7 +387,7 @@ inline bool mayiuse(const cpu_isa_t cpu_isa, bool soft = false) {
 #else
     const unsigned cpu_isa_mask = isa_all;
 #endif
-    unsigned cpu_isa_no_hints = cpu_isa & ~cpu_isa_hints_utils::hints_mask;
+    const unsigned cpu_isa_no_hints = cpu_isa & ~cpu_isa_hints_utils::hints_mask;
 
     if ((cpu_isa_mask & cpu_isa_no_hints) != cpu_isa_no_hints) return false;
 
