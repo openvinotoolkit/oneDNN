@@ -19,7 +19,7 @@
 namespace dnnl {
 namespace impl {
 namespace cpu {
-namespace aarch64 {
+namespace acl {
 
 status_t acl_reorder_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
     // Lock here is needed because resource_mapper does not support
@@ -46,7 +46,7 @@ status_t acl_reorder_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
     return status::success;
 }
 
-} // namespace aarch64
+} // namespace acl
 } // namespace cpu
 } // namespace impl
 } // namespace dnnl
