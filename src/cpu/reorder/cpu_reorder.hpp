@@ -39,7 +39,7 @@
 #include "cpu/aarch64/matmul/brgemm_matmul_reorders.hpp"
 #endif
 
-#if DNNL_AARCH64 && DNNL_AARCH64_USE_ACL
+#if DNNL_AARCH64 && DNNL_USE_ACL
 #include "cpu/aarch64/acl_reorder.hpp"
 #endif
 

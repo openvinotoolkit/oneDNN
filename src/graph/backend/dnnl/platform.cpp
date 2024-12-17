@@ -20,7 +20,7 @@
 #if DNNL_X64
 #include "cpu/x64/cpu_isa_traits.hpp"
 #elif DNNL_AARCH64
-#if DNNL_AARCH64_USE_ACL
+#if DNNL_USE_ACL
 // For checking if fp16 isa is supported on the platform
 #include "arm_compute/core/CPP/CPPTypes.h"
 // For setting the number of threads for ACL
@@ -108,7 +108,7 @@ bool has_cpu_data_type_support(data_type_t data_type) {
 #if defined(USE_CBLAS) && defined(BLAS_HAS_SBGEMM) && defined(__MMA__)
             return true;
 #endif
-#elif DNNL_AARCH64_USE_ACL
+#elif DNNL_USE_ACL
             return arm_compute::CPUInfo::get().has_bf16();
 #else
             return false;
@@ -116,7 +116,7 @@ bool has_cpu_data_type_support(data_type_t data_type) {
         case data_type::f16:
 #if DNNL_X64
             return mayiuse(avx512_core_fp16) || mayiuse(avx2_vnni_2);
-#elif DNNL_AARCH64_USE_ACL
+#elif DNNL_USE_ACL
             return arm_compute::CPUInfo::get().has_fp16();
 #else
             return false;
@@ -146,7 +146,7 @@ bool has_cpu_training_support(data_type_t data_type) {
 #if defined(USE_CBLAS) && defined(BLAS_HAS_SBGEMM) && defined(__MMA__)
             return true;
 #endif
-#elif DNNL_AARCH64_USE_ACL
+#elif DNNL_USE_ACL
             return arm_compute::CPUInfo::get().has_bf16();
 #else
             return false;
@@ -154,7 +154,7 @@ bool has_cpu_training_support(data_type_t data_type) {
         case data_type::f16:
 #if DNNL_X64
             return mayiuse(avx512_core_fp16);
-#elif DNNL_AARCH64_USE_ACL
+#elif DNNL_USE_ACL
             return arm_compute::CPUInfo::get().has_fp16();
 #else
             return false;
