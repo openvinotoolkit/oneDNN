@@ -113,7 +113,11 @@ inline unsigned cvt2mask(dnnl_cpu_isa_hints_t hints) {
 };
 
 inline bool is_hints_bit_set(cpu_isa_bit_t hint_bit, bool soft) {
+#if DNNL_X64
     const dnnl_cpu_isa_hints_t hints = get_cpu_isa_hints(soft);
+#else
+    const dnnl_cpu_isa_hints_t hints = dnnl_cpu_isa_no_hints;
+#endif
     const unsigned cur_hints_mask = cpu_isa_hints_utils::cvt2mask(hints);
     return (cur_hints_mask & hint_bit) == hint_bit;
 }
@@ -368,8 +372,11 @@ namespace {
 
 static inline bool mayiuse(const cpu_isa_t cpu_isa, bool soft = false) {
     using namespace Xbyak::util;
-
+#if DNNL_X64
     unsigned cpu_isa_mask = x64::get_max_cpu_isa_mask(soft);
+#else
+    unsigned cpu_isa_mask = isa_all;
+#endif
     unsigned cpu_isa_no_hints = cpu_isa & ~cpu_isa_hints_utils::hints_mask;
 
     if ((cpu_isa_mask & cpu_isa_no_hints) != cpu_isa_no_hints) return false;
