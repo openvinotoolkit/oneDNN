@@ -317,6 +317,8 @@ struct acl_inner_product_fwd_t : public primitive_t {
         CHECK(r->configure(pd()->aip));
         mapper.add(this, std::move(r));
 
+        CHECK(pd()->post_ops.create_resource(engine, mapper));
+
         return status::success;
     }
 
