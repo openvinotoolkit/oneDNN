@@ -16,6 +16,8 @@
 
 #include "cpu/acl/matmul/acl_lowp_matmul.hpp"
 
+#include "src/cpu/CpuTypes.h"
+
 namespace dnnl {
 namespace impl {
 namespace cpu {
@@ -203,11 +205,11 @@ status_t acl_lowp_matmul_t::pd_t::init_scratchpad(
     const memory_desc_wrapper dst_d(&dst_md_);
     if (almc_.use_dst_acc) {
         scratchpad.book(memory_tracking::names::key_matmul_dst_in_acc_dt,
-                dst_d.nelems(), sizeof(float32_t));
+                dst_d.nelems(), sizeof(arm_compute::float32_t));
     }
     if (almc_.use_cast_acc) {
         scratchpad.book(memory_tracking::names::key_matmul_dst_cast_acc,
-                dst_d.nelems(), sizeof(float32_t));
+                dst_d.nelems(), sizeof(arm_compute::float32_t));
     }
     return status::success;
 }
