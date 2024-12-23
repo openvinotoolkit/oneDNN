@@ -41,6 +41,14 @@ status_t acl_matmul_t::execute_forward(const exec_ctx_t &ctx) const {
     acl_matmul_obj_t &acl_obj = acl_resource->get_acl_obj();
 
     const auto scratchpad = ctx.get_scratchpad_grantor();
+    // [WA] ACL Matmul produces wrong results in case it is not reconfigured on each inference
+    if (do_transC) {
+        acl_obj.gemm.configure(&acl_obj.wei_tensor, &acl_obj.src_tensor,
+            nullptr, &acl_obj.dst_acc_tensor, 1.0f, 0.0f, pd()->amp_.gemm_info);
+    } else {
+        acl_obj.gemm.configure(&acl_obj.src_tensor, &acl_obj.wei_tensor,
+            nullptr, &acl_obj.dst_tensor, 1.0f, 0.0f, pd()->amp_.gemm_info);
+    }
 
     // Run transpose kernel
     if (is_transA && !is_transB) {
