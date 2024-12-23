@@ -21,6 +21,7 @@
 #include "arm_compute/runtime/NEON/functions/NEQuantizationLayer.h"
 
 #include "cpu/acl/acl_utils.hpp"
+#include "src/cpu/CpuTypes.h"
 
 namespace dnnl {
 namespace impl {
@@ -234,10 +235,10 @@ status_t acl_lowp_matmul_sq_t::execute(const exec_ctx_t &ctx) const {
         const auto scratchpad = ctx.get_scratchpad_grantor();
         auto bia_s32_base = scratchpad.get<uint32_t>(
                 memory_tracking::names::key_conv_bias_s32_convert);
-        auto bia_f32_base = CTX_IN_MEM(const float32_t *, DNNL_ARG_BIAS);
+        auto bia_f32_base = CTX_IN_MEM(const arm_compute::float32_t *, DNNL_ARG_BIAS);
         const float bias_scale = 1 / (*src_scale * (*wei_scale));
         const int num_elements
-                = acl_obj.bia_tensor.info()->total_size() / sizeof(float32_t);
+                = acl_obj.bia_tensor.info()->total_size() / sizeof(arm_compute::float32_t);
         parallel_nd(num_elements, [&](dim_t e) {
             const auto b = int32_t(std::round(bia_f32_base[e] * bias_scale));
             bia_s32_base[e] = b;
