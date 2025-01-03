@@ -492,7 +492,7 @@ status_t jit_sse41_conv_fwd_kernel_f32::init_conf(jit_conv_conf_t &jcp,
             sum_requires_scale_one, sum_requires_zp_zero));
     if (!post_ops_ok_) return status::unimplemented;
 
-    const bool flat = one_of(jcp.ic, 1, 2, 3);
+    const bool flat = one_of(jcp.ic, 1, 2, 3) && (jcp.src_tag != dat_tag_nCx8c);
     const bool mimo = !flat;
 
     bool args_ok = true
