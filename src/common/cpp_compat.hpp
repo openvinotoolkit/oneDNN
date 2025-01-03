@@ -29,15 +29,8 @@ namespace cpp_compat {
 // been deprecated in C++17, which triggers deprecations warnings. This file
 // contains a compatibility layer for such C++ features.
 
-// Older than C++17.
-#if defined(__cplusplus) && __cplusplus < 201703L
-inline int uncaught_exceptions() {
-    return (int)std::uncaught_exception();
-}
-
-template <class F, class... ArgTypes>
-using invoke_result = std::result_of<F(ArgTypes...)>;
-#else
+// Newer than C++17.
+#if defined(__cplusplus) && __cplusplus >= 201703L || defined(_MSVC_LANG) && _MSVC_LANG >= 201703L
 
 inline int uncaught_exceptions() {
     return std::uncaught_exceptions();
@@ -45,6 +38,15 @@ inline int uncaught_exceptions() {
 
 template <class F, class... ArgTypes>
 using invoke_result = std::invoke_result<F, ArgTypes...>;
+
+#else
+
+inline int uncaught_exceptions() {
+    return (int)std::uncaught_exception();
+}
+
+template <class F, class... ArgTypes>
+using invoke_result = typename std::result_of<F(ArgTypes...)>;
 
 #endif
 } // namespace cpp_compat

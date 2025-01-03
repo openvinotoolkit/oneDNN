@@ -3902,7 +3902,7 @@ struct primitive_attr : public handle<dnnl_primitive_attr_t> {
                 "could not set scales primitive attribute");
     }
     void set_scales_dims(int arg, const memory::dims& dims) {
-        error::wrap_c_api(dnnl_primitive_attr_set_scales_dims(get(), arg, dims.data(), dims.size()),
+        error::wrap_c_api(dnnl_primitive_attr_set_scales_dims(get(), arg, dims.data(), static_cast<int>(dims.size())),
                 "could not set scales primitive attribute");
     }
 
@@ -3926,7 +3926,7 @@ struct primitive_attr : public handle<dnnl_primitive_attr_t> {
     }
     void set_zero_points_dims(int arg, const memory::dims& dims, memory::data_type dt) {
         error::wrap_c_api(
-                dnnl_primitive_attr_set_zero_points_dims(get(), arg, dims.data(), dims.size(), memory::convert_to_c(dt)),
+                dnnl_primitive_attr_set_zero_points_dims(get(), arg, dims.data(), static_cast<int>(dims.size()), memory::convert_to_c(dt)),
                 "could not set zero points primitive attribute");
     }
 

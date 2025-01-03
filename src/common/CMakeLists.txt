@@ -40,6 +40,8 @@ if(DNNL_ENABLE_JIT_PROFILING OR DNNL_ENABLE_ITT_TASKS)
             endif()
             list(APPEND SOURCES ${ITT_PT})
         endif()
+
+        set_property(GLOBAL APPEND PROPERTY DNNL_SUBDIR_EXTRA_SHARED_LIBS ${CMAKE_DL_LIBS})
     endif()
 endif()
 

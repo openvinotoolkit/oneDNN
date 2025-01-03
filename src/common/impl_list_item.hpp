@@ -90,35 +90,24 @@ struct impl_list_item_t {
         : public type_deduction_helper_t<pd_t> {};
 
     template <typename pd_t>
-    impl_list_item_t(type_deduction_helper_t<pd_t>) {
-        using deduced_pd_t = typename type_deduction_helper_t<pd_t>::type;
-        create_pd_func_ = &primitive_desc_t::create<deduced_pd_t>;
-        DNNL_PRIMITIVE_NAME_INIT(pd_t);
+    constexpr impl_list_item_t(type_deduction_helper_t<pd_t>)
+        : create_pd_func_(&primitive_desc_t::create<
+                          typename type_deduction_helper_t<pd_t>::type>) {}
+
+    template <typename pd_t>
+    constexpr impl_list_item_t(concat_type_deduction_helper_t<pd_t>)
+        : create_concat_pd_func_(
+                concat_type_deduction_helper_t<pd_t>::type::create) {}
+
+    template <typename pd_t>
+    constexpr impl_list_item_t(sum_type_deduction_helper_t<pd_t>)
+        : create_sum_pd_func_(sum_type_deduction_helper_t<pd_t>::type::create) {
     }
 
     template <typename pd_t>
-    impl_list_item_t(concat_type_deduction_helper_t<pd_t>) {
-        using deduced_pd_t =
-                typename concat_type_deduction_helper_t<pd_t>::type;
-        create_concat_pd_func_ = deduced_pd_t::create;
-        DNNL_PRIMITIVE_NAME_INIT(pd_t);
-    }
-
-    template <typename pd_t>
-    impl_list_item_t(sum_type_deduction_helper_t<pd_t>) {
-        using deduced_pd_t = typename sum_type_deduction_helper_t<pd_t>::type;
-        create_sum_pd_func_ = deduced_pd_t::create;
-        DNNL_PRIMITIVE_NAME_INIT(pd_t);
-    }
-
-    template <typename pd_t>
-    impl_list_item_t(reorder_type_deduction_helper_t<pd_t>) {
-        using deduced_pd_t =
-                typename reorder_type_deduction_helper_t<pd_t>::type;
-        create_reorder_pd_func_ = deduced_pd_t::create;
-        DNNL_PRIMITIVE_NAME_INIT(pd_t);
-    }
-
+    constexpr impl_list_item_t(reorder_type_deduction_helper_t<pd_t>)
+        : create_reorder_pd_func_(
+                reorder_type_deduction_helper_t<pd_t>::type::create) {}
 
     explicit operator bool() const {
         return !utils::everyone_is(nullptr, create_pd_func_,
