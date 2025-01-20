@@ -226,7 +226,8 @@ int calculate_max_bcast_block(brgemm_desc_t *brg, const int adj_ld_block2) {
         max_reg_count
                 = nstl::min(max_reg_count, max_isa_regs - max_bcst_regs - 5);
 
-    const int postops_regs = brg->attr()
+    // For dynamic quantization case it is more performant to maximize the amount of accumulators
+    const int postops_regs = brg->attr() && !brg->with_src_dyn_quant
             ? injector::aux_vec_count(
                     brg->attr()->post_ops_, brg->isa_impl, true)
             : 0;
