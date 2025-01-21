@@ -701,7 +701,22 @@ status_t jit_brgemm_ip_fwd_conf_t::init_conf(cpu_isa_t isa,
 
     // Current implementation of grouped weights decompression algorithm requires K size to be aligned on group size.
     // Besides that "batched" usage of brgemm block is not covered, so forcing the value to 1.
-    if (jbgp.with_grouped_weights_decompression || jbgp.with_src_dynamic_quant) {
+    if (jbgp.with_src_dynamic_quant) {
+        size_t max_ic_group_size = k_blk;
+        if (jbgp.wei_scales_ic_group_size != static_cast<size_t>(jbgp.ic))
+            max_ic_group_size = std::max(max_ic_group_size, jbgp.wei_scales_ic_group_size);
+        if (jbgp.wei_zero_points_ic_group_size != static_cast<size_t>(jbgp.ic))
+            max_ic_group_size = std::max(max_ic_group_size, jbgp.wei_zero_points_ic_group_size);
+        max_ic_group_size = std::max(max_ic_group_size, jbgp.src_quant_group_size);
+        max_ic_group_size = std::max(max_ic_group_size, jbgp.src_sum_group_size);
+
+        if ((jbgp.nb_ic_blocking * k_blk) % max_ic_group_size != 0) {
+            jbgp.nb_ic_blocking = max_ic_group_size;
+        }
+        jbgp.K = k_blk * jbgp.nb_ic_blocking;
+        jbgp.gemm_batch_size = 1;
+        jbgp.nthr_ic_b = 1;
+    } else if (jbgp.with_grouped_weights_decompression) {
         auto min_ic_group_size = std::min(jbgp.wei_scales_ic_group_size, jbgp.wei_zero_points_ic_group_size);
         min_ic_group_size = std::min(min_ic_group_size, jbgp.src_quant_group_size);
         if ((jbgp.nb_ic_blocking * k_blk) % min_ic_group_size != 0) {
@@ -1424,6 +1439,7 @@ status_t jit_brgemm_ip_conf_t::init_conf_base(cpu_isa_t isa,
     jbgp.with_src_dynamic_quant = false;
     if (jbgp.weights_decompression) {
         jbgp.src_quant_group_size = jbgp.ic;
+        jbgp.src_sum_group_size = jbgp.ic;
         if (!attr.src_dyn_quant_params_.has_default_values()) {
             jbgp.with_src_dynamic_quant = true;
         }
@@ -1448,11 +1464,6 @@ status_t jit_brgemm_ip_conf_t::init_conf_base(cpu_isa_t isa,
                 jbgp.wei_zero_points_ic_group_size = div_up(jbgp.ic, attr.zero_points_.get_dims(DNNL_ARG_WEIGHTS)[1]);
             }
 
-            // todo: fix avx2 brgemm kernel behavior for non scalar zp
-            if (!is_superset(isa, avx512_core) && attr.zero_points_.get_dims(DNNL_ARG_WEIGHTS)[0] != 1) {
-                jbgp.with_src_dynamic_quant = false;
-            }
-
             jbgp.wei_decomp_zero_points_dt = attr.zero_points_.get_data_type(DNNL_ARG_WEIGHTS);
             if (!one_of(jbgp.wei_decomp_zero_points_dt, f32, u8))
                 return status::unimplemented;
@@ -1474,6 +1485,12 @@ status_t jit_brgemm_ip_conf_t::init_conf_base(cpu_isa_t isa,
         if (jbgp.is_amx && jbgp.wei_decomp_algo == weights_decomp_kind_t::immediate)
             return status::unimplemented;
 
+        auto min_group_size = nstl::min(jbgp.wei_scales_ic_group_size, jbgp.wei_zero_points_ic_group_size);
+        if (jbgp.wei_scales_ic_group_size % min_group_size)
+            return status::unimplemented;
+        if (jbgp.wei_zero_points_ic_group_size % min_group_size)
+            return status::unimplemented;
+
         if (jbgp.with_src_dynamic_quant) {
             if (!(one_of(jbgp.wei_dt, u4, u8) &&
                   one_of(jbgp.wei_decomp_scales_dt, f32) &&
@@ -1483,12 +1500,20 @@ status_t jit_brgemm_ip_conf_t::init_conf_base(cpu_isa_t isa,
             const size_t simd_width = 16;
             if (jbgp.src_quant_group_size == 0 || jbgp.src_quant_group_size % simd_width)
                 return status::unimplemented;
-        }
-    }
 
-    if (jbgp.with_src_dynamic_quant) {
-        jbgp.orig_src_dt = jbgp.src_dt;
-        jbgp.src_dt = s8;
+            jbgp.orig_src_dt = jbgp.src_dt;
+            jbgp.src_dt = s8;
+
+            size_t rd_unroll = jbgp.src_quant_group_size;
+            jbgp.src_sum_group_size = nstl::min(rd_unroll, min_group_size);
+
+            if (jbgp.wei_scales_ic_group_size != static_cast<size_t>(jbgp.ic) && jbgp.wei_scales_ic_group_size % jbgp.src_sum_group_size)
+                return status::unimplemented;
+            if (jbgp.wei_zero_points_ic_group_size != static_cast<size_t>(jbgp.ic) && jbgp.wei_zero_points_ic_group_size % jbgp.src_sum_group_size)
+                return status::unimplemented;
+            if (jbgp.src_quant_group_size % jbgp.src_sum_group_size)
+                return status::unimplemented;
+        }
     }
 
     jbgp.bia_dt = jbgp.with_bias
@@ -1724,6 +1749,8 @@ void jit_brgemm_ip_conf_t::init_scratchpad_base(
     if (jbgp.with_src_dynamic_quant) {
         scratchpad.book(key_src_quantized, jbgp.mb * jbgp.ic, sizeof(int8_t));
         scratchpad.book(key_src_dequantized_scales, jbgp.mb * div_up(jbgp.ic, jbgp.src_quant_group_size), sizeof(float));
+        if (jbgp.wei_decomp_zero_points_dt)
+            scratchpad.book(key_src_grouped_sum, jbgp.mb * div_up(jbgp.ic, jbgp.src_sum_group_size), sizeof(int32_t));
     }
 }
 
