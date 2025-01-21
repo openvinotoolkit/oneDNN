@@ -221,7 +221,7 @@ void DNNL_API brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
         void *scratch = nullptr,
         const brgemm_dynamic_values_t *dynamic_values = nullptr,
         const void *ptr_wei_scales = nullptr, const void *ptr_wei_zero_points = nullptr,
-        const void *ptr_src_scales = nullptr, size_t ic = 0);
+        const void *ptr_src_scales = nullptr, const void *ptr_src_grouped_sum = nullptr, size_t ic = 0);
 
 /// Execute BRGEMM kernel (brgemm_offs and brgemm_strd version)
 ///
@@ -251,7 +251,7 @@ void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
         void *scratch = nullptr,
         const brgemm_dynamic_values_t *dynamic_values = nullptr,
         const void *ptr_wei_scales = nullptr, const void *ptr_wei_zero_points = nullptr,
-        const void *ptr_src_scales = nullptr, size_t ic = 0);
+        const void *ptr_src_scales = nullptr, const void *ptr_src_grouped_sum = nullptr, size_t ic = 0);
 
 /// Execute BRGEMM kernel (brgemm_addr version)
 ///
@@ -280,7 +280,7 @@ void DNNL_API brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel,
         const brgemm_post_ops_data_t &post_ops_data, void *scratch = nullptr,
         const brgemm_dynamic_values_t *dynamic_values = nullptr,
         const void *ptr_wei_scales = nullptr, const void *ptr_wei_zero_points = nullptr,
-        const void *ptr_src_scales = nullptr, size_t ic = 0);
+        const void *ptr_src_scales = nullptr, const void *ptr_src_grouped_sum = nullptr, size_t ic = 0);
 
 /// Execute BRGEMM kernel (brgemm_offs and brgemm_strd version)
 ///
@@ -313,7 +313,7 @@ void DNNL_API brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel,
         const brgemm_post_ops_data_t &post_ops_data, void *scratch = nullptr,
         const brgemm_dynamic_values_t *dynamic_values = nullptr,
         const void *ptr_wei_scales = nullptr, const void *ptr_wei_zero_points = nullptr,
-        const void *ptr_src_scales = nullptr, size_t ic = 0);
+        const void *ptr_src_scales = nullptr, const void *ptr_src_grouped_sum = nullptr, size_t ic = 0);
 
 /// AMX utilities: Creates a palette based on BRGEMM descriptor
 ///
