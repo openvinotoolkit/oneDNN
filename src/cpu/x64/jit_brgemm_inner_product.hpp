@@ -268,6 +268,8 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
         if (pd()->jbgp_.with_src_dynamic_quant) {
             src_quantization_compile_params_t jcp = {};
             jcp.ic_quant_block = pd()->jbgp_.src_quant_group_size;
+            jcp.with_src_grouped_sum = !pd()->attr()->zero_points_.has_default_values(DNNL_ARG_WEIGHTS);
+            jcp.src_sum_group_size = pd()->jbgp_.src_sum_group_size;
             jcp.src_dt = pd()->jbgp_.orig_src_dt;
             jcp.qsrc_dt = data_type::s8;
 
