@@ -44,12 +44,46 @@ void jit_brgemm_src_quantization_kernel_t<isa>::load_src(Vmm vmm_load, const Xby
 }
 
 template <cpu_isa_t isa>
+void jit_brgemm_src_quantization_kernel_t<isa>::horiz_op(Vmm vmm_src, Vmm vmm_aux, op_type type) {
+    auto uni_op = [&](const Xbyak::Ymm &x1, const Xbyak::Ymm &x2, const Xbyak::Operand &op) {
+        if (type == op_type::max) {
+            uni_vmaxps(x1, x2, op);
+        } else if (type == op_type::sum) {
+            uni_vpaddd(x1, x2, op);
+        } else {
+            assert(!"unsupported op type");
+        }
+    };
+
+    if (isa == avx512_core) {
+        Xbyak::Zmm zmm_src = Xbyak::Zmm(vmm_src.getIdx());
+        Xbyak::Zmm zmm_aux = Xbyak::Zmm(vmm_aux.getIdx());
+        vshuff32x4(zmm_aux, zmm_src, zmm_src, 0x4E);
+        uni_op(zmm_src, zmm_src, zmm_aux);
+        vshuff32x4(zmm_aux, zmm_src, zmm_src, 0xB1);
+        uni_op(zmm_src, zmm_src, zmm_aux);
+    } else if (isa == avx2) {
+        Xbyak::Ymm ymm_src = Xbyak::Ymm(vmm_src.getIdx());
+        Xbyak::Ymm ymm_aux = Xbyak::Ymm(vmm_aux.getIdx());
+        vperm2i128(ymm_aux, ymm_src, ymm_src, 0x01);
+        uni_op(ymm_src, ymm_src, ymm_aux);
+    } else {
+        assert(!"unsupported isa");
+    }
+    uni_vshufps(vmm_aux, vmm_src, vmm_src, 0x4E);
+    uni_op(vmm_src, vmm_src, vmm_aux);
+    uni_vshufps(vmm_aux, vmm_src, vmm_src, 0xB1);
+    uni_op(vmm_src, vmm_src, vmm_aux);
+}
+
+template <cpu_isa_t isa>
 void jit_brgemm_src_quantization_kernel_t<isa>::generate() {
     preamble();
 
     mov(reg_src, ptr[param1 + GET_OFF(src_ptr)]);
     mov(reg_qsrc, ptr[param1 + GET_OFF(qsrc_ptr)]);
     mov(reg_src_scales, ptr[param1 + GET_OFF(src_scales_ptr)]);
+    mov(reg_src_grouped_sum, ptr[param1 + GET_OFF(src_grouped_sum_ptr)]);
     mov(reg_ic_size, ptr[param1 + GET_OFF(ic_size)]);
 
     Xbyak::Label ic_loop_label;
@@ -58,6 +92,7 @@ void jit_brgemm_src_quantization_kernel_t<isa>::generate() {
     size_t src_dt_size = types::data_type_size(jcp_.src_dt);
     size_t qsrc_dt_size = types::data_type_size(jcp_.qsrc_dt);
     size_t src_scales_dt_size = types::data_type_size(data_type::f32);
+    size_t src_grouped_sum_dt_size = types::data_type_size(data_type::s32);
 
     static const float negative_zero[16] = {
         -0.f, -0.f, -0.f, -0.f, -0.f, -0.f, -0.f, -0.f,
@@ -89,6 +124,7 @@ void jit_brgemm_src_quantization_kernel_t<isa>::generate() {
         jl(ic_end_label, T_NEAR);
 
         assert(!(jcp_.ic_quant_block % vec_size));
+        assert(!(jcp_.src_sum_group_size % vec_size));
 
         int ic_blocks = jcp_.ic_quant_block / vec_size;
         uni_vpxor(vmm_max(), vmm_max(), vmm_max());
@@ -98,25 +134,7 @@ void jit_brgemm_src_quantization_kernel_t<isa>::generate() {
             uni_vmaxps(vmm_max(), vmm_max(), vmm_src());
         }
 
-        if (isa == avx512_core) {
-            Xbyak::Zmm max_zmm = Xbyak::Zmm(vmm_max().getIdx());
-            Xbyak::Zmm aux_zmm = Xbyak::Zmm(vmm_aux().getIdx());
-            vshuff32x4(aux_zmm, max_zmm, max_zmm, 0x4E);
-            uni_vmaxps(max_zmm, max_zmm, aux_zmm);
-            vshuff32x4(aux_zmm, max_zmm, max_zmm, 0xB1);
-            uni_vmaxps(max_zmm, max_zmm, aux_zmm);
-        } else if (isa == avx2) {
-            Xbyak::Ymm max_ymm = Xbyak::Ymm(vmm_max().getIdx());
-            Xbyak::Ymm aux_ymm = Xbyak::Ymm(vmm_aux().getIdx());
-            vperm2i128(aux_ymm, max_ymm, max_ymm, 0x01);
-            uni_vmaxps(max_ymm, max_ymm, aux_ymm);
-        } else {
-            assert(!"unsupported isa");
-        }
-        uni_vshufps(vmm_aux(), vmm_max(), vmm_max(), 0x4E);
-        uni_vmaxps(vmm_max(), vmm_max(), vmm_aux());
-        uni_vshufps(vmm_aux(), vmm_max(), vmm_max(), 0xB1);
-        uni_vmaxps(vmm_max(), vmm_max(), vmm_aux());
+        horiz_op(vmm_max(), vmm_aux(), op_type::max);
 
         auto vmm_dscale = vmm_max();
         uni_vbroadcastss(vmm_dscale, Xmm(vmm_dscale.getIdx()));
@@ -126,10 +144,24 @@ void jit_brgemm_src_quantization_kernel_t<isa>::generate() {
         uni_vdivps(vmm_qscale(), vmm_one(), vmm_dscale);
 
         uni_vmovss(ptr[reg_src_scales], Xmm(vmm_dscale.getIdx()));
+        if (jcp_.with_src_grouped_sum) {
+            uni_vxorps(vmm_src_sum_accum(), vmm_src_sum_accum(), vmm_src_sum_accum());
+        }
         for (int icb = 0; icb < ic_blocks; icb++) {
             load_src(vmm_src(), ptr[reg_src + icb * vec_size * src_dt_size]);
             uni_vmulps(vmm_src(), vmm_src(), vmm_qscale());
             uni_vcvtps2dq(vmm_src(), vmm_src());
+
+            if (jcp_.with_src_grouped_sum) {
+                uni_vpaddd(vmm_src_sum_accum(), vmm_src_sum_accum(), vmm_src());
+
+                if (((icb + 1) * vec_size) % jcp_.src_sum_group_size == 0) {
+                    horiz_op(vmm_src_sum_accum(), vmm_aux(), op_type::sum);
+                    uni_vmovss(ptr[reg_src_grouped_sum], Xmm(vmm_src_sum_accum().getIdx()));
+                    uni_vxorps(vmm_src_sum_accum(), vmm_src_sum_accum(), vmm_src_sum_accum());
+                    add(reg_src_grouped_sum, src_grouped_sum_dt_size);
+                }
+            }
 
             if (isa == avx512_core) {
                 vpmovsdb(ptr[reg_qsrc + icb * vec_size * qsrc_dt_size], vmm_src());

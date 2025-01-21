@@ -248,14 +248,10 @@ int calculate_max_bcast_block(brgemm_desc_t *brg, const int adj_ld_block2) {
     if (one_of(brg->dt_b, data_type::nf4) && brg->isa_impl == avx2) max_bcast_block -= 5;
     if (one_of(brg->dt_b, data_type::f4_e2m1) && brg->isa_impl == avx2) max_bcast_block -= 2;
     if (one_of(brg->dt_b, data_type::nf4, data_type::f4_e2m1) && brg->isa_impl != avx2) max_bcast_block -= 1;
-    if (brg->with_wei_decomp_zero_points && brg->wei_decomp_zero_points_stride == 0) max_bcast_block -= 1;
-    if (brg->with_src_dyn_quant) max_bcast_block -= 2;
-    if (brg->with_src_dyn_quant && brg->with_wei_decomp_zero_points && brg->wei_decomp_zero_points_stride != 0) max_bcast_block -= adj_ld_block2;
+    if (brg->with_wei_decomp_zero_points && brg->wei_decomp_zero_points_stride == 0 && !brg->with_src_dyn_quant) max_bcast_block -= 1;
+    if (brg->with_src_dyn_quant) max_bcast_block -= 1;
 
     max_bcast_block /= adj_ld_block2;
-    if (brg->with_src_dyn_quant) {
-        max_bcast_block /= 2;
-    }
 
     return max_bcast_block;
 }
@@ -667,29 +663,45 @@ status_t brgemm_blocking_vmm(brgemm_desc_t *brg) {
     const int max_vpad = nstl::max(
             brg->brgattr.max_top_vpad, brg->brgattr.max_bottom_vpad);
 
-    // iterate ld_block2 starting from 4 to allow bd_block larger than
-    // virtual padding
     int max_bcast_block {0}, min_bcast_block {0}, adj_ld_block2 {0};
-    bool few_regs = utils::one_of(brg->isa_impl, avx2, avx2_vnni, avx2_vnni_2);
-    few_regs |= brg->with_src_dyn_quant;
-    bool hint_n_bcast_1_load
-            = brg->brgattr.hint_loop_order == brgemm_lo_bl_1load;
-    for (int try_ld_block2 = 4; try_ld_block2 > 0; --try_ld_block2) {
-        adj_ld_block2 = calculate_ldb_params(brg, try_ld_block2);
-        brg->n_bcast_1_load
-                = (few_regs && adj_ld_block2 == 4) || hint_n_bcast_1_load;
+    if (brg->with_src_dyn_quant) {
+        adj_ld_block2 = calculate_ldb_params(brg, 4);
         max_bcast_block = calculate_max_bcast_block(brg, adj_ld_block2);
-        const auto bdb_tail = brg->bcast_dim % max_bcast_block;
-        min_bcast_block = bdb_tail > 0 ? bdb_tail : max_bcast_block;
-        if (min_bcast_block >= max_vpad) break;
+        // reduce 'ld_block2' to allow a larger 'bd_block'
+        if (is_superset(brg->isa_impl, avx2) && max_bcast_block < max_vpad) {
+            for (int try_ld_block2 = 2; try_ld_block2 > 0; --try_ld_block2) {
+                adj_ld_block2 = calculate_ldb_params(brg, try_ld_block2);
+                max_bcast_block = calculate_max_bcast_block(brg, adj_ld_block2);
+                if (max_bcast_block >= max_vpad) break;
+            }
+            // bcast block in brgemm kernel should be greater than virtual
+            // padding to avoid possible functional issues
+            if (max_bcast_block < max_vpad) return status::unimplemented;
+        }
+    } else {
+        // iterate ld_block2 starting from 4 to allow bd_block larger than
+        // virtual padding
+        bool few_regs = utils::one_of(brg->isa_impl, avx2, avx2_vnni, avx2_vnni_2);
+        bool hint_n_bcast_1_load
+            = brg->brgattr.hint_loop_order == brgemm_lo_bl_1load;
+        for (int try_ld_block2 = 4; try_ld_block2 > 0; --try_ld_block2) {
+            adj_ld_block2 = calculate_ldb_params(brg, try_ld_block2);
+            brg->n_bcast_1_load
+                = (few_regs && adj_ld_block2 == 4) || hint_n_bcast_1_load;
+            max_bcast_block = calculate_max_bcast_block(brg, adj_ld_block2);
+            const auto bdb_tail = brg->bcast_dim % max_bcast_block;
+            min_bcast_block = bdb_tail > 0 ? bdb_tail : max_bcast_block;
+            if (min_bcast_block >= max_vpad) break;
+        }
+        // bcast block in brgemm kernel should be greater than virtual
+        // padding to avoid possible functional issues
+        if (min_bcast_block < max_vpad) return status::unimplemented;
     }
-    // bcast block in brgemm kernel should be greater than virtual
-    // padding to avoid possible functional issues
-    if (min_bcast_block < max_vpad) return status::unimplemented;
 
     const int min_block = nstl::max(1, max_vpad);
 
     float best_bd_block_eff = 0.f;
+    if (max_bcast_block == 0) max_bcast_block = 1;
     brg->bd_block = max_bcast_block;
     for (int bd_block = max_bcast_block; bd_block >= min_block; bd_block--) {
         const auto bd_block_disb = static_cast<float>(brg->bcast_dim)
@@ -718,14 +730,20 @@ status_t brgemm_blocking_vmm(brgemm_desc_t *brg) {
             ? 1
             : data_type_vnni_granularity(brg->dt_a);
     int rd_unroll = one_of(brg->dt_b, data_type::nf4, data_type::u4, data_type::s4, data_type::f4_e2m1) ? 32 : 4;
-    if (brg->with_grouped_wei_decomp) {
+    if (brg->with_grouped_wei_decomp && !brg->with_src_dyn_quant) {
         auto min_group_size = nstl::min(brg->wei_decomp_scales_group_size, brg->wei_decomp_zero_points_group_size);
         min_group_size = nstl::min(min_group_size, brg->src_scales_group_size);
         rd_unroll = nstl::min(rd_unroll, min_group_size / vnni_granularity);
         rd_unroll = nstl::min(rd_unroll, min_group_size / vnni_granularity);
+        brg->rd_block = rd_unroll * vnni_granularity;
+    } else if (brg->with_src_dyn_quant) {
+        brg->rd_block = brg->src_scales_group_size;
+        auto min_group_size = nstl::min(brg->wei_decomp_scales_group_size, brg->wei_decomp_zero_points_group_size);
+        brg->rd_block = nstl::min(brg->rd_block, min_group_size);
+    } else {
+        brg->rd_block = rd_unroll * vnni_granularity;
     }
 
-    brg->rd_block = rd_unroll * vnni_granularity;
     brg->rdb = brg->reduce_dim / brg->rd_block;
     brg->rdb_tail = brg->reduce_dim % brg->rd_block;
 

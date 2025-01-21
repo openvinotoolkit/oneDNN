@@ -113,6 +113,7 @@ struct jit_brgemm_primitive_conf_t {
 
     bool with_src_dynamic_quant;
     size_t src_quant_group_size;
+    size_t src_sum_group_size;
     data_type_t orig_src_dt;
 };
 

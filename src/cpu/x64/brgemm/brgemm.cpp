@@ -82,7 +82,8 @@ void brgemm_desc_t::cleanup_dst_md() {
 void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
         const brgemm_batch_element_t *batch, void *ptr_C, void *scratch,
         const brgemm_dynamic_values_t *dynamic_values,
-        const void *ptr_wei_scales, const void *ptr_wei_zero_points, const void *ptr_src_scales, size_t ic) {
+        const void *ptr_wei_scales, const void *ptr_wei_zero_points,
+        const void *ptr_src_scales, const void *ptr_src_grouped_sum, size_t ic) {
     brgemm_kernel_params_t brgemm_p;
 
     brgemm_p.batch = batch;
@@ -105,6 +106,7 @@ void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
     brgemm_p.ptr_wei_scales = ptr_wei_scales;
     brgemm_p.ptr_wei_zero_points = ptr_wei_zero_points;
     brgemm_p.ptr_src_scales = ptr_src_scales;
+    brgemm_p.ptr_src_grouped_sum = ptr_src_grouped_sum;
     brgemm_p.ic = ic;
 
     assert(brg_kernel);
@@ -116,7 +118,8 @@ void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
         const void *addr_A, const void *addr_B,
         const brgemm_batch_element_t *batch, void *ptr_C, void *scratch,
         const brgemm_dynamic_values_t *dynamic_values,
-        const void *ptr_wei_scales, const void *ptr_wei_zero_points, const void *ptr_src_scales, size_t ic) {
+        const void *ptr_wei_scales, const void *ptr_wei_zero_points,
+        const void *ptr_src_scales, const void *ptr_src_grouped_sum, size_t ic) {
     brgemm_kernel_params_t brgemm_p;
 
     brgemm_p.batch = batch;
@@ -133,6 +136,7 @@ void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
     brgemm_p.ptr_wei_scales = ptr_wei_scales;
     brgemm_p.ptr_wei_zero_points = ptr_wei_zero_points;
     brgemm_p.ptr_src_scales = ptr_src_scales;
+    brgemm_p.ptr_src_grouped_sum = ptr_src_grouped_sum;
     brgemm_p.ic = ic;
     if (dynamic_values) {
         brgemm_p.dynamic_LDA = dynamic_values->dynamic_LDA;
@@ -148,7 +152,8 @@ void brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel, int bs,
         const brgemm_batch_element_t *batch, void *ptr_C, void *ptr_D,
         const brgemm_post_ops_data_t &post_ops_data, void *scratch,
         const brgemm_dynamic_values_t *dynamic_values,
-        const void *ptr_wei_scales, const void *ptr_wei_zero_points, const void *ptr_src_scales, size_t ic) {
+        const void *ptr_wei_scales, const void *ptr_wei_zero_points,
+        const void *ptr_src_scales, const void *ptr_src_grouped_sum, size_t ic) {
     brgemm_kernel_params_t brgemm_p;
 
     brgemm_p.batch = batch;
@@ -178,6 +183,7 @@ void brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel, int bs,
     brgemm_p.ptr_wei_scales = ptr_wei_scales;
     brgemm_p.ptr_wei_zero_points = ptr_wei_zero_points;
     brgemm_p.ptr_src_scales = ptr_src_scales;
+    brgemm_p.ptr_src_grouped_sum = ptr_src_grouped_sum;
     brgemm_p.ic = ic;
     if (dynamic_values) {
         brgemm_p.dynamic_LDA = dynamic_values->dynamic_LDA;
@@ -194,7 +200,8 @@ void brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel, int bs,
         const brgemm_batch_element_t *batch, void *ptr_C, void *ptr_D,
         const brgemm_post_ops_data_t &post_ops_data, void *scratch,
         const brgemm_dynamic_values_t *dynamic_values,
-        const void *ptr_wei_scales, const void *ptr_wei_zero_points, const void *ptr_src_scales, size_t ic) {
+        const void *ptr_wei_scales, const void *ptr_wei_zero_points,
+        const void *ptr_src_scales, const void *ptr_src_grouped_sum, size_t ic) {
     brgemm_kernel_params_t brgemm_p;
 
     brgemm_p.batch = batch;
@@ -225,6 +232,7 @@ void brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel, int bs,
     brgemm_p.ptr_wei_scales = ptr_wei_scales;
     brgemm_p.ptr_wei_zero_points = ptr_wei_zero_points;
     brgemm_p.ptr_src_scales = ptr_src_scales;
+    brgemm_p.ptr_src_grouped_sum = ptr_src_grouped_sum;
     brgemm_p.ic = ic;
     if (dynamic_values) {
         brgemm_p.dynamic_LDA = dynamic_values->dynamic_LDA;
@@ -334,6 +342,17 @@ status_t brgemm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
     }
 
     CHECK(brgemm_desc_finalize(brg));
+
+    brg->src_sum_group_size = wei_d.dims()[1];
+    if (brg->with_src_dyn_quant) {
+        brg->src_sum_group_size = brg->rd_block;
+        brg->src_grouped_sum_stride = div_up(wei_d.dims()[1], brg->src_sum_group_size);
+    }
+
+    // avx2_vnni_2 kernel with xf16 data type requires blocked weights.
+    if (brg->isa_impl == avx2_vnni_2 && brg->is_xf16()
+            && brg->LDB % brg->ld_block > 0)
+        return status::unimplemented;
 
     return status::success;
 }

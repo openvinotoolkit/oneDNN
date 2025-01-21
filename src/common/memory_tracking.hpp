@@ -329,6 +329,7 @@ enum {
     key_decompression_zero_points,
     key_src_quantized,
     key_src_dequantized_scales,
+    key_src_grouped_sum,
     // These two keys should always be the last ones,
     // even though they are not in alphabetical order
     key_nested,
