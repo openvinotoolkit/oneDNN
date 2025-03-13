@@ -525,7 +525,7 @@ status_t jit_brgemm_ip_fwd_conf_t::init_conf(cpu_isa_t isa,
     jbgp.nb_ic = div_up(jbgp.ic, jbgp.ic_block);
 
     // gemm-based inner product performs better when oc = 1
-    if (is_f32_compute && jbgp.oc == 1) return status::unimplemented;
+    if (is_f32_compute && jbgp.oc == 1 && !jbgp.weights_decompression) return status::unimplemented;
 
     jbgp.oc_block = get_adjusted_oc_block();
     jbgp.nb_oc = div_up(jbgp.oc, jbgp.oc_block);
