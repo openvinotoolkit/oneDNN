@@ -2587,7 +2587,7 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(int bd_block2, bool is_bdb_tail,
     
 
     for (int rd = 0; rd < rd_loop; rd += brg.rd_step) {
-        if (brg.n_bcast_1_load) {
+        if (brg.n_bcast_1_load&&!brg.with_wei_decomp) {
             for (int bd = bd_b; bd < bd_e && !is_emdbd; bd++)
                 broadcast_A(bcst(bd), bd, rd);
             for (int ld = 0; ld < ld_block2; ld++) {
@@ -2624,9 +2624,10 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(int bd_block2, bool is_bdb_tail,
             }
         }
     }
-
-    if (!brg.n_bcast_1_load) {
-           if (brg.with_wei_decomp) {
+    if (!brg.with_wei_decomp)
+        return;
+    //brg.with_wei_decomp = True
+    {
             auto reg_local_wei_scales = reg_bdb_loop;
             auto reg_local_wei_zp = reg_ldb_loop;
             auto reg_ptr = reg_local_wei_zp;
@@ -2955,7 +2956,6 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(int bd_block2, bool is_bdb_tail,
 
             return;
         }
-    }
 }
 
 template <typename Wmm>
