@@ -1,0 +1,72 @@
+# *******************************************************************************
+# Copyright 2024 Arm Limited and affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# *******************************************************************************
+
+name: "CI x64"
+
+#* To avoid duplicate jobs running when both push and PR is satisfied, we use this:
+#* https://github.com/orgs/community/discussions/26940#discussioncomment-5686753
+on:
+  push:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+#* Stop stale workflows when pull requests are updated: https://stackoverflow.com/a/70972844
+#* Does not apply to the main branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# Declare default permissions as read only.
+permissions: read-all
+
+jobs:
+  x64:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        config: [
+          { toolset: gcc, build: Release },
+        ]
+
+    name: Ubuntu, ${{ matrix.config.toolset }}, ${{ matrix.config.build }}
+    steps:
+      - name: Checkout oneDNN
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          path: oneDNN
+
+      - name: Get system name
+        id: get_system_name
+        run: (echo "SystemName=$(uname)") >> $GITHUB_OUTPUT
+
+      - name: Build oneDNN
+        run: |
+          ${{ github.workspace }}/oneDNN/.github/automation/build.sh \
+          --threading omp --mode Release \
+          --source-dir ${{ github.workspace }}/oneDNN \
+          --build-dir ${{ github.workspace }}/oneDNN/build \
+          --cmake-opt "-DCMAKE_CXX_FLAGS=\"-Wno-error=overloaded-virtual\""
+        working-directory: ${{ github.workspace }}/oneDNN
+        env:
+          BUILD_TOOLSET: ${{ matrix.config.toolset }}
+          CMAKE_BUILD_TYPE: ${{ matrix.config.build }}
+    
+      - name: Run oneDNN smoke tests
+        run: ${{ github.workspace }}/oneDNN/.github/automation/test.sh
+        working-directory: ${{ github.workspace }}/oneDNN/build
+        env:
+          CMAKE_BUILD_TYPE: ${{ matrix.config.build }}
