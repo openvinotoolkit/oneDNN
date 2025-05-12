@@ -2317,7 +2317,7 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel_dyn_quant(dim_t bd_block2,
         bool is_bdb_tail, dim_t ld_block2, bool is_rd_tail, bool is_ld_tail,
         dim_t vpad, dim_t rows_for_rd_tail) {
     dim_t bd_block = (is_bdb_tail) ? brg.bdb_tail : brg.bd_block;
-    const auto bd_b = nstl::max(0L, vpad);
+    const auto bd_b = nstl::max((dim_t)0, vpad);
     const auto bd_e = nstl::min(bd_block, bd_block + vpad);
     const auto is_valid_bd
             = need_comp_pads && vpad != 0 ? bd_b <= bd_e : bd_b < bd_e;

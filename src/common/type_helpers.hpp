@@ -1247,6 +1247,17 @@ inline bool memory_desc_matches_tag(const memory_desc_t &md, format_tag_t tag,
             ? md.format_desc.blocking
             : md.format_desc.sparse_desc.packed_desc;
     const auto &blk_gold = md_gold.format_desc.blocking;
+
+    using utils::array_cmp;
+    bool same_blocks = true && blk.inner_nblks == blk_gold.inner_nblks
+            && array_cmp(blk.inner_blks, blk_gold.inner_blks, blk.inner_nblks)
+            && array_cmp(blk.inner_idxs, blk_gold.inner_idxs, blk.inner_nblks);
+
+    if (!same_blocks) return false;
+
+    if (strides == nullptr)
+        return array_cmp(blk.strides, blk_gold.strides, md.ndims);
+
     for (int d = 0; d < md.ndims; ++d) {
         dim_t stride = strides[d];
         if (stride == -1) continue;

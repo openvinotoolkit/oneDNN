@@ -277,18 +277,12 @@ int calculate_max_bcast_block(brgemm_desc_t *brg, const int adj_ld_block2) {
             = nstl::min(microkernel_max_bcast_block, store_max_bcast_block);
 
     // openvino extension
-    if (one_of(brg->dt_b, data_type::nf4) && brg->isa_impl == avx2) max_bcast_block -= 5;
-    if (one_of(brg->dt_b, data_type::f4_e2m1) && brg->isa_impl == avx2) max_bcast_block -= 2;
-    if (one_of(brg->dt_b, data_type::nf4, data_type::f4_e2m1) && brg->isa_impl != avx2) max_bcast_block -= 1;
-    if (brg->with_wei_decomp_zero_points && brg->wei_decomp_zero_points_stride == 0) max_bcast_block -= 1;
-    if (brg->with_src_dyn_quant) max_bcast_block -= 2;
-    if (brg->with_src_dyn_quant && brg->with_wei_decomp_zero_points && brg->wei_decomp_zero_points_stride != 0) max_bcast_block -= adj_ld_block2;
-
-    max_bcast_block /= adj_ld_block2;
-    if (brg->with_src_dyn_quant) {
-        max_bcast_block /= 2;
-    }
-
+    // if (one_of(brg->dt_b, data_type::nf4) && brg->isa_impl == avx2) max_bcast_block -= 5;
+    // if (one_of(brg->dt_b, data_type::f4_e2m1) && brg->isa_impl == avx2) max_bcast_block -= 2;
+    // if (one_of(brg->dt_b, data_type::nf4, data_type::f4_e2m1) && brg->isa_impl != avx2) max_bcast_block -= 1;
+    // if (brg->with_wei_decomp_zero_points && brg->wei_decomp_zero_points_stride == 0 && !brg->with_src_dyn_quant) max_bcast_block -= 1;
+    // if (brg->with_src_dyn_quant) max_bcast_block -= 1;
+    // max_bcast_block /= adj_ld_block2;
     return max_bcast_block;
 }
 

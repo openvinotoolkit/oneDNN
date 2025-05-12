@@ -335,6 +335,8 @@ struct brgemm_desc_t {
     bool with_src_dyn_quant = false;
     int src_scales_group_size = 0;
     int src_scales_stride = 0;
+    int src_sum_group_size = 0;
+    int src_grouped_sum_stride = 0;
 
     bool is_row_major() const {
         assert(layout != brgemm_layout_undef);

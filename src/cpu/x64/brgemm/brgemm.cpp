@@ -333,6 +333,14 @@ status_t brgemm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
         brg->src_scales_stride = div_up(wei_d.dims()[1], brg->src_scales_group_size);
     }
 
+    CHECK(brgemm_desc_finalize(brg));
+
+    brg->src_sum_group_size = wei_d.dims()[1];
+    if (brg->with_src_dyn_quant) {
+        brg->src_sum_group_size = brg->rd_block;
+        brg->src_grouped_sum_stride = div_up(wei_d.dims()[1], brg->src_sum_group_size);
+    }
+
     return status::success;
 }
 
