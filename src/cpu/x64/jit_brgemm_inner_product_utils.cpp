@@ -830,8 +830,8 @@ status_t jit_brgemm_ip_fwd_conf_t::init_conf(cpu_isa_t isa,
 
     jbgp.wei_decomp_scales_buffer_size = jbgp.wei_decomp_zero_points_buffer_size = 0;
     if (jbgp.weights_decompression) {
-        if (attr.scales_.get(DNNL_ARG_WEIGHTS).ndims_) {
-            auto wei_scales_dims = attr.scales_.get(DNNL_ARG_WEIGHTS).dims_;
+        if (attr.scales_.get(DNNL_ARG_WEIGHTS).get_ndims()) {
+            auto wei_scales_dims = attr.scales_.get(DNNL_ARG_WEIGHTS).get_dims();
             if (wei_scales_dims[0] % jbgp.simd_w) {
                 jbgp.wei_decomp_scales_buffer_size = rnd_up(wei_scales_dims[0], jbgp.simd_w) * wei_scales_dims[1];
             }
@@ -1428,12 +1428,12 @@ status_t jit_brgemm_ip_conf_t::init_conf_base(cpu_isa_t isa,
 
         jbgp.wei_scales_ic_group_size = jbgp.ic;
         auto wei_scales = attr.scales_.get(DNNL_ARG_WEIGHTS);
-        jbgp.wei_decomp_scales_dt = wei_scales.data_type_;
+        jbgp.wei_decomp_scales_dt = wei_scales.get_data_type();
         if (!one_of(jbgp.wei_decomp_scales_dt, f32, e8m0))
             return status::unimplemented;
-        if (!wei_scales.has_default_values() && wei_scales.dims_[1] != 1) {
+        if (!wei_scales.has_default_values() && wei_scales.get_dims()[1] != 1) {
             jbgp.with_grouped_weights_decompression = true;
-            jbgp.wei_scales_ic_group_size = div_up(jbgp.ic, wei_scales.dims_[1]);
+            jbgp.wei_scales_ic_group_size = div_up(jbgp.ic, wei_scales.get_dims()[1]);
         }
         jbgp.wei_zero_points_ic_group_size = jbgp.ic;
         if (!attr.zero_points_.has_default_values(DNNL_ARG_WEIGHTS)) {

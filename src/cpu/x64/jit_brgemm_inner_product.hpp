@@ -84,9 +84,10 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
 
             if (!mayiuse(isa)) return status::unimplemented;
 
-            VDISPATCH_INNER_PRODUCT(
-                    get_prop_kind() == prop_kind::forward_training,
-                    VERBOSE_BAD_PROPKIND);
+            VDISPATCH_INNER_PRODUCT(is_fwd(), VERBOSE_BAD_PROPKIND);
+            // VDISPATCH_INNER_PRODUCT(
+            //         get_prop_kind() == prop_kind::forward_training,
+            //         VERBOSE_BAD_PROPKIND);
             VDISPATCH_INNER_PRODUCT(
                     expect_data_types(src_dt, wei_dt, data_type::undef, dst_dt,
                             data_type::undef),
@@ -173,6 +174,7 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
                                     jbgp_.amx_buf_size_per_thread);
             }
 
+
             auto scratchpad = scratchpad_registry().registrar();
             jbgp_.init_scratchpad(scratchpad);
             if (jbgp_.with_scales)
@@ -246,7 +248,7 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
             jcp.ic_internal_size = pd()->jbgp_.wei_dt == data_type::bf16 ||
                                    utils::one_of(pd()->jbgp_.orig_wei_dt, data_type::nf4, data_type::s4, data_type::u4, data_type::f4_e2m1) ? 2 : 1;
             jcp.with_scales = !pd()->attr()->scales_.get(DNNL_ARG_WEIGHTS).has_default_values();
-            jcp.broadcast_scales = pd()->attr()->scales_.get(DNNL_ARG_WEIGHTS).dims_[0] == 1;
+            jcp.broadcast_scales = pd()->attr()->scales_.get(DNNL_ARG_WEIGHTS).get_dims()[0] == 1;
             jcp.with_zero_points = !pd()->attr()->zero_points_.has_default_values(DNNL_ARG_WEIGHTS);
             jcp.broadcast_zero_points = pd()->attr()->zero_points_.get_dims(DNNL_ARG_WEIGHTS)[0] == 1;
             jcp.weights_dt = pd()->jbgp_.orig_wei_dt;

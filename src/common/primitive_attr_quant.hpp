@@ -52,34 +52,24 @@ struct quant_entry_t : public c_compatible {
         return set(mask, data_type, 0, {});
     }
     status_t set(int mask, data_type_t data_type, int group_ndims,
-            const dims_t group_dims) {
-        mask_ = mask;
-        data_type_ = data_type;
-        group_ndims_ = group_ndims;
-        if (group_ndims_ > 0) {
-            utils::array_copy(group_dims_, group_dims, group_ndims_);
-        }
-        return status::success;
-    }
-    status_t set(const quant_entry_t &other) {
-        return set(other.mask_, other.data_type_, other.group_ndims_,
-                other.group_dims_);
-    }
-
+            const dims_t group_dims);
+    status_t set_scales(const dims_t dims, int ndims, data_type_t data_type = data_type::f32, int mask = 1);
+    status_t set_zero_points(const dims_t dims, int ndims, data_type_t data_type, int mask = 0);
+    status_t set(const quant_entry_t &other);
     quant_entry_t &operator=(const quant_entry_t &rhs) {
         auto st = this->set(rhs);
         assert(st == status::success);
         UNUSED(st);
         return *this;
     }
-
     bool has_default_values() const { return *this == default_quant_entry(); }
     bool has_default_groups() const {
         return this->group_ndims_ == default_quant_entry().group_ndims_;
     }
-
-    int get_mask() const { return mask_; }
-    data_type_t get_data_type() const { return data_type_; }
+    int get_mask() const;
+    data_type_t get_data_type() const;
+    const dims_t& get_dims() const;
+    int get_ndims() const;
     dim_t get_group(int d) const {
         // If groups were not requested, return `1` for convenience.
         if (group_ndims_ == default_quant_entry().group_ndims_) return 1;
@@ -92,14 +82,7 @@ struct quant_entry_t : public c_compatible {
     // Note: keep the definition here to satisfy the
     // `gtests/internals/test_comparison_operators` linking requirements which
     // mandates bodies to be in the header file.
-    bool operator==(const quant_entry_t &rhs) const {
-        return mask_ == rhs.mask_ && data_type_ == rhs.data_type_
-                && group_ndims_ == rhs.group_ndims_
-                && IMPLICATION(group_ndims_ > 0,
-                        utils::array_cmp(
-                                group_dims_, rhs.group_dims_, group_ndims_));
-    }
-
+    bool operator==(const quant_entry_t &rhs) const;
     size_t get_hash() const;
 
     void serialize(serialization_stream_t &sstream) const;
@@ -109,19 +92,28 @@ struct quant_entry_t : public c_compatible {
     std::string get_verbose() const;
 
 private:
+    data_type_t data_type_ = data_type::undef;
     int group_ndims_ = 0;
     dims_t group_dims_ {};
-public:
     // Note: INT_MIN is used on purpose to avoid potential issues when
     // `(mask & bit)` expression will return `true`. `INT_MIN` is represented
     // as `10...0` in bits and will avoid such situations.
     int mask_ = INT_MIN;
-    data_type_t data_type_ = data_type::undef;
-    // openvino extension
-    // scale
     bool is_set_ = false;
-    int ndims_ = 0;
-    dims_t dims_ {};
+    // openvino extension
+    enum entry_type {
+        NONE = 0,
+        DNNL = 1,
+        OV_SCALES = 2,
+        OV_ZERO_POINTS = 4
+    };
+    int type_ = NONE;
+    // scale
+    bool is_set_scale = false;
+    int ndims_scale = 0;
+    int mask_scale = 0;
+    dims_t dims_scale {};
+    data_type_t data_type_scale = data_type::undef;
     // zero_point
     bool is_set_wei = false;
     int ndims_wei = 0;
@@ -144,57 +136,27 @@ struct quant_entries_t : public c_compatible {
 
     // See `set(...)` comment for `quant_entry_t` for a design choice
     // explanation.
-    status_t set(int arg, int mask) {
+    virtual status_t set(int arg, int mask) {
         return set(arg, mask, default_data_type_, 0, {});
     }
-    status_t set_scales(int arg, const dims_t dims, int ndims, data_type_t data_type = data_type::f32) {
-        if (!check_arg(arg)) return status::invalid_arguments;
-        entries_[arg].is_set_ = true;
-        entries_[arg].ndims_ = ndims;
-        entries_[arg].mask_ = 1;
-        entries_[arg].data_type_ = data_type;
-        utils::array_copy(entries_[arg].dims_, dims, entries_[arg].ndims_);
-        return status::success;
-    }
-    status_t set_zero_points(int arg, const dims_t dims, int ndims, data_type_t data_type) {
-        const bool supported_arg = utils::one_of(arg, DNNL_ARG_WEIGHTS);
-        if (!supported_arg) return status::unimplemented;
-
-        switch (arg) {
-            case DNNL_ARG_WEIGHTS:
-                entries_[arg].is_set_wei = true;
-                entries_[arg].ndims_wei = ndims;
-                entries_[arg].mask_wei = 1;
-                utils::array_copy(entries_[arg].dims_wei, dims, ndims);
-                entries_[arg].data_type_wei = data_type;
-                break;
-        }
-        return status::success;
-    }
     const dims_t & get_dims(int arg) const {
-        return get(arg).dims_wei;
+        return get(arg).get_dims();
     }
     int get_ndims(int arg) const {
-        const bool supported_arg = utils::one_of(arg, DNNL_ARG_WEIGHTS);
-        if (!supported_arg) return status::unimplemented;
-        switch (arg) {
-            case DNNL_ARG_WEIGHTS: return get(arg).ndims_wei; break;
-            default: return 0;
-        }
+        return get(arg).get_ndims();
     }
-    status_t set(int arg, int mask, data_type_t data_type, int group_ndims,
+    virtual status_t set(int arg, int mask, data_type_t data_type, int group_ndims,
             const dims_t group_dims) {
         if (!check_arg(arg)) return status::invalid_arguments;
         CHECK(entries_[arg].set(mask, data_type, group_ndims, group_dims));
-        if (arg == DNNL_ARG_WEIGHTS) {
-            utils::array_copy(entries_[arg].dims_wei, group_dims, group_ndims);
-            entries_[arg].ndims_wei = group_ndims;
-        }
         return status::success;
     }
+    status_t set_scales(int arg, const dims_t dims, int ndims, data_type_t data_type = data_type::f32);
+    status_t set_zero_points(int arg, const dims_t dims, int ndims, data_type_t data_type);
+
     // Use this interface with `default_quant_entry` when need to remove a
     // specific entry.
-    status_t set(int arg, const quant_entry_t &other) {
+    virtual status_t set(int arg, const quant_entry_t &other) {
         return entries_[arg].set(other);
     }
 
@@ -356,7 +318,15 @@ struct zero_points_t : public quant_entries_t {
     }
 
     static zero_points_t deserialize(deserializer_t &d);
+    // status_t set(int arg, int mask) {
+    //     return quant_entries_t::set(arg, mask, default_data_type_, 0, {});
+    // }
+    // status_t set(int arg, int mask, data_type_t data_type, int group_ndims,
+    //         const dims_t group_dims);
 
+    // status_t set(int arg, const quant_entry_t &other) {
+    //     return quant_entries_t::set(arg, other);
+    // }
 private:
     static constexpr data_type_t default_data_type_ = data_type::s32;
 

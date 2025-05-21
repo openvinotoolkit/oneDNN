@@ -302,14 +302,14 @@ status_t brgemm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
         brg->with_wei_decomp_scales = !wei_scales.has_default_values();
         brg->wei_decomp_scales_group_size = wei_d.dims()[1];
         if (brg->with_wei_decomp_scales) {
-            brg->wei_decomp_scales_dt = wei_scales.data_type_;
+            brg->wei_decomp_scales_dt = wei_scales.get_data_type();
             if (!one_of(brg->wei_decomp_scales_dt, f32, e8m0))
                 return status::unimplemented;
 
-            auto ld_dim = wei_scales.dims_[0];
+            auto ld_dim = wei_scales.get_dims()[0];
             brg->wei_decomp_scales_stride = ld_dim > 1 ? ld_dim : 0;
-            brg->wei_decomp_scales_group_size = wei_d.dims()[1] / wei_scales.dims_[1];
-            brg->with_grouped_wei_decomp |= wei_scales.dims_[1] != 1;
+            brg->wei_decomp_scales_group_size = wei_d.dims()[1] / wei_scales.get_dims()[1];
+            brg->with_grouped_wei_decomp |= wei_scales.get_dims()[1] != 1;
         }
 
         brg->with_wei_decomp_zero_points = !attr->zero_points_.has_default_values(DNNL_ARG_WEIGHTS);
@@ -391,6 +391,7 @@ status_t brgemm_desc_set_postops(brgemm_desc_t *brg,
                 is_superset(brg->isa_impl, avx512_core)
                         || is_superset(brg->isa_impl, avx2_vnni_2)))
         return status::unimplemented;
+
     if (!IMPLICATION(one_of(data_type::f16, dt_bias, dt_d),
                 is_superset(brg->isa_impl, avx512_core_fp16)
                         || is_superset(brg->isa_impl, avx2_vnni_2)))
