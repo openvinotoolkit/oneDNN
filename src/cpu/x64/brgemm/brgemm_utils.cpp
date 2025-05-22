@@ -743,13 +743,28 @@ status_t brgemm_blocking_vmm(brgemm_desc_t *brg) {
             = (brg->is_f16 && brg->isa_impl == avx512_core_fp16)
             ? 1
             : data_type_vnni_granularity(brg->dt_a);
+    // int rd_unroll = one_of(brg->dt_b, data_type::nf4, data_type::u4, data_type::s4, data_type::f4_e2m1) ? 32 : 4;
+    // if (brg->with_grouped_wei_decomp) {
+    //     auto min_group_size = nstl::min(brg->wei_decomp_scales_group_size, brg->wei_decomp_zero_points_group_size);
+    //     min_group_size = nstl::min(min_group_size, brg->src_scales_group_size);
+    //     rd_unroll = nstl::min(rd_unroll, min_group_size / vnni_granularity);
+    //     rd_unroll = nstl::min(rd_unroll, min_group_size / vnni_granularity);
+    // }
     int rd_unroll = one_of(brg->dt_b, data_type::nf4, data_type::u4, data_type::s4, data_type::f4_e2m1) ? 32 : 4;
-    if (brg->with_grouped_wei_decomp) {
+    if (brg->with_grouped_wei_decomp && !brg->with_src_dyn_quant) {
         auto min_group_size = nstl::min(brg->wei_decomp_scales_group_size, brg->wei_decomp_zero_points_group_size);
         min_group_size = nstl::min(min_group_size, brg->src_scales_group_size);
         rd_unroll = nstl::min(rd_unroll, min_group_size / vnni_granularity);
         rd_unroll = nstl::min(rd_unroll, min_group_size / vnni_granularity);
+        brg->rd_block = rd_unroll * vnni_granularity;
+    } else if (brg->with_src_dyn_quant) {
+        brg->rd_block = brg->src_scales_group_size;
+        auto min_group_size = nstl::min(brg->wei_decomp_scales_group_size, brg->wei_decomp_zero_points_group_size);
+        brg->rd_block = nstl::min(brg->rd_block, min_group_size);
+    } else {
+        brg->rd_block = rd_unroll * vnni_granularity;
     }
+
     brg->rd_block = rd_unroll * vnni_granularity;
     brg->rdb = brg->reduce_dim / brg->rd_block;
     brg->rdb_tail = brg->reduce_dim % brg->rd_block;

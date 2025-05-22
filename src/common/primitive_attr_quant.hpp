@@ -54,7 +54,8 @@ struct quant_entry_t : public c_compatible {
     status_t set(int mask, data_type_t data_type, int group_ndims,
             const dims_t group_dims);
     status_t set_scales(const dims_t dims, int ndims, data_type_t data_type = data_type::f32, int mask = 1);
-    status_t set_zero_points(const dims_t dims, int ndims, data_type_t data_type, int mask = 0);
+    status_t set_zero_points(const dims_t dims, int ndims, data_type_t data_type);
+    status_t set_zero_points(const dims_t dims, int ndims, data_type_t data_type, int mask);
     status_t set(const quant_entry_t &other);
     quant_entry_t &operator=(const quant_entry_t &rhs) {
         auto st = this->set(rhs);
@@ -318,15 +319,15 @@ struct zero_points_t : public quant_entries_t {
     }
 
     static zero_points_t deserialize(deserializer_t &d);
-    // status_t set(int arg, int mask) {
-    //     return quant_entries_t::set(arg, mask, default_data_type_, 0, {});
-    // }
-    // status_t set(int arg, int mask, data_type_t data_type, int group_ndims,
-    //         const dims_t group_dims);
+    status_t set(int arg, int mask) {
+        return quant_entries_t::set(arg, mask, default_data_type_, 0, {});
+    }
+    status_t set(int arg, int mask, data_type_t data_type, int group_ndims,
+            const dims_t group_dims);
 
-    // status_t set(int arg, const quant_entry_t &other) {
-    //     return quant_entries_t::set(arg, other);
-    // }
+    status_t set(int arg, const quant_entry_t &other) {
+        return quant_entries_t::set(arg, other);
+    }
 private:
     static constexpr data_type_t default_data_type_ = data_type::s32;
 
@@ -358,7 +359,7 @@ struct src_dyn_quant_params_t : public c_compatible {
         return status::success;
     }
 
-    uint64_t get() {
+    uint64_t get() const {
         return group_size_;
     }
 
@@ -367,6 +368,7 @@ struct src_dyn_quant_params_t : public c_compatible {
         return group_size_ == rhs.group_size_;
     }
 
+private:
     uint64_t group_size_;
 };
 

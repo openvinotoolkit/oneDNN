@@ -328,7 +328,8 @@ status_t brgemm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
 
     brg->src_scales_group_size = wei_d.dims()[1];
     if (brg->with_src_dyn_quant) {
-        brg->src_scales_group_size = attr->src_dyn_quant_params_.group_size_;
+        std::cout << "=========set dyn quant params1" << std::endl;
+        brg->src_scales_group_size = attr->src_dyn_quant_params_.get();
         brg->with_grouped_wei_decomp = true;
         brg->src_scales_stride = div_up(wei_d.dims()[1], brg->src_scales_group_size);
     }

@@ -152,6 +152,9 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
         auto qsrc_ptr = qsrc;
         auto src_dscales_ptr = src_dscales;
         int vec_loop_end = (ic_groups - 1) * jbgp.src_quant_group_size;
+        vec_loop_end = rnd_dn(jbgp.ic, jbgp.src_quant_group_size);
+        std::cout << "============:" << ic_groups << " ==ic " << jbgp.ic << "==" << jbgp.src_quant_group_size
+                  << "vec_loop_end:" << vec_loop_end << std::endl;
 
         parallel_nd(jbgp.mb, [&](int mb) {
             src_quantization_runtime_params_t rt_params = {};

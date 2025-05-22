@@ -55,14 +55,22 @@ quant_entry_t quant_entry_t::deserialize(deserializer_t &d) {
 
 std::string quant_entry_t::get_verbose() const {
     std::string s;
-    s.append(std::to_string(mask_));
-    s.append(":").append(dnnl_dt2str(data_type_));
+    s.append(std::to_string(get_mask()));
+    s.append(":").append(dnnl_dt2str(get_data_type()));
+    s.append(":").append(std::to_string(type_));
+    s.append(":");
     if (group_ndims_ > 0) {
-        s.append(":")
-                .append(std::to_string(group_dims_[0]))
+                s.append(std::to_string(group_dims_[0]))
                 .append("x")
                 .append(std::to_string(group_dims_[1]));
     }
+    s.append(":");
+    if (get_ndims() > 0) {
+            s.append(std::to_string(get_dims()[0]))
+            .append("x")
+            .append(std::to_string(get_dims()[1]));
+    }
+
     return s;
 }
 
@@ -152,7 +160,7 @@ status_t quant_entry_t::set_scales(const dims_t dims, int ndims, data_type_t dat
 }
 
 status_t quant_entry_t::set_zero_points(const dims_t dims, int ndims, data_type_t data_type, int mask) {
-    type_ = type_ | OV_ZERO_POINTS;
+    type_ = type_ | DNNL;
     is_set_wei = true;
     ndims_wei = ndims;
     mask_wei = mask;
@@ -160,6 +168,18 @@ status_t quant_entry_t::set_zero_points(const dims_t dims, int ndims, data_type_
         utils::array_copy(dims_wei, dims, ndims_wei);
         group_ndims_ = ndims;
         utils::array_copy(group_dims_, dims, group_ndims_);
+    }
+    data_type_wei = data_type;
+    return status::success;
+}
+
+status_t quant_entry_t::set_zero_points(const dims_t dims, int ndims, data_type_t data_type) {
+    type_ = type_ | OV_ZERO_POINTS;
+    is_set_wei = true;
+    ndims_wei = ndims;
+    mask_wei = 0;
+    if (ndims_wei > 0) {
+        utils::array_copy(dims_wei, dims, ndims_wei);
     }
     data_type_wei = data_type;
     return status::success;
@@ -257,15 +277,16 @@ status_t quant_entries_t::set_zero_points(int arg, const dims_t dims, int ndims,
     std::cout << "set_zero_points end" << std::endl;
     return status::success;
 }
-// status_t zero_points_t::set(int arg, int mask, data_type_t data_type, int group_ndims,
-//         const dims_t group_dims) {
-//     //if (!check_arg(arg)) return status::invalid_arguments;
-//     //CHECK(entries_[arg].set(mask, data_type, group_ndims, group_dims));
-//     //if (arg == DNNL_ARG_WEIGHTS) {
-//     //    CHECK(entries_[arg].set_zero_points(group_dims, group_ndims, data_type, mask));
-//     //}
-//     //return status::success;
-// }
+status_t zero_points_t::set(int arg, int mask, data_type_t data_type, int group_ndims,
+        const dims_t group_dims) {
+    if (!check_arg(arg)) return status::invalid_arguments;
+    if (arg == DNNL_ARG_WEIGHTS) {
+        CHECK(entries_[arg].set_zero_points(group_dims, group_ndims, data_type, mask));
+    } else {
+        CHECK(entries_[arg].set(mask, data_type, group_ndims, group_dims));
+    }
+    return status::success;
+}
 
 } // namespace impl
 } // namespace dnnl

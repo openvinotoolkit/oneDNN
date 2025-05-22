@@ -1453,7 +1453,8 @@ status_t jit_brgemm_ip_conf_t::init_conf_base(cpu_isa_t isa,
         }
 
         if (jbgp.with_src_dynamic_quant) {
-            jbgp.src_quant_group_size = attr.src_dyn_quant_params_.group_size_;
+            std::cout << "=========set dyn quant params" << std::endl;
+            jbgp.src_quant_group_size = attr.src_dyn_quant_params_.get();
         }
 
         if (jbgp.mb > 4 && !jbgp.with_src_dynamic_quant) {

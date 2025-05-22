@@ -191,6 +191,7 @@ status_t dnnl_primitive_execute(const primitive_iface_t *primitive_iface,
             && IMPLICATION(nargs > 0, c_args != nullptr);
     if (!ok) return invalid_arguments;
 
+    std::cout << "dnnl_primitive_execute =====================1" << std::endl;
     exec_args_t args;
     status_t status = cvt_primitive_args(
             primitive_iface->pd()->impl().get(), nargs, c_args, args);
@@ -198,6 +199,7 @@ status_t dnnl_primitive_execute(const primitive_iface_t *primitive_iface,
 
     stream->before_exec_hook();
 
+    std::cout << "dnnl_primitive_execute =====================2" << std::endl;
     exec_ctx_t ctx(stream, std::move(args));
 #ifdef DNNL_ENABLE_STACK_CHECKER
     stack_checker::stack_checker_t sc("dnnl_primitive_execute");
@@ -211,7 +213,9 @@ status_t dnnl_primitive_execute(const primitive_iface_t *primitive_iface,
 #else
     status = dnnl::impl::primitive_execute(primitive_iface, ctx);
 #endif
+    std::cout << "dnnl_primitive_execute =====================3" << std::endl;
     stream->after_exec_hook();
+    std::cout << "dnnl_primitive_execute =====================4" << std::endl;
 
     return status;
 }

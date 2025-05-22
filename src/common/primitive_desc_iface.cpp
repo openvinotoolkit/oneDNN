@@ -44,10 +44,14 @@ status_t primitive_desc_create(primitive_desc_iface_t **primitive_desc_iface,
             softmax);
     if (!known_primitive_kind) return invalid_arguments;
 
+    std::cout << "primitive_desc_create =====================1" << std::endl;
     auto pd_iface = utils::make_unique<primitive_desc_iface_t>(engine, op_desc,
             attr, hint_fwd_pd ? hint_fwd_pd->impl().get() : nullptr);
+    std::cout << "primitive_desc_create =====================2" << std::endl;
     if (pd_iface == nullptr) return out_of_memory;
+    std::cout << "primitive_desc_create =====================3" << std::endl;
     CHECK(pd_iface->init());
+    std::cout << "primitive_desc_create =====================4" << std::endl;
 
     *primitive_desc_iface = pd_iface.release();
 
@@ -73,9 +77,12 @@ status_t dnnl_primitive_desc::init() {
     if (!pd_iterator_) return status::out_of_memory;
     if (!pd_iterator_->is_initialized()) return out_of_memory;
 
+    std::cout << "primitive_desc_create =====================5" << std::endl;
     ++(*pd_iterator_);
+    std::cout << "primitive_desc_create =====================6" << std::endl;
     if (*pd_iterator_ == pd_iterator_->end()) return unimplemented;
 
+    std::cout << "primitive_desc_create =====================7" << std::endl;
     pd_ = *(*pd_iterator_);
     engine_ = pd_iterator_->engine();
 
