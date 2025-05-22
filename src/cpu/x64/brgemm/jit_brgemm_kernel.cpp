@@ -2676,7 +2676,6 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(dim_t bd_block2,
                 broadcast_A(bcst(bd), bd, rd);
             for (dim_t ld = 0; ld < ld_block2; ld++) {
                 load_B(0, rd, ld);
-
                 for (dim_t bd = bd_b; bd < bd_e; bd++) {
                     auto vmm = accm(ld_block2, bd, ld);
                     if (is_emdbd)
@@ -2958,16 +2957,17 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(dim_t bd_block2,
                     }
                 }
 
-            if (brg.with_wei_decomp_scales && brg.bd_block == 1) {
-                for (int ld = 0; ld < ld_block2; ld++) {
-                    auto vmm_accm_tmp = accm_tmp(ld_block2, 0, ld);
-                    auto vmm_accm = accm(ld_block2, 0, ld);
-                    if (brg.wei_decomp_scales_stride == 0) {
-                        load_scales(bcst(), ptr[reg_local_wei_scales]);
-                    } else {
-                        load_scales(bcst(), ptr[reg_local_wei_scales + ld * brg.ld_block * types::data_type_size(brg.wei_decomp_scales_dt)]);
-                    }
-                    uni_vfmadd231ps(vmm_accm, vmm_accm_tmp, bcst());
+                if (brg.with_wei_decomp_scales && brg.bd_block == 1) {
+                    for (int ld = 0; ld < ld_block2; ld++) {
+                        auto vmm_accm_tmp = accm_tmp(ld_block2, 0, ld);
+                        auto vmm_accm = accm(ld_block2, 0, ld);
+                        if (brg.wei_decomp_scales_stride == 0) {
+                            load_scales(bcst(), ptr[reg_local_wei_scales]);
+                        } else {
+                            load_scales(bcst(), ptr[reg_local_wei_scales + ld * brg.ld_block * types::data_type_size(brg.wei_decomp_scales_dt)]);
+                        }
+                        uni_vfmadd231ps(vmm_accm, vmm_accm_tmp, bcst());
+                     }
                 }
 
                 mov(reg_ldb_loop, ptr[rsp + reg_ldb_loop_offs_]);
