@@ -112,13 +112,13 @@ private:
     // scale
     bool is_set_scale = false;
     int ndims_scale = 0;
-    int mask_scale = 0;
+    int mask_scale = INT_MIN;
     dims_t dims_scale {};
     data_type_t data_type_scale = data_type::undef;
     // zero_point
     bool is_set_wei = false;
     int ndims_wei = 0;
-    int mask_wei = 0;
+    int mask_wei = INT_MIN;
     dims_t dims_wei {};
     data_type_t data_type_wei = data_type::s32;
 };

@@ -205,7 +205,7 @@ int calculate_ldb_params(brgemm_desc_t *brg, const int try_ld_block2) {
     return nstl::max(1, adj_ld_block2);
 }
 
-int calculate_max_bcast_block(brgemm_desc_t *brg, const int adj_ld_block2) {
+/*int calculate_max_bcast_block(brgemm_desc_t *brg, const int adj_ld_block2) {
 
     // TODO: Calculating the number of available registers should be re-factored
     // to use one code here and in brgemm kernel generator on
@@ -277,13 +277,69 @@ int calculate_max_bcast_block(brgemm_desc_t *brg, const int adj_ld_block2) {
     auto max_bcast_block
             = nstl::min(microkernel_max_bcast_block, store_max_bcast_block);
 
+    // non-VNNI INT8 dot product required 2 temp vectors
+    if (brg->is_int8 && !brg->has_int8_vnni) max_bcast_block -= 2;
+
     // openvino extension
-    // if (one_of(brg->dt_b, data_type::nf4) && brg->isa_impl == avx2) max_bcast_block -= 5;
-    // if (one_of(brg->dt_b, data_type::f4_e2m1) && brg->isa_impl == avx2) max_bcast_block -= 2;
-    // if (one_of(brg->dt_b, data_type::nf4, data_type::f4_e2m1) && brg->isa_impl != avx2) max_bcast_block -= 1;
-    // if (brg->with_wei_decomp_zero_points && brg->wei_decomp_zero_points_stride == 0 && !brg->with_src_dyn_quant) max_bcast_block -= 1;
-    // if (brg->with_src_dyn_quant) max_bcast_block -= 1;
-    // max_bcast_block /= adj_ld_block2;
+    if (one_of(brg->dt_b, data_type::nf4) && brg->isa_impl == avx2) max_bcast_block -= 5;
+    if (one_of(brg->dt_b, data_type::f4_e2m1) && brg->isa_impl == avx2) max_bcast_block -= 2;
+    if (one_of(brg->dt_b, data_type::nf4, data_type::f4_e2m1) && brg->isa_impl != avx2) max_bcast_block -= 1;
+    if (brg->with_wei_decomp_zero_points && brg->wei_decomp_zero_points_stride == 0 && !brg->with_src_dyn_quant) max_bcast_block -= 1;
+    if (brg->with_src_dyn_quant) max_bcast_block -= 1;
+    max_bcast_block /= adj_ld_block2;
+    return max_bcast_block;
+}*/
+int calculate_max_bcast_block(brgemm_desc_t *brg, const int adj_ld_block2) {
+
+    constexpr int max_bcst_regs = 1;
+    const bool req_compensation = brg->req_s8s8_compensation
+            || brg->zp_type_a != brgemm_broadcast_t::none;
+    const bool req_zp_a_comp_pads
+            = (brg->req_cal_comp_pads || brg->brgattr.max_top_vpad > 0
+                      || brg->brgattr.max_bottom_vpad > 0)
+            && brg->zp_type_a != brgemm_broadcast_t::none;
+    const int beta_regs = !one_of(brg->beta, 1.f, 0.f);
+    const int b_vnni_regs = brg->is_f16_b_non_amx_vnni() ? 2 : 0;
+
+    const int max_isa_regs = isa_num_vregs(brg->isa_impl);
+    // note: the 'adj_ld_block2' already removes the necessary registers
+    // for 'embd_bcst'
+    auto max_reg_count = max_isa_regs - max_bcst_regs - beta_regs
+            - req_compensation - req_zp_a_comp_pads - b_vnni_regs;
+    if (req_zp_a_comp_pads)
+        max_reg_count
+                = nstl::min(max_reg_count, max_isa_regs - max_bcst_regs - 5);
+
+    const int postops_regs = brg->attr()
+            ? injector::aux_vec_count(
+                    brg->attr()->post_ops_, brg->isa_impl, true)
+            : 0;
+    int max_bcast_block
+            = max_reg_count - nstl::max(adj_ld_block2, postops_regs);
+
+    if (brg->is_bf16_emu) {
+        // in theory, vmm bf16_emu register indices overlap with other vmm
+        // registers related to 'max_bcast_block'
+        assert(is_superset(brg->isa_impl, avx512_core));
+        constexpr int bf16_emu_reg_count = 28;
+        max_bcast_block = nstl::min(max_bcast_block, bf16_emu_reg_count);
+    }
+
+    // non-VNNI INT8 dot product required 2 temp vectors
+    if (brg->is_int8 && !brg->has_int8_vnni) max_bcast_block -= 2;
+
+    if (one_of(brg->dt_b, data_type::nf4) && brg->isa_impl == avx2) max_bcast_block -= 5;
+    if (one_of(brg->dt_b, data_type::f4_e2m1) && brg->isa_impl == avx2) max_bcast_block -= 2;
+    if (one_of(brg->dt_b, data_type::nf4, data_type::f4_e2m1) && brg->isa_impl != avx2) max_bcast_block -= 1;
+    if (brg->with_wei_decomp_zero_points && brg->wei_decomp_zero_points_stride == 0) max_bcast_block -= 1;
+    if (brg->with_src_dyn_quant) max_bcast_block -= 2;
+    if (brg->with_src_dyn_quant && brg->with_wei_decomp_zero_points && brg->wei_decomp_zero_points_stride != 0) max_bcast_block -= adj_ld_block2;
+
+    max_bcast_block /= adj_ld_block2;
+    if (brg->with_src_dyn_quant) {
+        max_bcast_block /= 2;
+    }
+
     return max_bcast_block;
 }
 

@@ -699,9 +699,22 @@ status_t jit_brgemm_ip_fwd_conf_t::init_conf(cpu_isa_t isa,
 
     // Current implementation of grouped weights decompression algorithm requires K size to be aligned on group size.
     // Besides that "batched" usage of brgemm block is not covered, so forcing the value to 1.
-    if (jbgp.with_grouped_weights_decompression || jbgp.with_src_dynamic_quant) {
+    if (jbgp.with_src_dynamic_quant) {
+        size_t max_ic_group_size = k_blk;
+        if (jbgp.wei_scales_ic_group_size != static_cast<size_t>(jbgp.ic))
+            max_ic_group_size = std::max(max_ic_group_size, jbgp.wei_scales_ic_group_size);
+        if (jbgp.wei_zero_points_ic_group_size != static_cast<size_t>(jbgp.ic))
+            max_ic_group_size = std::max(max_ic_group_size, jbgp.wei_zero_points_ic_group_size);
+        max_ic_group_size = std::max(max_ic_group_size, jbgp.src_quant_group_size);
+
+        if ((jbgp.nb_ic_blocking * k_blk) % max_ic_group_size != 0) {
+            jbgp.nb_ic_blocking = max_ic_group_size;
+        }
+        jbgp.K = k_blk * jbgp.nb_ic_blocking;
+        jbgp.gemm_batch_size = 1;
+        jbgp.nthr_ic_b = 1;
+    } else if (jbgp.with_grouped_weights_decompression) {
         auto min_ic_group_size = std::min(jbgp.wei_scales_ic_group_size, jbgp.wei_zero_points_ic_group_size);
-        min_ic_group_size = std::min(min_ic_group_size, jbgp.src_quant_group_size);
         if ((jbgp.nb_ic_blocking * k_blk) % min_ic_group_size != 0) {
             jbgp.nb_ic_blocking = 64;
         }
@@ -709,6 +722,19 @@ status_t jit_brgemm_ip_fwd_conf_t::init_conf(cpu_isa_t isa,
         jbgp.gemm_batch_size = 1;
         jbgp.nthr_ic_b = 1;
     }
+    /*if (jbgp.with_grouped_weights_decompression || jbgp.with_src_dynamic_quant) {
+        auto min_ic_group_size = std::min(jbgp.wei_scales_ic_group_size, jbgp.wei_zero_points_ic_group_size);
+        min_ic_group_size = std::min(min_ic_group_size, jbgp.src_quant_group_size);
+        if ((jbgp.nb_ic_blocking * k_blk) % min_ic_group_size != 0) {
+            jbgp.nb_ic_blocking = 64;
+        }
+        std::cout << "=========k_blk:" << k_blk << std::endl;
+        std::cout << "=========jbgp.nb_ic_blocking:" << jbgp.nb_ic_blocking << std::endl;
+        jbgp.K = k_blk * jbgp.nb_ic_blocking;
+        jbgp.gemm_batch_size = 1;
+        jbgp.nthr_ic_b = 1;
+    }
+    */
 
     const int nthrs_other = jbgp.nthr / jbgp.nthr_ic_b;
     const int min_work = 15;
@@ -1453,7 +1479,6 @@ status_t jit_brgemm_ip_conf_t::init_conf_base(cpu_isa_t isa,
         }
 
         if (jbgp.with_src_dynamic_quant) {
-            std::cout << "=========set dyn quant params" << std::endl;
             jbgp.src_quant_group_size = attr.src_dyn_quant_params_.get();
         }
 

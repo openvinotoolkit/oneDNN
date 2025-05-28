@@ -888,15 +888,19 @@ void jit_brgemm_kernel_t<Wmm>::ldb_regs_shift(dim_t ld_block2, bool is_tail) {
     }
 
     if (brg.with_wei_decomp) {
-        mov(reg_aux_wei_scales, ptr[rsp + reg_aux_wei_scales_offs_]);
-        add(reg_aux_wei_scales, (is_tail) ? wei_scales_offset(1, true) : wei_scales_offset(ld_block2));
-        mov(ptr[rsp + reg_aux_wei_scales_offs_], reg_aux_wei_scales);
-        mov(ptr[rsp + reg_aux2_wei_scales_offs_], reg_aux_wei_scales);
+        if (brg.with_wei_decomp_scales && brg.wei_decomp_scales_stride != 0 ) {
+            mov(reg_aux_wei_scales, ptr[rsp + reg_aux_wei_scales_offs_]);
+            add(reg_aux_wei_scales, (is_tail) ? wei_scales_offset(1, true) : wei_scales_offset(ld_block2));
+            mov(ptr[rsp + reg_aux_wei_scales_offs_], reg_aux_wei_scales);
+            mov(ptr[rsp + reg_aux2_wei_scales_offs_], reg_aux_wei_scales);
+        }
 
-        mov(reg_aux_wei_zp, ptr[rsp + reg_aux_wei_zero_points_offs_]);
-        add(reg_aux_wei_zp, (is_tail) ? wei_zp_offset(1, true) : wei_zp_offset(ld_block2));
-        mov(ptr[rsp + reg_aux_wei_zero_points_offs_], reg_aux_wei_zp);
-        mov(ptr[rsp + reg_aux2_wei_zero_points_offs_], reg_aux_wei_zp);
+        if (brg.with_wei_decomp_zero_points && brg.wei_decomp_zero_points_stride != 0 ) {
+            mov(reg_aux_wei_zp, ptr[rsp + reg_aux_wei_zero_points_offs_]);
+            add(reg_aux_wei_zp, (is_tail) ? wei_zp_offset(1, true) : wei_zp_offset(ld_block2));
+            mov(ptr[rsp + reg_aux_wei_zero_points_offs_], reg_aux_wei_zp);
+            mov(ptr[rsp + reg_aux2_wei_zero_points_offs_], reg_aux_wei_zp);
+        }
     }
 
     if (brg.zp_type_a != brgemm_broadcast_t::none) {
@@ -3460,8 +3464,9 @@ void jit_brgemm_kernel_t<Wmm>::bdb_loop() {
         xor_(reg_a_offset, reg_a_offset);
         if (brg.is_tmm)
             bdb_loop_amx(skip_accumulation);
-        else
+        else {
             bdb_loop_avx512(skip_accumulation);
+        }
     };
 
     if (brg.brgattr.generate_skip_accumulation) {
@@ -3531,7 +3536,6 @@ void jit_brgemm_kernel_t<Wmm>::generate() {
     }
 
     read_params();
-
     bdb_loop();
 
     add(rsp, stack_space_needed_);
