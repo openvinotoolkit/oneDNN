@@ -151,12 +151,12 @@ inline bool simple_attr_check(const primitive_attr_t *attr,
     smask_t skip_mask = smask_t::scales;
     if (sum_support) skip_mask = skip_mask | smask_t::post_ops;
     if (!attr->has_default_values(skip_mask)) return false;
-    for (int arg : {DNNL_ARG_SRC, DNNL_ARG_DST}) {
-        // Data type for scales is not generally supported.
-        if (!attr->scales_.has_default_data_type(arg)) return false;
-        // Groups are generally not supported.
-        if (!attr->scales_.get(arg).has_default_groups()) return false;
-    }
+    // for (int arg : {DNNL_ARG_SRC, DNNL_ARG_DST}) {
+    //     // Data type for scales is not generally supported.
+    //     if (!attr->scales_.has_default_data_type(arg)) return false;
+    //     // Groups are generally not supported.
+    //     if (!attr->scales_.get(arg).has_default_groups()) return false;
+    // }
     if (many_scales_support) return true;
     int src_mask, dst_mask;
     if (get_scales_mask(attr, &src_mask, &dst_mask) != status::success)
@@ -2304,9 +2304,9 @@ struct simple_reorder_impl<SIMPLE_REORDER_TEMPL_CALL,
         if (!input_d.has_runtime_dims_or_strides()
             && input_d.is_dense() && output_d.is_dense()
             && simple_attr_check(attr, false, true)) {
-                return status::invalid_arguments;
+                return status::success;
         }
-        return status::success;
+        return status::invalid_arguments;
     }
 
     GET_SCRATCHPAD_SIZE_ZERO();
