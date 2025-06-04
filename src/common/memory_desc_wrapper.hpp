@@ -393,8 +393,7 @@ struct memory_desc_wrapper : public c_compatible {
         if (utils::one_of(format_kind(), format_kind::undef, format_kind::any))
             return false;
         if (has_runtime_dims_or_strides() || has_broadcast()) return false;
-        return nelems(with_padding) * data_type_size()
-                / sub_byte_data_type_multiplier()
+        return utils::div_up(nelems(with_padding)* data_type_size(), sub_byte_data_type_multiplier())
                 == size(0, /* include_additional_size = */ false);
     }
 
@@ -714,7 +713,7 @@ inline bool memory_desc_wrapper::similar_to(const memory_desc_wrapper &rhs,
                                     rhs.padded_dims() + ds, ndims() - ds)
                             && custom_cpm(padded_offsets() + ds,
                                     rhs.padded_offsets() + ds, ndims() - ds))
-            && IMPLICATION(check_off0, (offset0() == DNNL_RUNTIME_DIM_VAL || rhs.offset0() ==DNNL_RUNTIME_DIM_VAL || offset0() == rhs.offset0()));           
+            && IMPLICATION(check_off0, (offset0() == DNNL_RUNTIME_DIM_VAL || rhs.offset0() ==DNNL_RUNTIME_DIM_VAL || offset0() == rhs.offset0()));
 }
 
 inline bool memory_desc_wrapper::consistent_with(

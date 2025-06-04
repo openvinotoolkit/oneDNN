@@ -833,7 +833,7 @@ std::ostream &operator<<(std::ostream &ss, const primitive_attr_t *attr) {
 
     const src_dyn_quant_params_t &dyn_qp = attr->src_dyn_quant_params_;
     if (!dyn_qp.has_default_values()) {
-        ss << "src_dyn_quant_group_size:" << dyn_qp.group_size_ << ";";
+        ss << "src_dyn_quant_group_size:" << dyn_qp.get() << ";";
     }
 
     if (!attr->dropout_.has_default_values()) {

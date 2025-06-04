@@ -116,7 +116,7 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
         // decompression algorithm assumes scales/zero_points buffers are aligned on oc_block size
         if (jbgp.oc % jbgp.simd_w != 0) {
             if (!pd()->attr()->scales_.get(DNNL_ARG_WEIGHTS).has_default_values()) {
-                auto dims = pd()->attr()->scales_.get(DNNL_ARG_WEIGHTS).dims_;
+                auto dims = pd()->attr()->scales_.get(DNNL_ARG_WEIGHTS).get_dims();
                 auto decomp_scales_buf = scratchpad.template get<uint8_t>(key_decompression_scales);
                 std::memcpy(decomp_scales_buf, wei_scales, dims[0] * dims[1] * wei_scales_dt_size);
                 wei_scales = decomp_scales_buf;

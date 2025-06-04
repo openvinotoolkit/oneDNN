@@ -302,14 +302,14 @@ status_t brgemm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
         brg->with_wei_decomp_scales = !wei_scales.has_default_values();
         brg->wei_decomp_scales_group_size = wei_d.dims()[1];
         if (brg->with_wei_decomp_scales) {
-            brg->wei_decomp_scales_dt = wei_scales.data_type_;
+            brg->wei_decomp_scales_dt = wei_scales.get_data_type();
             if (!one_of(brg->wei_decomp_scales_dt, f32, e8m0))
                 return status::unimplemented;
 
-            auto ld_dim = wei_scales.dims_[0];
+            auto ld_dim = wei_scales.get_dims()[0];
             brg->wei_decomp_scales_stride = ld_dim > 1 ? ld_dim : 0;
-            brg->wei_decomp_scales_group_size = wei_d.dims()[1] / wei_scales.dims_[1];
-            brg->with_grouped_wei_decomp |= wei_scales.dims_[1] != 1;
+            brg->wei_decomp_scales_group_size = wei_d.dims()[1] / wei_scales.get_dims()[1];
+            brg->with_grouped_wei_decomp |= wei_scales.get_dims()[1] != 1;
         }
 
         brg->with_wei_decomp_zero_points = !attr->zero_points_.has_default_values(DNNL_ARG_WEIGHTS);
@@ -328,7 +328,7 @@ status_t brgemm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
 
     brg->src_scales_group_size = wei_d.dims()[1];
     if (brg->with_src_dyn_quant) {
-        brg->src_scales_group_size = attr->src_dyn_quant_params_.group_size_;
+        brg->src_scales_group_size = attr->src_dyn_quant_params_.get();
         brg->with_grouped_wei_decomp = true;
         brg->src_scales_stride = div_up(wei_d.dims()[1], brg->src_scales_group_size);
     }
@@ -527,20 +527,20 @@ status_t brgemm_desc_set_postops(brgemm_desc_t *brg,
         zp_type = brgemm_broadcast_t::none;
 
         const bool skip_zero_point
-                = mem_arg == DNNL_ARG_WEIGHTS && brg->skip_zp_b_compensation;
+                = (mem_arg == DNNL_ARG_WEIGHTS && brg->skip_zp_b_compensation);
         if (skip_zero_point) return status::success;
-
         if (!zp.has_default_values(mem_arg)) {
             int mask = zp.get_mask(mem_arg);
             if (mask == 0) {
                 zp_type = brgemm_broadcast_t::per_tensor;
             } else if (mask == (1 << 1)) {
                 zp_type = brgemm_broadcast_t::per_n;
+            } else if (mask == 1 && mem_arg == DNNL_ARG_WEIGHTS ) {
+                zp_type = brgemm_broadcast_t::none;
             } else {
                 return status::unimplemented;
             }
         }
-
         return status::success;
     };
 

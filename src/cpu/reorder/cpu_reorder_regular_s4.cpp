@@ -29,7 +29,6 @@ const impl_list_map_t &regular_s4_impl_list_map() {
             nullptr,
         }},
         {{s4, data_type::undef, 0}, {
-            DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64::brgemm_matmul_copy_reorder_t))
             REG_SR(s4, any, s4, OI8i8o2i, fmt_order_keep)
             REG_SR(s4, any, s4, OI8i16o2i, fmt_order_keep)
             REG_SR(s4, any, s4, OI8i24o2i, fmt_order_keep)
@@ -44,6 +43,11 @@ const impl_list_map_t &regular_s4_impl_list_map() {
             REG_SR(s4, any, f32, any, fmt_order::any, spec::reference)
             REG_SR(s4, any, bf16, any, fmt_order::any, spec::reference)
             REG_SR(s4, any, f16, any, fmt_order::any, spec::reference)
+            nullptr,
+        }},
+        {{s4, f32, 0}, {
+            REG_SR(s4, any, f32, any, fmt_order::any, spec::reference)
+            DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64_brgemm_matmul_copy_reorder_t))
             nullptr,
         }},
     });

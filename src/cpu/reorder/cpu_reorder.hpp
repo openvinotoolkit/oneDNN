@@ -136,6 +136,8 @@ constexpr bool fmt_order_any = fmt_order::any;
 #if DNNL_X64
 using x64_jit_blk_reorder_t = x64::jit_blk_reorder_t;
 using x64_jit_uni_reorder_t = x64::jit_uni_reorder_t;
+using x64_brgemm_matmul_copy_reorder_t = x64::brgemm_matmul_copy_reorder_t;
+using x64_jit_uni_reorder_direct_copy_t = x64::jit_uni_reorder_direct_copy_t;
 #elif DNNL_AARCH64
 using aarch64_jit_blk_reorder_t = aarch64::jit_blk_reorder_t;
 using aarch64_jit_uni_reorder_t = aarch64::jit_uni_reorder_t;
