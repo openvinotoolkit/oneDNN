@@ -67,10 +67,10 @@
 #include <iostream>
 #endif
 
+#include <map>
 // for debug trace in GCC
 #if !defined(NDEBUG) && defined(__GNUC__) && !(defined(__ANDROID__) || defined(ANDROID))
 #include <execinfo.h>
-#include <map>
 #include <sstream>
 #endif
 
