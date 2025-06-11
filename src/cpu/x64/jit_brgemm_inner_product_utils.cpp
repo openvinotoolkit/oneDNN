@@ -1443,9 +1443,13 @@ status_t jit_brgemm_ip_conf_t::init_conf_base(cpu_isa_t isa,
 
         jbgp.wei_scales_ic_group_size = jbgp.ic;
         auto wei_scales = attr.scales_.get(DNNL_ARG_WEIGHTS);
-        jbgp.wei_decomp_scales_dt = wei_scales.get_data_type();
-        if (!one_of(jbgp.wei_decomp_scales_dt, f32, e8m0))
-            return status::unimplemented;
+        if (!wei_scales.has_default_values()) {
+            jbgp.wei_decomp_scales_dt = wei_scales.get_data_type();
+            if (!one_of(jbgp.wei_decomp_scales_dt, f32, e8m0))
+                return status::unimplemented;
+        } else {
+            jbgp.wei_decomp_scales_dt = f32;
+        }
         if (!wei_scales.has_default_values() && wei_scales.get_dims()[1] != 1) {
             jbgp.with_grouped_weights_decompression = true;
             jbgp.wei_scales_ic_group_size = div_up(jbgp.ic, wei_scales.get_dims()[1]);
