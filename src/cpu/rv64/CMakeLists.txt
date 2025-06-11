@@ -32,7 +32,7 @@ if(NOT DNNL_RISCV_USE_RVV_INTRINSICS)
     endif()
 endif()
 
-if(NOT DNNL_CPU_RUNTIME STREQUAL "SEQ")
+if(NOT (DNNL_CPU_RUNTIME STREQUAL "SEQ" OR DNNL_CPU_RUNTIME STREQUAL "OMP"))
     message(FATAL_ERROR "Only sequential runtime is now supported for a RISC-V CPU")
 endif()
 
