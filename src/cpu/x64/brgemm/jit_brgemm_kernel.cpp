@@ -3130,7 +3130,8 @@ void jit_brgemm_kernel_t<Wmm>::ldb_loop(int bd_block2, bool is_bdb_tail,
             }
             rdb_group = rdb_group / brg.rd_block;
             auto rbd_blocks = brg.rdb / rdb_group;
-            auto max_rdb_unroll = 8;
+            // unrolling is limited to prevent exceeding L1i cache
+            auto max_rdb_unroll = brg.with_src_dyn_quant ? 8 : 2;
 
             if (brg.with_wei_decomp && rdb_group <= max_rdb_unroll) {
                 if (rbd_blocks > 0) {
