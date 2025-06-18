@@ -189,7 +189,7 @@ status_t jit_uni_pool_kernel_t<isa>::init_conf(
     const memory_desc_wrapper dst_d(
             ppd->is_fwd() ? ppd->dst_md() : ppd->diff_dst_md());
 
-    VDISPATCH_POOLING_IC(!has_large_buffers(ppd), VERBOSE_SHAPE_RESTRICTION);
+    // VDISPATCH_POOLING_IC(!has_large_buffers(ppd), VERBOSE_SHAPE_RESTRICTION);
 
     const int ndims = src_d.ndims();
 
