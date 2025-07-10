@@ -92,6 +92,15 @@ namespace impl {
 
 #define IMPLICATION(cause, effect) (!(cause) || !!(effect))
 
+#if defined(_MSC_VER) || defined(__INTEL_COMPILER) \
+        || defined(__INTEL_LLVM_COMPILER)
+#define FORCE_INLINE __forceinline
+#elif defined(__clang__) || defined(__GNUC__)
+#define FORCE_INLINE inline __attribute__((always_inline))
+#else
+#define FORCE_INLINE inline
+#endif
+
 namespace utils {
 
 /* a bunch of std:: analogues to be compliant with any msvs version
