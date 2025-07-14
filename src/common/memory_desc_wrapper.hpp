@@ -209,6 +209,7 @@ struct memory_desc_wrapper : public c_compatible {
      * For the rest data types returns 1. */
     size_t sub_byte_data_type_multiplier() const {
         if (utils::one_of(data_type(), data_type::s4, data_type::u4)) return 2;
+        if (data_type() == data_type::u2) return 4;
         return 1;
     }
 
