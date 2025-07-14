@@ -550,7 +550,8 @@ inline size_t data_type_vnni_granularity(const data_type_t data_type) {
     using namespace data_type;
     switch (data_type) {
         case f32:
-        case s32: return size_t(1);
+        case s32:
+        case u2: return size_t(1);
         case f16:
         case bf16:
         case s4:

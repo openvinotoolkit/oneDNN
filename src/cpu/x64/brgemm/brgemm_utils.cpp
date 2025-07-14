@@ -51,13 +51,13 @@ void init_kernel_datatype(
         brgemm_desc_t *brg, impl::data_type_t dt_a, impl::data_type_t dt_b) {
     assert(dt_a != data_type::undef && dt_b != data_type::undef);
     brg->is_int8 = utils::one_of(dt_a, data_type::u8, data_type::s8)
-            && utils::one_of(dt_b, data_type::u8, data_type::s8, data_type::u4);
-    brg->is_bf16 = (dt_a == data_type::bf16) && utils::one_of(dt_b, data_type::bf16, data_type::u8, data_type::s8, data_type::nf4, data_type::s4, data_type::u4, data_type::f4_e2m1);
+            && utils::one_of(dt_b, data_type::u8, data_type::s8, data_type::u4, data_type::u2);
+    brg->is_bf16 = (dt_a == data_type::bf16) && utils::one_of(dt_b, data_type::bf16, data_type::u8, data_type::s8, data_type::nf4, data_type::s4, data_type::u4, data_type::f4_e2m1, data_type::u2);
     // Note: f32:bf16 is treated as f32 case while f32:f16 has already been
     // treated as f16. Probably, need a common ground here.
     brg->is_f32 = (dt_a == data_type::f32)
             && utils::one_of(
-                    dt_b, data_type::f32, data_type::f16, data_type::bf16, data_type::u8, data_type::s8, data_type::nf4, data_type::s4, data_type::u4, data_type::f4_e2m1);
+                    dt_b, data_type::f32, data_type::f16, data_type::bf16, data_type::u8, data_type::s8, data_type::nf4, data_type::s4, data_type::u4, data_type::f4_e2m1, data_type::u2);
     brg->is_f16 = utils::one_of(data_type::f16, dt_a, dt_b) && !brg->is_f32;
     brg->is_fp8 = one_of(dt_a, data_type::f8_e5m2, data_type::f8_e4m3)
             && one_of(dt_b, data_type::f8_e5m2, data_type::f8_e4m3);
