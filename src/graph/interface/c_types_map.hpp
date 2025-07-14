@@ -65,6 +65,7 @@ const data_type_t f8_e5m2 = dnnl_f8_e5m2;
 const data_type_t f8_e4m3 = dnnl_f8_e4m3;
 const data_type_t s4 = dnnl_s4;
 const data_type_t u4 = dnnl_u4;
+const data_type_t u2 = dnnl_u2;
 } // namespace data_type
 
 using partition_policy_t = dnnl_graph_partition_policy_t;
