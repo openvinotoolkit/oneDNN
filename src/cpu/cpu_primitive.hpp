@@ -88,7 +88,7 @@
                     = ctx.memory_mdw(DNNL_ARG_ATTR_ZERO_POINTS | (arg)); \
             VCHECK_ATTR(utils::one_of(zero_points_d.data_type(), \
                                 data_type::s32, data_type::s8, data_type::u8, \
-                                data_type::s4, data_type::u4, data_type::f32), \
+                                data_type::s4, data_type::u4, data_type::u2, data_type::f32), \
                     VERBOSE_INVALID_DATATYPE, "zero points"); \
         } \
     } \

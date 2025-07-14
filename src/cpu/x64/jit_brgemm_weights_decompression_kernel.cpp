@@ -51,6 +51,16 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::init_decomp_params(std::fun
                     uni_vbroadcastss(vmm_params(ocb), xmm_params);
                     break;
                 }
+                case data_type::u2: {
+                    auto xmm_params = Xmm(vmm_params(ocb).getIdx());
+                    auto reg_tmp_32 = Reg32(reg_tmp.getIdx());
+                    movzx(reg_tmp_32, ptr[reg_params]);
+                    and_(reg_tmp_32, 0x3);
+                    uni_vmovq(xmm_params, reg_tmp);
+                    uni_vcvtdq2ps(xmm_params, xmm_params);
+                    uni_vbroadcastss(vmm_params(ocb), xmm_params);
+                    break;
+                }
                 case data_type::e8m0: {
                     auto xmm_params = Xmm(vmm_params(ocb).getIdx());
                     auto reg_tmp_32 = Reg32(reg_tmp.getIdx());
@@ -116,6 +126,17 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::load_weights(Vmm vmm_load, 
             } else {
                 uni_vpslld(vmm_load, vmm_load, 28);
                 vpsrad(vmm_load, vmm_load, 28);
+            }
+            uni_vcvtdq2ps(vmm_load, vmm_load);
+            break;
+        }
+        case data_type::u2: {
+            uni_vpmovzxbd(vmm_load, addr);
+            if (ic == 0) {
+                uni_vpsrld(vmm_load, vmm_load, 6);
+            } else {
+                uni_vpslld(vmm_load, vmm_load, 24 + 2 * ic);
+                uni_vpsrld(vmm_load, vmm_load, 30);
             }
             uni_vcvtdq2ps(vmm_load, vmm_load);
             break;
@@ -290,7 +311,15 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::generate() {
     Xbyak::Label ic_end_label;
 
     size_t weights_dt_size = types::data_type_size(jcp_.weights_dt);
-    size_t typesize_scale = one_of(jcp_.weights_dt, data_type::nf4, data_type::s4, data_type::u4, data_type::f4_e2m1) ? 2 : 1;
+    size_t typesize_scale = [&] {
+        if (jcp_.weights_dt == data_type::u2) {
+            return 4;
+        } else if (one_of(jcp_.weights_dt, data_type::nf4, data_type::s4, data_type::u4, data_type::f4_e2m1)) {
+            return 2;
+        } else {
+            return 1;
+        }
+    } ();
     size_t decomp_buf_dt_size = types::data_type_size(jcp_.decomp_buffer_dt);
 
     L(ic_loop_label);
@@ -316,21 +345,25 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::generate() {
                         uni_vmulps(vmm_load, vmm_load, vmm_scales(ocb));
                 }
 
-                auto ymm_store0 = Ymm(vmm_weights(0).getIdx());
-                auto ymm_store1 = Ymm(vmm_weights(1).getIdx());
-                auto ymm_aux0 = Ymm(vmm_weights(2).getIdx());
-                auto ymm_aux1 = Ymm(vmm_weights(3).getIdx());
+                for (size_t ic = 0; ic < jcp_.ic_internal_size; ic += 2) {
+                    auto ymm_store0 = Ymm(vmm_weights(ic).getIdx());
+                    auto ymm_store1 = Ymm(vmm_weights(ic + 1).getIdx());
+                    auto ymm_aux0 = Ymm(vmm_aux0().getIdx());
+                    auto ymm_aux1 = Ymm(vmm_aux1().getIdx());
 
-                vcvtneps2bf16(ymm_store0, vmm_weights(0));
-                vcvtneps2bf16(ymm_store1, vmm_weights(1));
-                vpunpcklwd(ymm_aux0, ymm_store0, ymm_store1);
-                vpunpckhwd(ymm_aux1, ymm_store0, ymm_store1);
-                vperm2i128(ymm_store0, ymm_aux0, ymm_aux1, 0x20);
-                vperm2i128(ymm_store1, ymm_aux0, ymm_aux1, 0x31);
+                    vcvtneps2bf16(ymm_store0, vmm_weights(ic));
+                    vcvtneps2bf16(ymm_store1, vmm_weights(ic + 1));
+                    vpunpcklwd(ymm_aux0, ymm_store0, ymm_store1);
+                    vpunpckhwd(ymm_aux1, ymm_store0, ymm_store1);
+                    vperm2i128(ymm_store0, ymm_aux0, ymm_aux1, 0x20);
+                    vperm2i128(ymm_store1, ymm_aux0, ymm_aux1, 0x31);
+                }
 
                 for (size_t ic = 0; ic < jcp_.ic_internal_size; ic++) {
                     auto ymm_store = Ymm(vmm_weights(ic).getIdx());
-                    size_t decomp_buffer_offset = (ocb * jcp_.ic_internal_size + ic) * vec_size * decomp_buf_dt_size;
+                    size_t decomp_buffer_offset = jcp_.weights_dt == data_type::u2 ?
+                        (((ic / 2) * oc_blocks_num + ocb) * 2 + (ic % 2)) * vec_size * decomp_buf_dt_size :
+                        (ocb * jcp_.ic_internal_size + ic) * vec_size * decomp_buf_dt_size;
                     const auto decomp_buffer_addr = ptr[reg_decomp_buffer + decomp_buffer_offset];
                     vmovdqu16(decomp_buffer_addr, ymm_store);
                 }

@@ -330,7 +330,7 @@ status_t brgemm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
         brg->wei_decomp_zero_points_group_size = wei_d.dims()[1];
         if (brg->with_wei_decomp_zero_points) {
             brg->wei_decomp_zero_points_dt = attr->zero_points_.get_data_type(DNNL_ARG_WEIGHTS);
-            if (!one_of(brg->wei_decomp_zero_points_dt, f32, u8))
+            if (!one_of(brg->wei_decomp_zero_points_dt, f32, u8, u2))
                 return status::unimplemented;
 
             auto ld_dim = attr->zero_points_.get_dims(DNNL_ARG_WEIGHTS)[0];
