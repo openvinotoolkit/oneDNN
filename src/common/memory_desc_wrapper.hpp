@@ -223,6 +223,7 @@ struct memory_desc_wrapper : public c_compatible {
         if (utils::one_of(data_type(), data_type::s4, data_type::u4,
                     data_type::f4_e2m1, data_type::f4_e3m0))
             return 2;
+        if (data_type() == data_type::u2) return 4;
         return 1;
     }
 

@@ -109,6 +109,8 @@ private:
     Vmm vmm_mask() { return vmm_tmp(1); }
     Vmm vmm_mask8() { return vmm_tmp(2); }
     Vmm vmm_mask7() { return vmm_tmp(3); }
+    Vmm vmm_aux0() { return Vmm(14); }
+    Vmm vmm_aux1() { return Vmm(15); }
 
     Xbyak::Reg64 reg_weights = r8;
     Xbyak::Reg64 reg_decomp_buffer = r9;
