@@ -62,7 +62,8 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
             const bool is_int8 = one_of(src_dt, u8, s8);
             const bool is_wei_decomp
                     = (one_of(src_dt, f32, bf16)
-                              && one_of(wei_dt, u8, s8, nf4, s4, u4, f4_e2m1))
+                              && one_of(wei_dt, u8, s8, nf4, s4, u4,
+                                      f4_e2m1, u2))
                     || (src_dt == f32 && one_of(wei_dt, f16, bf16));
 
             using skip_mask_t = primitive_attr_t::skip_mask_t;
@@ -250,24 +251,19 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
                         == weights_decomp_kind_t::prepack) {
             weights_decompression_compile_params_t jcp = {};
             jcp.oc_size = pd()->jbgp_.oc_block;
-            jcp.ic_internal_size = pd()->jbgp_.wei_dt == data_type::bf16
-                            || utils::one_of(pd()->jbgp_.orig_wei_dt,
-                                    data_type::nf4, data_type::s4,
-                                    data_type::u4, data_type::f4_e2m1)
-                    ? 2
-                    : 1;
-            jcp.with_scales = !pd()->attr()
-                                       ->scales_.get(DNNL_ARG_WEIGHTS)
-                                       .has_default_values();
-            jcp.broadcast_scales
-                    = pd()->attr()->scales_.get(DNNL_ARG_WEIGHTS).get_dims()[0]
-                    == 1;
-            jcp.with_zero_points
-                    = !pd()->attr()->zero_points_.has_default_values(
-                            DNNL_ARG_WEIGHTS);
-            jcp.broadcast_zero_points
-                    = pd()->attr()->zero_points_.get_dims(DNNL_ARG_WEIGHTS)[0]
-                    == 1;
+                        jcp.ic_internal_size = [&]() {
+                                if (pd()->jbgp_.orig_wei_dt == data_type::u2) return 4;
+                                if (pd()->jbgp_.wei_dt == data_type::bf16) return 2;
+                                if (utils::one_of(pd()->jbgp_.orig_wei_dt, data_type::nf4,
+                                                        data_type::s4, data_type::u4,
+                                                        data_type::f4_e2m1))
+                                        return 2;
+                                return 1;
+                        }();
+            jcp.with_scales = !pd()->attr()->scales_.get(DNNL_ARG_WEIGHTS).has_default_values();
+            jcp.broadcast_scales = pd()->attr()->scales_.get(DNNL_ARG_WEIGHTS).get_dims()[0] == 1;
+            jcp.with_zero_points = !pd()->attr()->zero_points_.has_default_values(DNNL_ARG_WEIGHTS);
+            jcp.broadcast_zero_points = pd()->attr()->zero_points_.get_dims(DNNL_ARG_WEIGHTS)[0] == 1;
             jcp.weights_dt = pd()->jbgp_.orig_wei_dt;
             jcp.decomp_buffer_dt = pd()->jbgp_.wei_dt;
             jcp.scales_dt = pd()->jbgp_.wei_decomp_scales_dt;

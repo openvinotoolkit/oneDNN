@@ -2335,6 +2335,119 @@ struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
 
 template <SIMPLE_REORDER_TEMPL_DECL>
 struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
+typename utils::enable_if<tag_i == format_tag::any &&
+                          tag_traits_t<tag_o>::block_dims == bd::_AB &&
+                          type_i == data_type::u2 &&
+                          type_i == type_o>::type>
+{
+    static status_t is_applicable(const memory_desc_wrapper &input_d,
+                              const memory_desc_wrapper &output_d, const primitive_attr_t *attr) {
+        if (!(!input_d.has_runtime_dims_or_strides() &&
+             simple_attr_check(attr, false, true) &&
+             (order_keep ? output_d.matches_tag(tag_o) && input_d.is_plain()
+                         : input_d.matches_tag(tag_o) && output_d.is_plain())))
+            return status::invalid_arguments;
+
+        if (output_d.blocking_desc().inner_nblks != 3 ||
+            !utils::one_of(output_d.blocking_desc().inner_blks[2], 2, 4) ||
+            output_d.blocking_desc().inner_idxs[2] != 1)
+            return status::invalid_arguments;
+
+        return status::success;
+    }
+
+    GET_SCRATCHPAD_SIZE_ZERO();
+
+    static status_t execute(const cpu_reorder_pd_t *pd, const exec_ctx_t &ctx) {
+        DECLARE_COMMON_PARAMS();
+
+        dim_t blksize_o = 1;
+        dim_t blksize_i = 1;
+
+        for (int i = 0; i < output_d.blocking_desc().inner_nblks; i++) {
+            if (output_d.blocking_desc().inner_idxs[i] == 0)
+                blksize_o *= output_d.blocking_desc().inner_blks[i];
+            else
+                blksize_i *= output_d.blocking_desc().inner_blks[i];
+        }
+
+        const auto &dims = input_d.dims();
+        const auto &pdims = order_keep
+            ? output_d.padded_dims()
+            : input_d.padded_dims();
+
+        const dim_t OC = dims[0];
+        const dim_t NB_OC = pdims[0] / blksize_o;
+        const dim_t IC = dims[1];
+        const dim_t NB_IC = pdims[1] / blksize_i;
+
+        const dim_t i_mult_o = blksize_o;
+        const dim_t i_mult_i = blksize_i;
+
+        auto extract_2_bits = [](uint8_t val, uint8_t idx) -> uint8_t {
+            uint8_t shift = 2 * idx;
+
+            return (uint8_t) ((val >> shift) & 0x0003);
+        };
+
+        auto insert_2_bits = [](uint8_t dst, uint8_t val, uint8_t idx) -> uint8_t {
+            uint8_t shift = 6 - 2 * idx;
+            return dst | (uint8_t) (val << shift);
+        };
+
+        if (output_d.blocking_desc().inner_blks[2] == 2) {
+            parallel_nd(NB_OC, NB_IC,
+                [&](dim_t nb_oc, dim_t nb_ic) {
+                    const dim_t oc_block = nstl::min(blksize_o, OC - nb_oc * blksize_o);
+                    const dim_t ic_block = nstl::min(blksize_i, IC - nb_ic * blksize_i);
+
+                    for (dim_t icb = 0; icb < utils::div_up(ic_block, 16); ++icb) {
+                        for (dim_t oc = 0; oc < oc_block; ++oc) {
+                            const dim_t ic_int_block = nstl::min(dim_t(16), ic_block - icb * 16);
+                            for (dim_t ic = 0; ic < ic_int_block; ++ic) {
+                                auto iidx = (i_mult_o * nb_oc + oc) * input_d.blocking_desc().strides[0] +
+                                            (i_mult_i * nb_ic + icb * 16 + ic) * input_d.blocking_desc().strides[1];
+                                auto oidx = output_d.blk_off<false>(nb_oc, nb_ic) + icb * blksize_o * 16 + oc * 16 + 4 * (ic % 4) + ic / 4;
+                                const uint8_t* packed_val = reinterpret_cast<const uint8_t *>(input);
+                                auto src_val = extract_2_bits(packed_val[iidx / 4], (uint8_t)(iidx % 4));
+                                uint8_t* output_val = reinterpret_cast<uint8_t *>(output);
+                                uint8_t dst_val = oidx % 4 == 0 ? 0 : output_val[oidx / 4];
+                                dst_val = insert_2_bits(dst_val, src_val, (uint8_t)(oidx % 4));
+                                output_val[oidx / 4] = dst_val;
+                            }
+                        }
+                    }
+                });
+        } else {
+            parallel_nd(NB_OC, NB_IC,
+                [&](dim_t nb_oc, dim_t nb_ic) {
+                    const dim_t oc_block = nstl::min(blksize_o, OC - nb_oc * blksize_o);
+                    const dim_t ic_block = nstl::min(blksize_i, IC - nb_ic * blksize_i);
+
+                    for (dim_t icb = 0; icb < utils::div_up(ic_block, 4); ++icb) {
+                        for (dim_t oc = 0; oc < oc_block; ++oc) {
+                            for (dim_t ic = 0; ic < 4; ++ic) {
+                                auto iidx = (i_mult_o * nb_oc + oc) * input_d.blocking_desc().strides[0] +
+                                            (i_mult_i * nb_ic + icb * 4 + ic) * input_d.blocking_desc().strides[1];
+                                auto oidx = output_d.blk_off<false>(nb_oc, nb_ic) + icb * blksize_o * 4 + oc * 4 + ic;
+                                const uint8_t* packed_val = reinterpret_cast<const uint8_t *>(input);
+                                auto src_val = extract_2_bits(packed_val[iidx / 4], (uint8_t)(iidx % 4));
+                                uint8_t* output_val = reinterpret_cast<uint8_t *>(output);
+                                uint8_t dst_val = ic == 0 ? 0 : output_val[oidx / 4];
+                                dst_val = insert_2_bits(dst_val, src_val, (uint8_t)(oidx % 4));
+                                output_val[oidx / 4] = dst_val;
+                            }
+                        }
+                    }
+                });
+        }
+
+        return status::success;
+    }
+};
+
+template <SIMPLE_REORDER_TEMPL_DECL>
+struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
         typename utils::enable_if<tag_i == format_tag::any
                         && tag_o == format_tag::any
                         && utils::one_of(type_i, data_type::nf4, data_type::s4,

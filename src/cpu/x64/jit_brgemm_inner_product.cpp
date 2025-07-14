@@ -414,21 +414,23 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                     dcomp_params.scratch_buf = decomp_buf;
                     (*brg_decomp_kernel_)(&dcomp_params);
                     addr_batch[b].ptr.B = decomp_buf;
-                } else if (jbgp.weights_decompression
-                        && jbgp.wei_decomp_algo
-                                == weights_decomp_kind_t::prepack) {
-                    int typesize_scale
-                            = one_of(jbgp.orig_wei_dt, data_type::nf4,
-                                      data_type::s4, data_type::u4,
-                                      data_type::f4_e2m1)
-                            ? 2
-                            : 1;
-                    auto w_off = wei_offset
-                            * types::data_type_size(jbgp.orig_wei_dt)
-                            / types::data_type_size(jbgp.wei_dt)
-                            / typesize_scale;
-                    auto weights_ptr = reinterpret_cast<const uint8_t *>(
-                            &weights[w_off]);
+                                } else if (jbgp.weights_decompression
+                                                && jbgp.wei_decomp_algo
+                                                                == weights_decomp_kind_t::prepack) {
+                                        int typesize_scale = [&]() {
+                                                if (jbgp.orig_wei_dt == data_type::u2) return 4;
+                                                if (one_of(jbgp.orig_wei_dt, data_type::nf4,
+                                                                        data_type::s4, data_type::u4,
+                                                                        data_type::f4_e2m1))
+                                                        return 2;
+                                                return 1;
+                                        }();
+                                        auto w_off = wei_offset
+                                                        * types::data_type_size(jbgp.orig_wei_dt)
+                                                        / types::data_type_size(jbgp.wei_dt)
+                                                        / typesize_scale;
+                                        auto weights_ptr = reinterpret_cast<const uint8_t *>(
+                                                        &weights[w_off]);
 
                     const size_t decomp_buf_per_thr = jbgp.ic_block
                             * jbgp.nb_ic_blocking * jbgp.oc_block
@@ -437,18 +439,20 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                             + ithr * decomp_buf_per_thr
                             + wei_ic_stride * b * ic_blocks_per_batch;
 
-                    const int ic_internal_block
-                            = pd()->jbgp_.wei_dt == data_type::bf16
-                                    || one_of(pd()->jbgp_.orig_wei_dt,
-                                            data_type::nf4, data_type::s4,
-                                            data_type::u4, data_type::f4_e2m1)
-                            ? 2
-                            : 1;
-                    auto wei_zero_points_ptr = wei_zero_points
-                            + wei_zero_points_oc_stride * oc
-                                    * wei_zero_points_dt_size;
-                    auto wei_scales_ptr = wei_scales
-                            + wei_scales_oc_stride * oc * wei_scales_dt_size;
+                                        const int ic_internal_block = [&]() {
+                                                if (pd()->jbgp_.orig_wei_dt == data_type::u2) return 4;
+                                                if (pd()->jbgp_.wei_dt == data_type::bf16) return 2;
+                                                if (one_of(pd()->jbgp_.orig_wei_dt, data_type::nf4,
+                                                                        data_type::s4, data_type::u4,
+                                                                        data_type::f4_e2m1))
+                                                        return 2;
+                                                return 1;
+                                        }();
+                                        auto wei_zero_points_ptr = wei_zero_points
+                                                        + wei_zero_points_oc_stride * oc
+                                                                        * wei_zero_points_dt_size;
+                                        auto wei_scales_ptr = wei_scales
+                                                        + wei_scales_oc_stride * oc * wei_scales_dt_size;
 
                     if (jbgp.with_grouped_weights_decompression) {
                         weights_decompression_runtime_params_t rt_params = {};
@@ -511,11 +515,14 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
 
                     addr_batch[b].ptr.B = decomp_buf;
                 } else {
-                    int typesize_scale
-                            = one_of(jbgp.wei_dt, data_type::nf4, data_type::s4,
-                                      data_type::u4, data_type::f4_e2m1)
-                            ? 2
-                            : 1;
+                                        int typesize_scale = [&]() {
+                                                if (jbgp.wei_dt == data_type::u2) return 4;
+                                                if (one_of(jbgp.wei_dt, data_type::nf4,
+                                                                        data_type::s4, data_type::u4,
+                                                                        data_type::f4_e2m1))
+                                                        return 2;
+                                                return 1;
+                                        }();
                     addr_batch[b].ptr.B = weights + wei_offset / typesize_scale;
                 }
             }
@@ -595,36 +602,41 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
             const dim_t wei_offset
                     = (wei_cur_ocb + wei_ic_stride * (icb + ic_block));
 
-            if (jbgp.weights_decompression
-                    && jbgp.wei_decomp_algo == weights_decomp_kind_t::prepack) {
-                int typesize_scale = one_of(jbgp.orig_wei_dt, data_type::nf4,
-                                             data_type::s4, data_type::u4,
-                                             data_type::f4_e2m1)
-                        ? 2
-                        : 1;
-                auto w_off = wei_offset
-                        * types::data_type_size(jbgp.orig_wei_dt)
-                        / types::data_type_size(jbgp.wei_dt) / typesize_scale;
-                auto weights_ptr
-                        = reinterpret_cast<const uint8_t *>(&weights[w_off]);
+                        if (jbgp.weights_decompression
+                                        && jbgp.wei_decomp_algo == weights_decomp_kind_t::prepack) {
+                                int typesize_scale = [&]() {
+                                        if (jbgp.orig_wei_dt == data_type::u2) return 4;
+                                        if (one_of(jbgp.orig_wei_dt, data_type::nf4,
+                                                                data_type::s4, data_type::u4,
+                                                                data_type::f4_e2m1))
+                                                return 2;
+                                        return 1;
+                                }();
+                                auto w_off = wei_offset
+                                                * types::data_type_size(jbgp.orig_wei_dt)
+                                                / types::data_type_size(jbgp.wei_dt) / typesize_scale;
+                                auto weights_ptr
+                                                = reinterpret_cast<const uint8_t *>(&weights[w_off]);
 
                 const size_t decomp_buf_per_thr = jbgp.ic_block
                         * jbgp.nb_ic_blocking * jbgp.oc_block
                         * types::data_type_size(jbgp.wei_dt);
                 auto decomp_buf = decomp_buf_global + ithr * decomp_buf_per_thr;
 
-                const int ic_internal_block
-                        = pd()->jbgp_.wei_dt == data_type::bf16
-                                || one_of(pd()->jbgp_.orig_wei_dt,
-                                        data_type::nf4, data_type::s4,
-                                        data_type::u4, data_type::f4_e2m1)
-                        ? 2
-                        : 1;
-                auto wei_zero_points_ptr = wei_zero_points
-                        + wei_zero_points_oc_stride * oc
-                                * wei_zero_points_dt_size;
-                auto wei_scales_ptr = wei_scales
-                        + wei_scales_oc_stride * oc * wei_scales_dt_size;
+                                const int ic_internal_block = [&]() {
+                                        if (pd()->jbgp_.orig_wei_dt == data_type::u2) return 4;
+                                        if (pd()->jbgp_.wei_dt == data_type::bf16) return 2;
+                                        if (one_of(pd()->jbgp_.orig_wei_dt, data_type::nf4,
+                                                                data_type::s4, data_type::u4,
+                                                                data_type::f4_e2m1))
+                                                return 2;
+                                        return 1;
+                                }();
+                                auto wei_zero_points_ptr = wei_zero_points
+                                                + wei_zero_points_oc_stride * oc
+                                                                * wei_zero_points_dt_size;
+                                auto wei_scales_ptr = wei_scales
+                                                + wei_scales_oc_stride * oc * wei_scales_dt_size;
 
                 if (jbgp.with_grouped_weights_decompression) {
                     weights_decompression_runtime_params_t rt_params = {};
@@ -684,11 +696,13 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
 
                 addr_batch[0].ptr.B = decomp_buf;
             } else {
-                int typesize_scale
-                        = one_of(jbgp.wei_dt, data_type::nf4, data_type::s4,
-                                  data_type::u4, data_type::f4_e2m1)
-                        ? 2
-                        : 1;
+                                int typesize_scale = [&]() {
+                                        if (jbgp.wei_dt == data_type::u2) return 4;
+                                        if (one_of(jbgp.wei_dt, data_type::nf4, data_type::s4,
+                                                                data_type::u4, data_type::f4_e2m1))
+                                                return 2;
+                                        return 1;
+                                }();
                 addr_batch[0].ptr.B = weights + wei_offset / typesize_scale;
             }
 

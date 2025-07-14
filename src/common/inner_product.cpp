@@ -118,7 +118,7 @@ status_t ip_attr_check(const inner_product_desc_t &desc, const engine_t *engine,
             = (one_of(src_dt, data_type::f32, data_type::bf16)
                       && one_of(wei_dt, data_type::u8, data_type::s8,
                               data_type::nf4, data_type::s4, data_type::u4,
-                              data_type::f4_e2m1))
+                              data_type::f4_e2m1, data_type::u2))
             || (one_of(src_dt, data_type::f32)
                     && one_of(wei_dt, data_type::f16, data_type::bf16));
     auto attr_mask = smask_t::none;
@@ -151,7 +151,7 @@ status_t ip_attr_check(const inner_product_desc_t &desc, const engine_t *engine,
         if (engine->kind() == engine_kind::cpu)
             is_int8 |= one_of(wei_dt, data_type::u8, data_type::s8,
                     data_type::nf4, data_type::s4, data_type::u4,
-                    data_type::f4_e2m1);
+                    data_type::f4_e2m1, data_type::u2);
         if (is_int8)
             fwd_attr_mask |= smask_t::scales | smask_t::zero_points
                     | smask_t::src_dyn_quant_params;
