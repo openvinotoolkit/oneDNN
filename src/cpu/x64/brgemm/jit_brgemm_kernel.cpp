@@ -372,7 +372,6 @@ private:
     Vmm vmm_lbound() { return vmm_tmp(1); }
     Vmm vmm_ubound() { return vmm_tmp(0); }
 
-    Vmm vmm_one() const noexcept { return Vmm(4); }
     Vmm vmm_one_bytes() const noexcept { return Vmm(3); }
     Vmm vmm_zp_a_shift() const noexcept { return Vmm(2); }
     Vmm vmm_inp_shift() const noexcept { return Vmm(1); }
@@ -529,6 +528,7 @@ dim_t jit_brgemm_kernel_t<Wmm>::B_offset(
         return brg.typesize_B * (brg.rd_step * ld * brg.ld_block) / typesize_scale;
     } else {
         const dim_t rdb0 = rd / brg.ld_step;
+
         // Note: Offsets for elements within vnni_granularity are expected to be
         // handled within gemm_microkernel (for ex: odd-even converts).
         // hence no `rd % brg.ld_step`
@@ -2849,13 +2849,6 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(dim_t bd_block2,
                         uni_vmovups(vmm_lookup, ptr[reg_ptr]);
                         vmm_zero_points = Vmm(isa_num_vregs(brg.isa_impl) - 2);
                     }
-                } else if (brg.dt_b == data_type::u2) {
-                    static const float one[16] = {
-                        1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f,
-                        1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f
-                    };
-                    mov(reg_ptr, (size_t)one);
-                    uni_vmovups(vmm_one(), ptr[reg_ptr]);
                 }
 
                 mov(reg_local_wei_scales, ptr[rsp + reg_aux2_wei_scales_offs_]);
@@ -2897,10 +2890,11 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(dim_t bd_block2,
                             uni_vcvtdq2ps(vmm_load, vmm_load);
                         } else if (brg.dt_b == data_type::u2) {
                             uni_vpmovzxbd(vmm_load, addr);
-                            if (rd == 0) {
+                            int idx = rd % 4;
+                            if (idx == 0) {
                                 uni_vpsrld(vmm_load, vmm_load, 6);
                             } else {
-                                uni_vpslld(vmm_load, vmm_load, 24 + 2 * rd);
+                                uni_vpslld(vmm_load, vmm_load, 24 + 2 * idx);
                                 uni_vpsrld(vmm_load, vmm_load, 30);
                             }
                             uni_vcvtdq2ps(vmm_load, vmm_load);
@@ -2959,13 +2953,6 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(dim_t bd_block2,
                                 uni_vsubps(vmm_load, vmm_load, bcst());
                             }
                         }
-
-                        // Pack Unpack
-                        //  00    -1
-                        //  01     0
-                        //  10     1
-                        if (brg.dt_b == data_type::u2)
-                            uni_vsubps(vmm_load, vmm_load, vmm_one());
 
                         if (brg.with_wei_decomp_scales && brg.bd_block != 1) {
                             if (brg.wei_decomp_scales_stride == 0) {

@@ -297,13 +297,6 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::generate() {
             mov(reg_tmp, (size_t)lookup);
             uni_vmovups(vmm_lookup(), ptr[reg_tmp]);
         }
-    } else if(jcp_.weights_dt == data_type::u2) {
-        static const float one[16] = {
-            1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f,
-            1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f
-        };
-        mov(reg_tmp, (size_t)one);
-        uni_vmovups(vmm_one(), ptr[reg_tmp]);
     }
 
     if (jcp_.with_scales)
@@ -340,12 +333,6 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::generate() {
 
                     if (jcp_.with_zero_points)
                         uni_vsubps(vmm_load, vmm_load, vmm_zero_points(ocb));
-                    // Pack Unpack
-                    //  00    -1
-                    //  01     0
-                    //  10     1
-                    if (jcp_.weights_dt == data_type::u2)
-                        uni_vsubps(vmm_load, vmm_load, vmm_one());
                     if (jcp_.with_scales)
                         uni_vmulps(vmm_load, vmm_load, vmm_scales(ocb));
                 }
@@ -380,8 +367,6 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::generate() {
 
                     if (jcp_.with_zero_points)
                         uni_vsubps(vmm_weights(0), vmm_weights(0), vmm_zero_points(ocb));
-                    if (jcp_.weights_dt == data_type::u2)
-                        uni_vsubps(vmm_weights(0), vmm_weights(0), vmm_one());
                     if (jcp_.with_scales)
                         uni_vmulps(vmm_weights(0), vmm_weights(0), vmm_scales(ocb));
 

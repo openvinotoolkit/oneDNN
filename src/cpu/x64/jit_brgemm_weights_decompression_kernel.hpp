@@ -109,7 +109,6 @@ private:
     Vmm vmm_mask() { return vmm_tmp(1); }
     Vmm vmm_mask8() { return vmm_tmp(2); }
     Vmm vmm_mask7() { return vmm_tmp(3); }
-    Vmm vmm_one() { return vmm_tmp(0); }
     Vmm vmm_aux0() { return vmm_zero_points(0); }
     Vmm vmm_aux1() { return vmm_scales(0); }
 
