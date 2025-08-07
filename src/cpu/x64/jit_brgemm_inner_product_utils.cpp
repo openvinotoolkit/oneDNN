@@ -271,18 +271,33 @@ jit_brgemm_ip_conf_t::get_desired_weights_tag() const {
             }
         }
     } else if (jbgp.weights_decompression && jbgp.orig_wei_dt == u2) {
-        return {{64,
-                        pick(n_sp_dims, OI16i64o4i, OIw16i64o4i,
-                                OIhw16i64o4i, OIdhw16i64o4i)},
-                {48,
-                        pick(n_sp_dims, OI16i48o4i, OIw16i48o4i,
-                                OIhw16i48o4i, OIdhw16i48o4i)},
-                {32,
-                        pick(n_sp_dims, OI16i32o4i, OIw16i32o4i,
-                                OIhw16i32o4i, OIdhw16i32o4i)},
-                {16,
-                        pick(n_sp_dims, OI16i16o4i, OIw16i16o4i,
-                                OIhw16i16o4i, OIdhw16i16o4i)}};
+        if (is_superset(jbgp.isa, avx512_core)) {
+            return {{64,
+                            pick(n_sp_dims, OI16i64o4i, OIw16i64o4i,
+                                    OIhw16i64o4i, OIdhw16i64o4i)},
+                    {48,
+                            pick(n_sp_dims, OI16i48o4i, OIw16i48o4i,
+                                    OIhw16i48o4i, OIdhw16i48o4i)},
+                    {32,
+                            pick(n_sp_dims, OI16i32o4i, OIw16i32o4i,
+                                    OIhw16i32o4i, OIdhw16i32o4i)},
+                    {16,
+                            pick(n_sp_dims, OI16i16o4i, OIw16i16o4i,
+                                    OIhw16i16o4i, OIdhw16i16o4i)}};
+        } else {
+            return {{32,
+                            pick(n_sp_dims, OI4i32o4i, OIw4i32o4i, OIhw4i32o4i,
+                                    OIdhw4i32o4i)},
+                    {24,
+                            pick(n_sp_dims, OI4i24o4i, OIw4i24o4i, OIhw4i24o4i,
+                                    OIdhw4i24o4i)},
+                    {16,
+                            pick(n_sp_dims, OI4i16o4i, OIw4i16o4i, OIhw4i16o4i,
+                                    OIdhw4i16o4i)},
+                    {8,
+                            pick(n_sp_dims, OI4i8o4i, OIw4i8o4i, OIhw4i8o4i,
+                                    OIdhw4i8o4i)}};
+        }
     } else if (is_xf16) {
         if (jbgp.is_amx) {
             return {{64,
