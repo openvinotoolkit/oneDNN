@@ -2331,10 +2331,6 @@ status_t init_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
 
     if (try_exec_type_res == false) return status::unimplemented;
 
-#if DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_THREADPOOL
-    adjust_nthr(jcp, src_d, dst_d);
-#endif
-
     // ============ end blocking ===========================================
     jcp.brg_type
             = (jcp.use_uker && one_of(jcp.exec_type, exec_base, exec_trans))
@@ -2571,10 +2567,6 @@ status_t init_1x1_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
         if (cur_brgb.eff > best_brgb.eff) best_brgb = cur_brgb;
     }
     best_brgb.save_to_jcp(jcp);
-
-#if DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_THREADPOOL
-    adjust_nthr(jcp, src_d, dst_d);
-#endif
 
     // =============== end blocking =================================
 
