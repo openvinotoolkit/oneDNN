@@ -2449,6 +2449,137 @@ typename utils::enable_if<tag_i == format_tag::any &&
 template <SIMPLE_REORDER_TEMPL_DECL>
 struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
         typename utils::enable_if<tag_i == format_tag::any
+                        && tag_traits_t<tag_o>::block_dims == bd::_BC
+                        && utils::one_of(type_i, data_type::nf4, data_type::s4, data_type::u4, data_type::f4_e2m1)
+                        && type_i == type_o>::type> {
+    static status_t is_applicable(const memory_desc_wrapper &input_d,
+            const memory_desc_wrapper &output_d, const primitive_attr_t *attr) {
+        if (!(!input_d.has_runtime_dims_or_strides()
+                && simple_attr_check(attr, false, true)
+                && (order_keep ? output_d.matches_tag(tag_o) && input_d.is_plain()
+                               : input_d.matches_tag(tag_o) && output_d.is_plain())))
+            return status::invalid_arguments;
+
+        if (output_d.blocking_desc().inner_nblks != 3
+                || !utils::one_of(output_d.blocking_desc().inner_blks[2], 2, 4)
+                || output_d.blocking_desc().inner_idxs[2] != 2)
+            return status::invalid_arguments;
+
+        return status::success;
+    }
+
+    GET_SCRATCHPAD_SIZE_ZERO();
+
+    static status_t execute(const cpu_reorder_pd_t *pd, const exec_ctx_t &ctx) {
+        DECLARE_COMMON_PARAMS();
+
+        dim_t blksize_b = 1;
+        dim_t blksize_c = 1;
+
+        for (int i = 0; i < output_d.blocking_desc().inner_nblks; i++) {
+            if (output_d.blocking_desc().inner_idxs[i] == 1)
+                blksize_b *= output_d.blocking_desc().inner_blks[i];
+            else if (output_d.blocking_desc().inner_idxs[i] == 2)
+                blksize_c *= output_d.blocking_desc().inner_blks[i];
+        }
+
+        const auto &dims = input_d.dims();
+        const auto &pdims
+                = order_keep ? output_d.padded_dims() : input_d.padded_dims();
+
+        const auto A = dims[0];
+        const auto B = dims[1];
+        const auto NB_B = pdims[1] / blksize_b;
+        const auto C = dims[2];
+        const auto NB_C = pdims[2] / blksize_c;
+
+        const auto i_mult_b = blksize_b;
+        const auto i_mult_c = blksize_c;
+
+        auto extract_half_byte = [&](uint8_t val, bool high_half) -> uint8_t {
+            uint8_t shift = high_half ? 4 : 0;
+            return (uint8_t)((val >> shift) & 0x000F);
+        };
+
+        auto insert_half_byte
+                = [](uint8_t dst, uint8_t val, bool high_half) -> uint8_t {
+            uint8_t shift = high_half ? 0 : 4;
+            return dst | (uint8_t)(val << shift);
+        };
+
+        if (output_d.blocking_desc().inner_blks[2] == 4) {
+            parallel_nd(A, NB_B, NB_C, [&](dim_t a, dim_t nb_b, dim_t nb_c) {
+                const auto b_block = nstl::min(blksize_b, B - nb_b * blksize_b);
+                const auto c_block = nstl::min(blksize_c, C - nb_c * blksize_c);
+
+                for (dim_t cb = 0; cb < utils::div_up(c_block, 8); ++cb) {
+                    for (dim_t b = 0; b < b_block; ++b) {
+                        const dim_t c_int_block = nstl::min(dim_t(8), c_block - cb * 8);
+                        for (dim_t c = 0; c < c_int_block; ++c) {
+                            auto iidx
+                                    = a * input_d.blocking_desc().strides[0]
+                                    + (i_mult_b * nb_b + b)
+                                            * input_d.blocking_desc().strides[1]
+                                    + (i_mult_c * nb_c + cb * 8 + c)
+                                            * input_d.blocking_desc().strides[2];
+                            auto oidx = output_d.blk_off<false>(a, nb_b, nb_c)
+                                    + cb * blksize_b * 8 + b * 8 + 2 * (c % 4)
+                                    + c / 4;
+                            const uint8_t *packed_val
+                                    = reinterpret_cast<const uint8_t *>(input);
+                            auto src_val = extract_half_byte(
+                                    packed_val[iidx / 2], (uint8_t)(iidx % 2));
+                            uint8_t *output_val
+                                    = reinterpret_cast<uint8_t *>(output);
+                            uint8_t dst_val = oidx % 2 == 0 ? 0
+                                                             : output_val[oidx / 2];
+                            dst_val = insert_half_byte(
+                                    dst_val, src_val, (uint8_t)(oidx % 2));
+                            output_val[oidx / 2] = dst_val;
+                        }
+                    }
+                }
+            });
+        } else {
+            parallel_nd(A, NB_B, NB_C, [&](dim_t a, dim_t nb_b, dim_t nb_c) {
+                const auto b_block = nstl::min(blksize_b, B - nb_b * blksize_b);
+                const auto c_block = nstl::min(blksize_c, C - nb_c * blksize_c);
+
+                for (dim_t cb = 0; cb < utils::div_up(c_block, 2); ++cb) {
+                    for (dim_t b = 0; b < b_block; ++b) {
+                        for (dim_t c = 0; c < 2; ++c) {
+                            auto iidx
+                                    = a * input_d.blocking_desc().strides[0]
+                                    + (i_mult_b * nb_b + b)
+                                            * input_d.blocking_desc().strides[1]
+                                    + (i_mult_c * nb_c + cb * 2 + c)
+                                            * input_d.blocking_desc().strides[2];
+                            auto oidx = output_d.blk_off<false>(a, nb_b, nb_c)
+                                    + cb * blksize_b * 2 + b * 2 + c;
+                            const uint8_t *packed_val
+                                    = reinterpret_cast<const uint8_t *>(input);
+                            auto src_val = extract_half_byte(
+                                    packed_val[iidx / 2], (uint8_t)(iidx % 2));
+                            uint8_t *output_val
+                                    = reinterpret_cast<uint8_t *>(output);
+                            uint8_t dst_val
+                                    = c == 1 ? output_val[oidx / 2] : 0;
+                            dst_val = insert_half_byte(
+                                    dst_val, src_val, (uint8_t)(oidx % 2));
+                            output_val[oidx / 2] = dst_val;
+                        }
+                    }
+                }
+            });
+        }
+
+        return status::success;
+    }
+};
+
+template <SIMPLE_REORDER_TEMPL_DECL>
+struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
+        typename utils::enable_if<tag_i == format_tag::any
                         && tag_o == format_tag::any
                         && utils::one_of(type_i, data_type::nf4, data_type::s4,
                                 data_type::u4)
