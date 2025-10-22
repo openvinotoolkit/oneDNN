@@ -124,6 +124,10 @@ enum class inner_blk_t {
     _8c2b,
     _8c4b,
     _8c8b,
+    _8c8b2c,
+    _8c24b2c,
+    _8c32b2c,
+    _8c64b2c,
     _16a16b,
     _16a32b,
     _16a48b,
@@ -308,10 +312,11 @@ constexpr int AB_or_BC_blk_off(int x0, int x1) {
         : (f == ib::_16b16a2b || f == ib::_16c16b2c) ? (x1 / 2) * 32 + x0 * 2 + x1 % 2
         : (f == ib::_16b16a4b || f == ib::_16c16b4c) ? (x1 / 4) * 64 + x0 * 4 + x1 % 4
         : (f == ib::_8b8a2b) ? (x1 / 2) * 16 + x0 * 2 + x1 % 2
+        : (f == ib::_8c8b2c) ? (x1 / 2) * 16 + x0 * 2 + x1 % 2
         : (f == ib::_8b16a2b || f == ib::_8c16b2c) ? (x1 / 2) * 32 + x0 * 2 + x1 % 2
-        : (f == ib::_8b24a2b) ? (x1 / 2) * 48 + x0 * 2 + x1 % 2
-        : (f == ib::_8b32a2b) ? (x1 / 2) * 64 + x0 * 2 + x1 % 2
-        : (f == ib::_8b64a2b) ? (x1 / 2) * 128 + x0 * 2 + x1 % 2
+        : (f == ib::_8b24a2b || f == ib::_8c24b2c) ? (x1 / 2) * 48 + x0 * 2 + x1 % 2
+        : (f == ib::_8b32a2b || f == ib::_8c32b2c) ? (x1 / 2) * 64 + x0 * 2 + x1 % 2
+        : (f == ib::_8b64a2b || f == ib::_8c64b2c) ? (x1 / 2) * 128 + x0 * 2 + x1 % 2
         : (f == ib::_2b4c2b || f == ib::_2c4b2c) ? (x0 / 2) * 8 + x1 * 2 + x0 % 2
         : (f == ib::_4b8c2b || f == ib::_4c8b2c) ? (x0 / 2) * 16 + x1 * 2 + x0 % 2
         : (f == ib::_2a8b8a2b || f == ib::_2b8c8b2c) ? (x0 / 8) * 128 + (x1 / 2) * 16 + (x0 % 8) * 2 + x1 % 2
@@ -472,6 +477,20 @@ DECL_TRAITS(BA16a16b4a, _AB, _16a16b4a, 2);
 DECL_TRAITS(BA16a32b4a, _AB, _16a32b4a, 2);
 DECL_TRAITS(BA16a48b4a, _AB, _16a48b4a, 2);
 DECL_TRAITS(BA16a64b4a, _AB, _16a64b4a, 2);
+
+DECL_TRAITS(aBC8c8b2c, _BC, _8c8b2c, 3);
+DECL_TRAITS(aBC8c16b2c, _BC, _8c16b2c, 3);
+DECL_TRAITS(aBC8c24b2c, _BC, _8c24b2c, 3);
+DECL_TRAITS(aBC8c32b2c, _BC, _8c32b2c, 3);
+DECL_TRAITS(aBC8c64b2c, _BC, _8c64b2c, 3);
+DECL_TRAITS(aBC16c16b2c, _BC, _16c16b2c, 3);
+DECL_TRAITS(aBC16c32b2c, _BC, _16c32b2c, 3);
+DECL_TRAITS(aBC16c48b2c, _BC, _16c48b2c, 3);
+DECL_TRAITS(aBC16c64b2c, _BC, _16c64b2c, 3);
+DECL_TRAITS(aBC16c16b4c, _BC, _16c16b4c, 3);
+DECL_TRAITS(aBC16c32b4c, _BC, _16c32b4c, 3);
+DECL_TRAITS(aBC16c48b4c, _BC, _16c48b4c, 3);
+DECL_TRAITS(aBC16c64b4c, _BC, _16c64b4c, 3);
 DECL_TRAITS(aCB16b16c, _BC, _16b16c, 2);
 DECL_TRAITS(aCB16b32c, _BC, _16b32c, 2);
 DECL_TRAITS(aCB16b48c, _BC, _16b48c, 2);
