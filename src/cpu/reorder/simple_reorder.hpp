@@ -2567,20 +2567,28 @@ struct simple_reorder_impl<SIMPLE_REORDER_TEMPL_CALL,
         const dim_t work_amount = input_d.nelems();
 
         auto extract_half_byte = [&](uint8_t val, bool high_half) -> uint8_t {
-            uint8_t shift = high_half ? 4 : 0;
-
-            return (uint8_t)((val >> shift) & 0x000F);
+            if (high_half) {
+                return (uint8_t)(val >> 4);
+            }
+            return (uint8_t)(val & 0x0F);
         };
 
         parallel(0, [&](const int ithr, const int nthr) {
             dim_t start {0}, end {0};
             balance211(work_amount, nthr, ithr, start, end);
+            const auto* u8_input = reinterpret_cast<const uint8_t *>(input);
             if (utils::one_of(type_i, dnnl_s4, dnnl_u4)) {
                 PRAGMA_OMP_SIMD()
                 for (dim_t idx = start; idx < end; idx++) {
                     const auto i_off = input_d.off_l(idx);
                     const auto o_off = output_d.off_l(idx);
-                    const int8_t src_val = extract_half_byte(input[i_off / 2], i_off % 2);
+                    const uint8_t extracted = extract_half_byte(u8_input[i_off / 2], i_off % 2);
+
+                    int8_t src_val = extracted;
+                    if (type_i == dnnl_s4) {
+                        // Sign extension for s4: if bit 3 is set, extend with 1s
+                        src_val = (extracted & 0x08) ? (extracted | 0xF0) : extracted;
+                    }
                     output[o_off] = _qz_a1b0<dnnl_s8, type_o>()(src_val);
                 }
             } else {
@@ -2605,7 +2613,7 @@ struct simple_reorder_impl<SIMPLE_REORDER_TEMPL_CALL,
                 for (dim_t idx = start; idx < end; idx++) {
                     const auto i_off = input_d.off_l(idx);
                     const auto o_off = output_d.off_l(idx);
-                    const uint8_t idx_val = extract_half_byte(input[i_off / 2], i_off % 2);
+                    const uint8_t idx_val = extract_half_byte(u8_input[i_off / 2], i_off % 2);
                     output[o_off] = lookup[idx_val];
                 }
             }
