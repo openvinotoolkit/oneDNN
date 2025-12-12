@@ -66,6 +66,9 @@ const impl_list_map_t &regular_s8_impl_list_map() {
             REG_SR(s8, any, s8, any, fmt_order_any, spec_reference)
             REG_SR(s8, any, u8, any, fmt_order_any, spec_reference)
 
+            DNNL_X64_ONLY(CPU_REORDER_INSTANCE(simple_sparse_reorder_v0_t, s8, format_tag::oi, s8, OI16i64o4i, sparse_inputs_order::keep, sparse_spec::reference))
+            DNNL_X64_ONLY(CPU_REORDER_INSTANCE(simple_sparse_reorder_v0_t, s8, format_tag::io, s8, OI16i64o4i, sparse_inputs_order::keep, sparse_spec::reference))
+
             DNNL_X64_ONLY(CPU_REORDER_INSTANCE(simple_sparse_reorder_t, s8, impl::format_tag_t, any, s8, impl::format_tag_t, any))
 
             nullptr,
