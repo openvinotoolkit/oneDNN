@@ -314,6 +314,25 @@ struct memory_desc_wrapper : public c_compatible {
             return rnn_packed_desc().size;
         } else if (is_cublaslt_blocked_desc()) {
             return cublaslt_blocked_desc().size;
+        } else if (is_sparse_desc()) {
+            if (sparse_desc().encoding == sparse_encoding::packed) {
+                // Only  2D tensors are supported at this point.
+                assert(ndims() == 2);
+                // Only OI16i64o4i is supported at this point.
+                // assert(matches_tag(format_tag::OI16i64o4i)); - TODO: enable for sparse packed.
+                const size_t metadata = padded_dims()[0] * padded_dims()[1] / 64
+                        * sizeof(uint64_t);
+                using comp_tile_len_type = int;
+                size_t comp_tile_data_size = ceil(static_cast<float>(padded_dims()[0] * padded_dims()[1])
+                        / (64 * 64 * (64 / sizeof(comp_tile_len_type)))) * 64;
+                return comp_tile_data_size + (padded_dims()[0] * padded_dims()[1] * data_type_size())
+                        + metadata + 1000;
+                        // todo: [av] why 1000?
+            } else {
+                printf("encoding:%d\n", (int)sparse_desc().encoding), fflush(stdout);
+                assert(!"unknown sparse encoding");
+                return 0;
+            }
         } else if (is_blocking_desc()) {
             dims_t blocks = {0};
             compute_blocks(blocks);

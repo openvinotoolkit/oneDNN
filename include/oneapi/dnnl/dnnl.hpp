@@ -3021,6 +3021,19 @@ struct memory : public handle<dnnl_memory_t> {
             return desc {md};
         }
 
+        static desc packed_v0(const dims &adims, data_type adata_type,
+                bool allow_empty = false) {
+            dnnl_memory_desc_t md = nullptr;
+            dnnl_status_t status = dnnl_memory_desc_create_with_packed_encoding_v0(
+                    &md, dnnl_packed,
+                    (int)adims.size(), adims.data(), convert_to_c(adata_type));
+
+            if (!allow_empty)
+                error::wrap_c_api(status,
+                        "could not construct a memory descriptor with sparse format");
+            return desc(md);
+        }
+
         /// Creates a memory descriptor for a scalar value that resides on the host.
         ///
         /// @param adata_type Data type of the scalar.
@@ -3050,6 +3063,20 @@ struct memory : public handle<dnnl_memory_t> {
                     dnnl_memory_desc_create_with_blob(&md, blob.data()),
                     "could not create a memory descriptor from blob");
             reset(md);
+        }
+
+        /// @fork
+        /// Copy constructor for memory::desc
+        /// Ensures deep copy (underlying C structure is copied as well)
+        /// To preserve behavior of 2.x oneDNN versions
+        ///
+        /// @param desc memory descriptor to copy.
+        desc(const memory::desc& adesc) {
+            auto cdesc = adesc.get();
+            dnnl_memory_desc_t cloned_md = nullptr;
+            dnnl_memory_desc_clone(&cloned_md, cdesc);
+
+            reset(cloned_md);
         }
 
         /// Constructs a memory descriptor for a region inside an area

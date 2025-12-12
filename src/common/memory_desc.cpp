@@ -209,6 +209,17 @@ status_t memory_desc_init_by_packed_encoding(memory_desc_t &memory_desc,
     return success;
 }
 
+status_t memory_desc_init_by_packed_encoding_v0(sparse_desc_t **sparse_desc,
+        sparse_encoding_t encoding) {
+    if (!sparse_desc) return invalid_arguments;
+    auto sd = utils::make_unique<sparse_desc_t>();
+
+    sd->encoding = encoding;
+    *sparse_desc = sd.release();
+
+    return success;
+}
+
 status_t memory_desc_init_submemory(memory_desc_t &memory_desc,
         const memory_desc_t &parent_memory_desc, const dims_t dims,
         const dims_t offsets) {
@@ -664,6 +675,29 @@ status_t dnnl_memory_desc_create_with_packed_encoding(
     CHECK(memory_desc_init_by_packed_encoding(
             *md, ndims, dims, data_type, nnz));
     (*memory_desc) = md.release();
+    return success;
+}
+
+status_t dnnl_memory_desc_create_with_packed_encoding_v0(
+        memory_desc_t **memory_desc,
+        sparse_encoding_t encoding, int ndims,
+        const dims_t dims, data_type_t data_type) {
+
+    sparse_desc_t* sd = nullptr;;
+    CHECK(memory_desc_init_by_packed_encoding_v0(&sd, encoding));
+
+    auto md = utils::make_unique<memory_desc_t>();
+    if (!md) return out_of_memory;
+
+    md->ndims = ndims;
+    array_copy(md->dims, dims, ndims);
+    md->data_type = data_type;
+    array_copy(md->padded_dims, dims, ndims);
+    md->format_kind = format_kind::sparse;
+    md->format_desc.sparse_desc = *sd;
+
+    *memory_desc = md.release();;
+
     return success;
 }
 
