@@ -64,24 +64,6 @@ typedef enum {
     dnnl_format_kind_max = 0x7fff,
 } dnnl_format_kind_t;
 
-#ifdef DNNL_EXPERIMENTAL_SPARSE
-/// Sparse encodings.
-typedef enum {
-    /// Undefined sparse encoding kind, used for empty memory descriptors.
-    dnnl_sparse_encoding_undef = 0,
-    /// Compressed Sparse Row (CSR) encoding.
-    dnnl_csr,
-    /// An encoding that is used for an opaque storage schema for
-    /// tensors with unstructured sparsity. A memory descriptor with the
-    /// packed encoding cannot be used to create a memory object. It can
-    /// only be used to create a primitive descriptor to query the
-    /// actual memory descriptor (similar to the format tag `any`).
-    dnnl_packed,
-    /// Coordinate Sparse Encoding (COO).
-    dnnl_coo,
-} dnnl_sparse_encoding_t;
-#endif
-
 #ifdef DNNL_EXPERIMENTAL_PROFILING
 /// Profiling data kind.
 typedef enum {
@@ -2371,6 +2353,10 @@ typedef enum {
     dnnl_sparse_encoding_packed,
     dnnl_sparse_encoding_csr,
     dnnl_sparse_encoding_coo,
+    // Legacy aliases for backward compatibility.
+    dnnl_packed = dnnl_sparse_encoding_packed,
+    dnnl_csr = dnnl_sparse_encoding_csr,
+    dnnl_coo = dnnl_sparse_encoding_coo,
 } dnnl_sparse_encoding_t;
 
 /* typedef struct dnnl_sparse_desc *dnnl_sparse_desc_t; */
@@ -2925,13 +2911,12 @@ typedef enum {
     dnnl_query_inner_nblks_s32, ///< number of innermost blocks
     dnnl_query_inner_blks, ///< vector of sizes of the innermost blocks
     dnnl_query_inner_idxs, ///< vector of logical indices of the blocks
-#ifdef DNNL_EXPERIMENTAL_SPARSE
     dnnl_query_sparse_encoding, ///< Sparse encoding
+#ifdef DNNL_EXPERIMENTAL_SPARSE
     dnnl_query_nnz_s64, ///< Number of non-zero entries
     dnnl_query_num_handles_s32, ///< Number of buffers required for a memory
 ///  descriptor
 #endif
-    dnnl_query_sparse_encoding,
 
     // Max value to prevent UB for internal use only dnnl_query_t
     dnnl_query_max = 0x7fff,

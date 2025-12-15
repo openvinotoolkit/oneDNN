@@ -1,6 +1,8 @@
 /*******************************************************************************
-* Copyright 2022-2023 Intel Corporation
+* Copyright 2022 Intel Corporation
 * Copyright 2024 FUJITSU LIMITED
+* Copyright 2025 Arm Ltd. and affiliates
+*
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
 * You may obtain a copy of the License at
@@ -15,6 +17,7 @@
 *******************************************************************************/
 
 #include "common/dnnl_thread.hpp"
+#include "cpu/aarch64/cpu_isa_traits.hpp"
 
 #include "cpu/aarch64/matmul/brgemm_matmul_reorders.hpp"
 
@@ -23,7 +26,7 @@ namespace impl {
 namespace cpu {
 namespace aarch64 {
 
-status_t brgemm_matmul_matrix_B_reorder_t::pd_t::init(
+status_t brgemm_matmul_copy_reorder_t::pd_t::init(
         engine_t *engine, engine_t *src_engine, engine_t *dst_engine) {
     using namespace status;
     using namespace format_tag;
@@ -110,7 +113,10 @@ status_t brgemm_matmul_matrix_B_reorder_t::pd_t::init(
             : brgemm_broadcast_t::none;
     matmul_conf_for_reorder_.has_zero_point_a
             = matmul_conf_for_reorder_.src_zp_type != brgemm_broadcast_t::none;
-    matmul_conf_for_reorder_.isa = (!mayiuse(sve_512)) ? sve_256 : sve_512;
+
+    // asimd not supported, so we need >sve_128
+    if (!mayiuse(sve_128)) return status::unimplemented;
+    matmul_conf_for_reorder_.isa = get_max_cpu_isa();
 
     auto mask_ok = [&](bool check, int mask) {
         return IMPLICATION(
@@ -128,9 +134,8 @@ status_t brgemm_matmul_matrix_B_reorder_t::pd_t::init(
     return status::success;
 }
 
-status_t brgemm_matmul_matrix_B_reorder_t::pd_t::create(
-        reorder_pd_t **reorder_pd, engine_t *engine,
-        const primitive_attr_t *attr, engine_t *src_engine,
+status_t brgemm_matmul_copy_reorder_t::pd_t::create(reorder_pd_t **reorder_pd,
+        engine_t *engine, const primitive_attr_t *attr, engine_t *src_engine,
         const memory_desc_t *src_md, engine_t *dst_engine,
         const memory_desc_t *dst_md) {
     using namespace status;
@@ -143,7 +148,7 @@ status_t brgemm_matmul_matrix_B_reorder_t::pd_t::create(
     return safe_ptr_assign<reorder_pd_t>(*reorder_pd, _pd.release());
 }
 
-status_t brgemm_matmul_matrix_B_reorder_t::execute_body(
+status_t brgemm_matmul_copy_reorder_t::execute_body(
         const exec_ctx_t &ctx) const {
     using namespace utils;
 

@@ -30,7 +30,7 @@
 #include "cpu/cpu_pooling_pd.hpp"
 
 #include "cpu/aarch64/jit_uni_pool_kernel.hpp"
-#include "cpu/aarch64/jit_uni_reorder.hpp"
+#include "cpu/aarch64/reorder/jit_uni_reorder.hpp"
 
 namespace dnnl {
 namespace impl {

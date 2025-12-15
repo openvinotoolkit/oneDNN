@@ -35,8 +35,12 @@
 #endif
 
 #define DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_name) \
-    const char *name() const override { return STRINGIFY(jit_name); } \
-    const char *source_file() const override { return __FILE__; }
+    const char *name() const override { \
+        return STRINGIFY(jit_name); \
+    } \
+    const char *source_file() const override { \
+        return __FILE__; \
+    }
 
 static const size_t CSIZE = sizeof(uint32_t);
 
@@ -684,7 +688,7 @@ public:
     void dump_debug_traces(const uint8_t *code, size_t code_size) const {
 #if !defined(NDEBUG) && defined(__GNUC__)
         if (code && get_jit_dump()) {
-        #define MAX_FNAME_LEN 256
+#define MAX_FNAME_LEN 256
             static int counter = 0;
             char fname[MAX_FNAME_LEN + 1];
             snprintf(fname, MAX_FNAME_LEN, "dnnl_traces_cpu_%s.%d.txt", name(),
@@ -694,12 +698,12 @@ public:
             std::cout << "[ oneDNN ] dump_debug_traces: " << fname << std::endl;
             FILE *fp = fopen(fname, "wb+");
             if (fp) {
-                for (const auto & p : get_debug_traces()) {
+                for (const auto &p : get_debug_traces()) {
                     fprintf(fp, "%lx:\t%s\n", p.first, p.second.c_str());
                 }
                 fclose(fp);
             }
-        #undef MAX_FNAME_LEN
+#undef MAX_FNAME_LEN
         }
 #endif
     }
@@ -709,7 +713,9 @@ public:
         jit_utils::register_jit_code(code, code_size, name(), source_file());
     }
 
-    const uint8_t *jit_ker() const { return jit_ker_; }
+    const uint8_t *jit_ker() const {
+        return jit_ker_;
+    }
 
     template <typename... kernel_args_t>
     void operator()(kernel_args_t... args) const {
@@ -749,6 +755,9 @@ protected:
     virtual void generate() = 0;
     const uint8_t *jit_ker_ = nullptr;
 };
+
+// Alias for newer oneDNN sources that expect jit_generator_t.
+using jit_generator_t = jit_generator;
 
 } // namespace aarch64
 } // namespace cpu

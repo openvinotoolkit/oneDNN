@@ -1,6 +1,7 @@
 /*******************************************************************************
-* Copyright 2021-2023 Intel Corporation
+* Copyright 2021 Intel Corporation
 * Copyright 2023-2024 FUJITSU LIMITED
+* Copyright 2025 Arm Ltd. and affiliates
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -121,6 +122,8 @@ struct brgemm_matmul_conf_t {
     data_type_t wei_dt;
     data_type_t acc_dt;
     data_type_t bia_dt;
+    data_type_t orig_src_dt;
+    data_type_t orig_wei_dt;
     int nthr;
     int nthr_k;
 
@@ -166,6 +169,7 @@ struct brgemm_matmul_conf_t {
     bool has_zero_point_a, has_zero_point_b, has_zero_point_c;
     bool post_ops_applicable;
     bool transposed_A;
+    bool transposed_B;
     bool blocked_B;
 
     dim_t zp_a_comp_shift_n;
@@ -210,6 +214,12 @@ struct brgemm_matmul_conf_utils_t {
     }
 
     inline bool use_buffer_b(bool use_heuristic = true) const {
+        // In the case of 1xK gemmv, we should avoid copying the weights if
+        // they are in BA format, since the copy would be more expensive than
+        // the gemv itself.
+        if (bgmmc.M == 1 && bgmmc.N > 1 && bgmmc.wei_tag == format_tag::ba) {
+            return false;
+        }
         // Values based on measured performance difference
         // between plain and copy-to-blocked routine.
         size_t big_LDB = bgmmc.N > 256;
@@ -300,6 +310,10 @@ private:
     const bool n_blk_fixed;
     const cpu_isa_t isa_;
 };
+
+status_t init_conf(brgemm_matmul_conf_t &conf, dim_t batch, dim_t M, dim_t K,
+        dim_t N, dim_t in_ld, dim_t n_blk, data_type_t in_type,
+        data_type_t out_type, format_tag_t in_tag);
 
 void init_aux_values(brgemm_matmul_conf_t &bgmmc,
         const memory_desc_wrapper &src_d, const memory_desc_wrapper &wei_d,

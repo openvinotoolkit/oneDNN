@@ -1,7 +1,7 @@
 /*******************************************************************************
-* Copyright 2021-2023 Intel Corporation
+* Copyright 2021 Intel Corporation
 * Copyright 2023-2024 FUJITSU LIMITED
-* Copyright 2024 Arm Ltd. and affiliates
+* Copyright 2024-2025 Arm Ltd. and affiliates
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -16,16 +16,14 @@
 * limitations under the License.
 *******************************************************************************/
 
-#include <unordered_set>
-
-#include "common/dnnl_thread.hpp"
-#include "cpu/aarch64/injectors/jit_uni_postops_injector.hpp"
 #include "cpu/aarch64/matmul/brgemm_matmul_utils.hpp"
-#include "cpu/platform.hpp"
+#include "common/c_types_map.hpp"
+#include "common/dnnl_thread.hpp"
+#include "common/type_helpers.hpp"
+#include "cpu/aarch64/injectors/jit_uni_postops_injector.hpp"
 
 #include "cpu/binary_injector_utils.hpp"
 #include "cpu/matmul/matmul_utils.hpp"
-#include "oneapi/dnnl/dnnl_debug.h"
 
 // TODO add a method to print brgemm conf info
 #define VCONDCHECK_BG(cond, msg, ...) \
@@ -221,17 +219,16 @@ status_t brgemm_matmul_conf_utils_t::set_or_check_B_tag(
                 : memory_desc_matches_one_of_tag(B_md, plain_tensor_layout_tag,
                         transposed_tensor_layout_tag, acbd, adbc);
 
-        // For cases when the weights tensor is transposed but has
-        // 'dim_size == 1', we can ignore transposition and compute as a plain
-        // format tensor. This removes the need of allocating a scratchpad for
-        // copy_B.
-        if (transposed_tensor_layout_tag == bgmmc.wei_tag) {
-            memory_desc_t B_md_plain;
-            const status_t status
-                    = memory_desc_init_by_tag(B_md_plain, B_md.ndims, B_md.dims,
-                            B_md.data_type, plain_tensor_layout_tag);
-            if (status != status::success) return status;
-            if (B_md_plain == B_md) bgmmc.wei_tag = plain_tensor_layout_tag;
+        // If the B memory descriptor matches both the transposed and plain
+        // version that means that for dims = [P, Q, K, N] in the weight matrix,
+        // then (K || N) == 1. That is, B is either a row or column vector. In
+        // this case it makes no difference if we treat B as row-major or
+        // column-major since they are identical for a vector. Therefore we
+        // chose to treat it as "plain" since that saves us the extra time and
+        // scratchpad memory we would need for an unnecessary transpose.
+        if (memory_desc_matches_tag(B_md, transposed_tensor_layout_tag)
+                && memory_desc_matches_tag(B_md, plain_tensor_layout_tag)) {
+            bgmmc.wei_tag = plain_tensor_layout_tag;
         }
 
         if (format_tag::undef == bgmmc.wei_tag) return status::unimplemented;
@@ -934,8 +931,15 @@ status_t init_brgemm_matmul_conf(cpu_isa_t isa, brgemm_matmul_conf_t &bgmmc,
 
     // We need to correct A_strides if batched dimensions are merged in M and
     // A layout is formally transposed but could be treated as plain
-    if (merge_batch_dims_into_M && treat_transposed_A_as_plain) {
+    if (merge_batch_dims_into_M
+            && (src_d.matches_tag(acbd) || treat_transposed_A_as_plain)) {
         bgmmc.A_strides[1] = bgmmc.A_strides[2];
+    }
+
+    // We need to correct C_strides if batched dimensions are merged in M and
+    // C layout is formally transposed but could be treated as plain
+    if (merge_batch_dims_into_M && dst_d.matches_tag(acbd)) {
+        bgmmc.C_strides[1] = bgmmc.C_strides[2];
     }
 
     // BF32 'Hint' Heuristic:
@@ -981,6 +985,67 @@ status_t init_brgemm_matmul_conf(cpu_isa_t isa, brgemm_matmul_conf_t &bgmmc,
             = bgmmc.use_buffer_c && bgmmc.nthr_k <= 1 ? bgmmc.N_blk : bgmmc.LDD;
 
     init_aux_values(bgmmc, src_d, weights_d, dst_d);
+
+    return status::success;
+}
+
+status_t init_conf(brgemm_matmul_conf_t &conf, dim_t batch, dim_t M, dim_t K,
+        dim_t N, dim_t in_ld, dim_t n_blk, data_type_t in_type,
+        data_type_t out_type, format_tag_t in_tag) {
+    if (n_blk <= 0 && M <= 0) return status::invalid_arguments;
+
+    const auto vnni_granularity = data_type_vnni_granularity(out_type);
+    if (vnni_granularity <= 0) return status::invalid_arguments;
+
+    // Zero initialize the `conf` to avoid access to 'garbage' in members.
+    conf = brgemm_matmul_conf_t();
+
+    const bool is_bf16 = one_of(in_type, bf16) || one_of(out_type, bf16);
+    const bool is_s8u8 = one_of(in_type, s8, u8) || one_of(out_type, s8, u8);
+
+    VCONDCHECK_BG(!(is_bf16 || is_s8u8), VERBOSE_UNSUPPORTED_DT);
+
+    const bool is_copyB = N > 0;
+    conf.isa = get_max_cpu_isa(); // Just use the best ISA possible.
+    conf.is_bf32 = false;
+    conf.batch = batch;
+    conf.src_dt = conf.wei_dt = out_type;
+    conf.orig_src_dt = conf.orig_wei_dt = in_type;
+    // Note: will need to change `tr_a_dt_sz` for copyA in cases where src_dt != dst_dt
+    conf.a_dt_sz = conf.tr_a_dt_sz = types::data_type_size(conf.src_dt);
+    conf.N = N;
+    conf.M = M;
+    conf.K = K;
+    const dim_t copyA_K_blk = isa_num_vregs(conf.isa) / 2;
+    const dim_t copyB_K_blk = 16 * vnni_granularity;
+    conf.K_blk = is_copyB ? copyB_K_blk : copyA_K_blk;
+    conf.K_tail = conf.K % conf.K_blk;
+    if (!is_copyB) {
+        // Note: current implementation always calls the transposed kernel.
+        conf.transposed_A = true;
+        conf.M_blk = (dim_t)isa_max_vlen(conf.isa) / conf.a_dt_sz;
+        conf.M_tail = conf.M % conf.M_blk;
+        conf.copy_A_src_stride = in_ld * conf.a_dt_sz;
+        // setting LDA parameter required for plain transpose
+        conf.LDA = conf.K;
+    } else {
+        conf.blocked_B = !utils::one_of(in_tag, ab, ba, abc, acb);
+        conf.transposed_B = utils::one_of(in_tag, ba, acb);
+        conf.wei_tag = in_tag;
+        conf.wei_n_blk = conf.N_blk = conf.LDB = n_blk;
+        conf.N_tail = conf.N % conf.N_blk;
+        conf.b_dt_sz = types::data_type_size(in_type);
+        conf.tr_b_dt_sz = types::data_type_size(conf.wei_dt);
+        conf.copy_B_wei_stride = in_ld * conf.b_dt_sz;
+        conf.N_chunk_elems = conf.N;
+        conf.s8s8_comp_b_str = utils::rnd_up(conf.N, conf.wei_n_blk);
+        conf.s8s8_comp_n_str = conf.wei_n_blk;
+    }
+
+    conf.s8s8_compensation_required = false;
+    conf.src_zp_type = brgemm_broadcast_t::none;
+    conf.has_zero_point_a = false;
+    conf.has_zero_point_b = false;
 
     return status::success;
 }
@@ -1031,14 +1096,24 @@ void init_aux_values(brgemm_matmul_conf_t &bgmmc,
     bgmmc.A_ptr_shift_b = 0;
     bgmmc.copy_A_src_stride
             = bgmmc.a_dt_sz * (bgmmc.transposed_A ? bgmmc.M : bgmmc.K);
-    if (bgmmc.src_tag == acbd || bgmmc.src_tag == adbc) {
-        const dim_t factor = bgmmc.src_dt == f32 ? 2 : 1;
-        const dim_t src_stride = bgmmc.src_tag == acbd ? bgmmc.A_strides[1]
-                                                       : bgmmc.A_strides[0];
-        bgmmc.copy_A_src_stride = nstl::min(src_d.blocking_desc().strides[0],
-                                          src_stride / factor)
-                * factor;
-        const dim_t bcast_shift_b = bgmmc.src_tag == acbd ? bgmmc.K : bgmmc.M;
+
+    // If src have dimensions equal to 1, multiple tags can be matched so
+    // we need to make sure:
+    // - A_ptr_shift_b is set for acbd and adbc even if bgmmc.src_tag is abcd
+    // - Plain md that matches acbd or adbc does not dispatch into their codepath
+    if (src_d.matches_one_of_tag(acbd, adbc) != format_tag::undef) {
+        if (src_d.matches_one_of_tag(abcd, abdc) == format_tag::undef) {
+            const dim_t factor = bgmmc.src_dt == f32 ? 2 : 1;
+            const dim_t src_stride = src_d.matches_tag(acbd)
+                    ? bgmmc.A_strides[1]
+                    : bgmmc.A_strides[0];
+            bgmmc.copy_A_src_stride
+                    = nstl::min(src_d.blocking_desc().strides[0],
+                              src_stride / factor)
+                    * factor;
+        }
+
+        const dim_t bcast_shift_b = src_d.matches_tag(acbd) ? bgmmc.K : bgmmc.M;
         bgmmc.A_ptr_shift_b
                 = (bgmmc.bcast_A_desc.bcast_mask == 2
                                   ? bcast_shift_b
@@ -1048,14 +1123,24 @@ void init_aux_values(brgemm_matmul_conf_t &bgmmc,
 
     bgmmc.B_ptr_shift_b = 0;
     bgmmc.copy_B_wei_stride = 0;
-    if (one_of(bgmmc.wei_tag, acbd, adbc)) {
-        const dim_t factor = bgmmc.wei_dt == f32 ? 2 : 1;
-        const dim_t wei_stride = bgmmc.wei_tag == acbd ? bgmmc.B_strides[1]
-                                                       : bgmmc.B_strides[0];
-        bgmmc.copy_B_wei_stride = nstl::min(wei_d.blocking_desc().strides[0],
-                                          wei_stride / factor)
-                * factor;
-        const dim_t bcast_shift_b = bgmmc.wei_tag == acbd ? bgmmc.N : bgmmc.K;
+    // If weights have dimensions equal to 1, multiple tags can be matched so
+    // we need to make sure:
+    // - B_ptr_shift_b is set for acbd and adbc even if bgmmc.wei_tag is abcd
+    // - Plain md that matches acbd or adbc does not dispatch into their codepath
+    // - Plain md that matches transposed tag does not dispatch into its codepath
+    if (wei_d.matches_one_of_tag(acbd, adbc) != format_tag::undef) {
+        if (wei_d.matches_one_of_tag(abcd, abdc) == format_tag::undef) {
+            const dim_t factor = bgmmc.wei_dt == f32 ? 2 : 1;
+            const dim_t wei_stride = wei_d.matches_tag(acbd)
+                    ? bgmmc.B_strides[1]
+                    : bgmmc.B_strides[0];
+            bgmmc.copy_B_wei_stride
+                    = nstl::min(wei_d.blocking_desc().strides[0],
+                              wei_stride / factor)
+                    * factor;
+        }
+
+        const dim_t bcast_shift_b = wei_d.matches_tag(acbd) ? bgmmc.N : bgmmc.K;
         bgmmc.B_ptr_shift_b
                 = (bgmmc.bcast_B_desc.bcast_mask == 2
                                   ? bcast_shift_b
@@ -1063,7 +1148,7 @@ void init_aux_values(brgemm_matmul_conf_t &bgmmc,
                 * bgmmc.b_dt_sz;
     }
 
-    bgmmc.C_ptr_shift_b = bgmmc.dst_tag == acbd
+    bgmmc.C_ptr_shift_b = dst_d.matches_tag(acbd)
             ? dst_d.blocking_desc().strides[0] * bgmmc.c_dt_sz
             : 0;
 

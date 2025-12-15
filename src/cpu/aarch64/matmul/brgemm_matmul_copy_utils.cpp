@@ -1,6 +1,8 @@
 /*******************************************************************************
-* Copyright 2021-2023 Intel Corporation
+* Copyright 2021 Intel Corporation
 * Copyright 2024 FUJITSU LIMITED
+* Copyright 2025 Arm Ltd. and affiliates
+*
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
 * You may obtain a copy of the License at
@@ -19,6 +21,7 @@
 #include "common/type_helpers.hpp"
 #include "common/utils.hpp"
 #include "cpu/aarch64/jit_generator.hpp"
+#include "xbyak_aarch64/xbyak_aarch64/xbyak_aarch64_reg.h"
 
 #include "cpu/aarch64/matmul/brgemm_matmul_copy_utils.hpp"
 
@@ -37,7 +40,7 @@ using namespace Xbyak_aarch64;
 #define LDR_IMM(reg, addr, off) \
     { \
         const uint64_t IMM12_MASK = ~uint64_t(0xfff); \
-        if ((off & IMM12_MASK) == 0) { \
+        if (((off)&IMM12_MASK) == 0) { \
             ldr(reg, ptr(addr, off)); \
         } else { \
             add_imm(X_DEFAULT_ADDR, addr, off, X_TMP_0); \
@@ -48,7 +51,7 @@ using namespace Xbyak_aarch64;
 #define STR_IMM(reg, addr, off) \
     { \
         const uint64_t IMM12_MASK = ~uint64_t(0xfff); \
-        if ((off & IMM12_MASK) == 0) { \
+        if (((off)&IMM12_MASK) == 0) { \
             str(reg, ptr(addr, off)); \
         } else { \
             add_imm(X_DEFAULT_ADDR, addr, off, X_TMP_0); \
@@ -63,7 +66,6 @@ struct jit_brgemm_matmul_copy_a_impl_t : public jit_brgemm_matmul_copy_a_t,
 
     jit_brgemm_matmul_copy_a_impl_t(const brgemm_matmul_conf_t *conf)
         : jit_brgemm_matmul_copy_a_t(conf)
-        , jit_generator()
         , typesize_(conf_->a_dt_sz)
         , tr_typesize_(conf_->tr_a_dt_sz)
         , vnni_granularity_(data_type_vnni_granularity(conf_->src_dt))
@@ -235,7 +237,6 @@ struct jit_brgemm_matmul_copy_a_transposed_impl_t
 
     jit_brgemm_matmul_copy_a_transposed_impl_t(const brgemm_matmul_conf_t *conf)
         : jit_brgemm_matmul_copy_a_t(conf)
-        , jit_generator()
         , typesize(conf_->a_dt_sz)
         , tr_typesize(conf_->tr_a_dt_sz)
         , src_stride(conf_->copy_A_src_stride)
@@ -361,7 +362,6 @@ struct jit_brgemm_matmul_copy_b_int8_t : public jit_brgemm_matmul_copy_b_t,
 
     jit_brgemm_matmul_copy_b_int8_t(const brgemm_matmul_conf_t *conf)
         : jit_brgemm_matmul_copy_b_t(conf)
-        , jit_generator()
         , src_stride_(conf->wei_tag == format_tag::acbd
                           ? conf->copy_B_wei_stride
                           : conf->N * sizeof(int8_t))
@@ -501,7 +501,6 @@ struct jit_brgemm_matmul_copy_b_f32_t : public jit_brgemm_matmul_copy_b_t,
 
     jit_brgemm_matmul_copy_b_f32_t(const brgemm_matmul_conf_t *conf)
         : jit_brgemm_matmul_copy_b_t(conf)
-        , jit_generator()
         , dt_in_(data_type::f32)
         , typesize_in_(types::data_type_size(dt_in_))
         , src_stride_(conf_->wei_tag == acbd ? conf_->copy_B_wei_stride
@@ -525,7 +524,6 @@ private:
     const size_t typesize_in_;
     const size_t typesize_out_ = sizeof(float);
     dim_t src_stride_, tr_src_stride_;
-    const bool is_sve_256 = !mayiuse(sve_512);
 
     opmask_t kTail = p7;
     opmask_t kFFFF = p6;
@@ -550,7 +548,7 @@ private:
 void jit_brgemm_matmul_copy_b_f32_t::copy_16_8_x_n_block(
         int nrows, int ncolumns) {
 
-    int n_blk_step = is_sve_256 ? 8 : 16;
+    int n_blk_step = get_sve_length() / typesize_in_;
 
     auto get_zmm = [](int reg_idx) {
         assert(reg_idx >= 0 && reg_idx < max_regs_available);
@@ -581,7 +579,7 @@ void jit_brgemm_matmul_copy_b_f32_t::copy_16_8_x_n_block(
             continue;
         }
 
-        const opmask_t curr_msk = zero_padding < n_blk_step ? kTail : kFFFF;
+        const opmask_t curr_msk = zero_padding < n_blk_step ? kTail : P_ALL_ONE;
         const int blk_idx = iter % max_regs_available;
         load(blk_idx, k, n, curr_msk);
         add_imm(X_DEFAULT_ADDR, reg_tr_src, tr_src_off, X_TMP_0);
@@ -610,12 +608,13 @@ void jit_brgemm_matmul_copy_b_f32_t::compute_k_loop(int ncolumns) {
         L(K_end_label);
     };
 
-    int k_unroll = is_sve_256 ? 8 : 16;
+    int k_unroll = get_sve_length() / typesize_in_;
     compute_uni_k_loop(k_unroll);
     compute_uni_k_loop(1);
 }
 
 void jit_brgemm_matmul_copy_b_f32_t::generate() {
+
     preamble();
     eor(zmm_zero.d, zmm_zero.d, zmm_zero.d);
     LDR_IMM(reg_src, param1, GET_OFF(src));
@@ -648,7 +647,6 @@ struct jit_brgemm_matmul_copy_b_transposed_t
 
     jit_brgemm_matmul_copy_b_transposed_t(const brgemm_matmul_conf_t *conf)
         : jit_brgemm_matmul_copy_b_t(conf)
-        , jit_generator()
         , typesize_(conf_->b_dt_sz)
         , tr_typesize_(conf_->tr_b_dt_sz)
         , vnni_granularity_(data_type_vnni_granularity(conf_->wei_dt))
@@ -671,7 +669,6 @@ private:
     using reg64_t = const Xbyak_aarch64::XReg;
     using reg32_t = const Xbyak_aarch64::WReg;
     using opmask_t = const Xbyak_aarch64::PReg;
-    using ZReg = const Xbyak_aarch64::ZReg;
 
     static constexpr bool is_sve256_ = isa == sve_256;
     static constexpr cpu_isa_t isa_ = isa;
@@ -719,20 +716,20 @@ private:
 
     // Note: for the SVE256 implementation, reserve ZReg(8) and ZReg(9) as
     // temporary compute registers.
-    ZReg vmm_comp_mul = Xbyak_aarch64::ZReg(max_vmm_regs_ - 1);
-    ZReg vmm_comp_acc = Xbyak_aarch64::ZReg(max_vmm_regs_ - 2);
-    ZReg vmm_zp_a_neg_val = Xbyak_aarch64::ZReg(max_vmm_regs_ - 3);
-    ZReg vmm_s8s8_comp_acc = Xbyak_aarch64::ZReg(max_vmm_regs_ - 4);
-    ZReg vmm_all_bits_1 = Xbyak_aarch64::ZReg(max_vmm_regs_ - 5);
-    ZReg vmm_one_s32 = Xbyak_aarch64::ZReg(max_vmm_regs_ - 6);
+    const ZReg vmm_comp_mul {max_vmm_regs_ - 1};
+    const ZReg vmm_comp_acc {max_vmm_regs_ - 2};
+    const ZReg vmm_zp_a_neg_val {max_vmm_regs_ - 3};
+    const ZReg vmm_s8s8_comp_acc {max_vmm_regs_ - 4};
+    const ZReg vmm_all_bits_1 {max_vmm_regs_ - 5};
+    const ZReg vmm_one_s32 {max_vmm_regs_ - 6};
+    const ZReg vmm_ones_words {max_vmm_regs_ - 7};
+    const ZReg vmm_dot_product_temp {max_vmm_regs_ - 8};
 
-    ZReg vmm_ones_words = ZReg(max_vmm_regs_ - 7);
-    ZReg vmm_dot_product_temp = ZReg(max_vmm_regs_ - 8);
+    const ZReg z_tmp_0 {28};
+    const ZReg z_tmp_1 {29};
+    const ZReg z_tmp_3 {30};
+    const ZReg z_tmp_2 {27};
 
-    ZReg z_tmp_0 = ZReg(28);
-    ZReg z_tmp_1 = ZReg(29);
-    ZReg z_tmp_3 = ZReg(30);
-    ZReg z_tmp_2 = ZReg(27);
     PReg p_tmp_0 = p7;
     PReg p_02 = p8;
     PReg p_AA = p9;
@@ -746,11 +743,11 @@ private:
 
     void kmovw(Xbyak_aarch64::PReg k, unsigned w) {
         assert(!"under construction");
-    };
+    }
 
     void kmovq(Xbyak_aarch64::PReg k, size_t q) {
         assert(!"under construction");
-    };
+    }
 
     ZReg src_vmm(int i) {
         assert(i >= 0 && i < n_blk_step_);
@@ -1081,6 +1078,7 @@ void jit_brgemm_matmul_copy_b_transposed_t<isa>::generate() {
 
 template struct jit_brgemm_matmul_copy_b_transposed_t<sve_512>;
 template struct jit_brgemm_matmul_copy_b_transposed_t<sve_256>;
+template struct jit_brgemm_matmul_copy_b_transposed_t<sve_128>;
 
 status_t create_brgemm_matmul_copy_b(
         std::unique_ptr<jit_brgemm_matmul_copy_b_t> &copy_ker,
