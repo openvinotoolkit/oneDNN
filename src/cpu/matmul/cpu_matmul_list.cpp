@@ -34,11 +34,6 @@ using namespace dnnl::impl::cpu::x64;
 #include "cpu/aarch64/matmul/brgemm_matmul.hpp"
 #include "cpu/aarch64/matmul/jit_bf16_matmul.hpp"
 #include "cpu/aarch64/matmul/jit_int8_matmul.hpp"
-#ifdef DNNL_AARCH64_USE_ACL
-#include "cpu/aarch64/matmul/acl_lowp_matmul.hpp"
-#include "cpu/aarch64/matmul/acl_lowp_matmul_sq.hpp"
-#include "cpu/aarch64/matmul/acl_matmul.hpp"
-#endif
 using namespace dnnl::impl::cpu::aarch64::matmul;
 using namespace dnnl::impl::cpu::aarch64;
 #elif DNNL_RV64
@@ -47,7 +42,14 @@ using namespace dnnl::impl::cpu::aarch64;
 using namespace dnnl::impl::cpu::rv64::matmul;
 using namespace dnnl::impl::cpu::rv64;
 #endif
+#endif
 
+#ifdef DNNL_USE_ACL
+#include "cpu/acl/matmul/acl_lowp_matmul.hpp"
+#include "cpu/acl/matmul/acl_lowp_matmul_sq.hpp"
+#include "cpu/acl/matmul/acl_matmul.hpp"
+using namespace dnnl::impl::cpu::acl::matmul;
+using namespace dnnl::impl::cpu::acl;
 #endif
 
 namespace dnnl {
@@ -61,9 +63,9 @@ using namespace dnnl::impl::cpu::matmul;
 // clang-format off
 const impl_list_item_t impl_list[] = REG_MATMUL_P({
         CPU_INSTANCE_AARCH64(brgemm_matmul_t, sve_512)
-        CPU_INSTANCE_AARCH64_ACL(acl_lowp_matmul_sq_t)
-        CPU_INSTANCE_AARCH64_ACL(acl_lowp_matmul_t)
-        CPU_INSTANCE_AARCH64_ACL(acl_matmul_t)
+        CPU_INSTANCE_ACL(acl_lowp_matmul_sq_t)
+        CPU_INSTANCE_ACL(acl_lowp_matmul_t)
+        CPU_INSTANCE_ACL(acl_matmul_t)
         CPU_INSTANCE_AARCH64(jit_bf16_matmul_t)
         CPU_INSTANCE_AARCH64(brgemm_matmul_t, sve_256)
         CPU_INSTANCE_AARCH64(jit_int8_matmul_t)
