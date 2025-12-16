@@ -13,19 +13,19 @@
 * See the License for the specific language governing permissions and
 * limitations under the License.
 *******************************************************************************/
-#ifndef CPU_AARCH64_ACL_REORDER_HPP
-#define CPU_AARCH64_ACL_REORDER_HPP
+#ifndef CPU_ACL_REORDER_HPP
+#define CPU_ACL_REORDER_HPP
 
 #include "arm_compute/core/Types.h"
 #include "common/utils.hpp"
-#include "cpu/aarch64/acl_utils.hpp"
+#include "cpu/acl/acl_utils.hpp"
 #include "cpu/aarch64/cpu_isa_traits.hpp"
 #include "cpu/reorder/cpu_reorder_pd.hpp"
 
 namespace dnnl {
 namespace impl {
 namespace cpu {
-namespace aarch64 {
+namespace acl {
 
 struct acl_reorder_obj_t {
     arm_compute::NEReorderLayer reorder;
@@ -91,9 +91,9 @@ private:
 
 }; // acl_reorder_fwd_t
 
-} // namespace aarch64
+} // namespace acl
 } // namespace cpu
 } // namespace impl
 } // namespace dnnl
 
-#endif // CPU_AARCH64_ACL_REORDER_HPP
+#endif // CPU_ACL_REORDER_HPP
