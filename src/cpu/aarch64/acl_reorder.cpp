@@ -39,7 +39,7 @@ int find_innermost_dense_idx(const dnnl::impl::memory_desc_t *md) {
 namespace dnnl {
 namespace impl {
 namespace cpu {
-namespace aarch64 {
+namespace acl {
 
 status_t acl_reorder_resource_t::configure(const acl_reorder_conf_t &app) {
     if (!acl_obj_) return status::out_of_memory;
@@ -255,7 +255,7 @@ status_t acl_reorder_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
     return status::success;
 }
 
-} // namespace aarch64
+} // namespace acl
 } // namespace cpu
 } // namespace impl
 } // namespace dnnl
