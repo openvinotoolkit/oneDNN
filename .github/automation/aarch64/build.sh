@@ -37,7 +37,7 @@ if [[ "$ONEDNN_ACTION" == "configure" ]]; then
         CC=clang CXX=clang++ \
         cmake \
             -Bbuild -S. \
-            -DDNNL_AARCH64_USE_ACL=ON \
+            -DDNNL_USE_ACL=ON \
             -DONEDNN_BUILD_GRAPH=ON \
             -DDNNL_CPU_RUNTIME=OMP \
             -DONEDNN_WERROR=ON \
@@ -50,7 +50,7 @@ if [[ "$ONEDNN_ACTION" == "configure" ]]; then
         set -x
         cmake \
             -Bbuild -S. \
-            -DDNNL_AARCH64_USE_ACL=ON \
+            -DDNNL_USE_ACL=ON \
             -DONEDNN_BUILD_GRAPH=$ONEDNN_BUILD_GRAPH \
             -DDNNL_CPU_RUNTIME=$ONEDNN_THREADING \
             -DONEDNN_WERROR=ON \
