@@ -123,7 +123,9 @@ if(UNIX OR MINGW)
     set(CMAKE_C_EXTENSIONS OFF)
     set(CMAKE_CXX_EXTENSIONS OFF)
 endif()
-
+if (ANDROID)
+    set(CMAKE_CXX_STANDARD 20)
+endif()
 # Handle cases when OpenMP runtime is requested but not found: override CPU
 # runtime to be sequential
 if(DNNL_CPU_RUNTIME STREQUAL "OMP" AND
