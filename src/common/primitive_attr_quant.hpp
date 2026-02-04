@@ -211,6 +211,14 @@ struct quant_entry_t : public c_compatible {
     // `gtests/internals/test_comparison_operators` linking requirements which
     // mandates bodies to be in the header file.
     bool operator==(const quant_entry_t &rhs) const {
+        if (group_ndims_ == 3) {
+            return mask_ == rhs.mask_ && data_type_ == rhs.data_type_
+                    && group_ndims_ == rhs.group_ndims_
+                    && IMPLICATION(group_ndims_ > 0,
+                            utils::array_cmp(
+                                    group_dims_, rhs.group_dims_, group_ndims_))
+                    && is_host_scalar_ == rhs.is_host_scalar_;
+        }
         bool result = (type_ == rhs.type_ && is_set_ == rhs.is_set_
                 && mask_ == rhs.mask_
                 && data_type_ == rhs.data_type_
@@ -302,7 +310,7 @@ struct quant_entries_t : public c_compatible {
     status_t set(int arg, int mask, data_type_t data_type, int group_ndims,
             const dims_t group_dims, bool is_host_scalar = false) {
         if (!check_arg(arg)) return status::invalid_arguments;
-        if (arg == DNNL_ARG_WEIGHTS) {
+        if (arg == DNNL_ARG_WEIGHTS && group_ndims < 3) {
             CHECK(entries_[arg].set_zero_points(group_dims, group_ndims, data_type, mask));
         } else {
             CHECK(entries_[arg].set(
