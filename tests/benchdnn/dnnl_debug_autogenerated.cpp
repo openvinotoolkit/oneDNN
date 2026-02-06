@@ -51,6 +51,9 @@ dnnl_data_type_t str2dt(const char *str) {
     CASE(e8m0);
     CASE(f4_e2m1);
     CASE(f4_e3m0);
+    CASE(nf4);
+    CASE(bin);
+    CASE(u2);
     CASE(data_type_max);
 #undef CASE
     if (!strcmp("undef", str) || !strcmp("dnnl_data_type_undef", str))
@@ -60,25 +63,6 @@ dnnl_data_type_t str2dt(const char *str) {
     return dnnl_data_type_undef;
 }
 
-#ifdef DNNL_EXPERIMENTAL_SPARSE
-dnnl_sparse_encoding_t str2sparse_encoding(const char *str) {
-#define CASE(_case) do { \
-    if (!strcmp(STRINGIFY(_case), str) \
-            || !strcmp("dnnl_" STRINGIFY(_case), str)) \
-        return CONCAT2(dnnl_, _case); \
-} while (0)
-    CASE(csr);
-    CASE(packed);
-    CASE(coo);
-#undef CASE
-    if (!strcmp("undef", str) || !strcmp("dnnl_sparse_encoding_undef", str))
-        return dnnl_sparse_encoding_undef;
-    printf("Error: sparse_encoding `%s` is not supported.\n", str);
-    assert(!"unknown sparse_encoding");
-    return dnnl_sparse_encoding_undef;
-}
-
-#endif
 dnnl_format_tag_t str2fmt_tag(const char *str) {
 #define CASE(_case) do { \
     if (!strcmp(STRINGIFY(_case), str) \
@@ -184,6 +168,7 @@ dnnl_format_tag_t str2fmt_tag(const char *str) {
     CASE(ABcd8a16b2a);
     CASE(ABcd2b8a4b);
     CASE(ABcd8a8b);
+    CASE(ABcd8a32b);
     CASE(ABcd8a4b);
     CASE(aBcd8b);
     CASE(aBCd4c8b2c);
@@ -282,6 +267,8 @@ dnnl_format_tag_t str2fmt_tag(const char *str) {
     CASE(aCBdef16c16b);
     CASE(aBdefc4b);
     CASE(aBdefc8b);
+    CASE(Abcdef4a);
+    CASE(Abcdef8a);
     CASE(Abcdef16a);
     CASE(Abcdef32a);
     CASE(aBedc16b);
@@ -608,6 +595,19 @@ dnnl_format_tag_t str2fmt_tag(const char *str) {
     CASE(aCB16b32c);
     CASE(aCB16b48c);
     CASE(aCB16b64c);
+    CASE(aBC8c8b2c);
+    CASE(aBC8c16b2c);
+    CASE(aBC8c24b2c);
+    CASE(aBC8c32b2c);
+    CASE(aBC8c64b2c);
+    CASE(aBC16c16b2c);
+    CASE(aBC16c32b2c);
+    CASE(aBC16c48b2c);
+    CASE(aBC16c64b2c);
+    CASE(aBC16c16b4c);
+    CASE(aBC16c32b4c);
+    CASE(aBC16c48b4c);
+    CASE(aBC16c64b4c);
     CASE(aCB16b16c2b);
     CASE(aCB16b32c2b);
     CASE(aCB16b48c2b);
@@ -1170,6 +1170,8 @@ dnnl_format_tag_t str2fmt_tag(const char *str) {
     CASE(OIhw2i8o4i);
     CASE(IOhw8o16i2o);
     CASE(OIhw8o8i);
+    CASE(OIhw8o32i);
+    CASE(OIhw16o32i);
     CASE(OIhw8o4i);
     CASE(Owhi16o);
     CASE(OIhw8i32o);
@@ -1395,6 +1397,8 @@ dnnl_format_tag_t str2fmt_tag(const char *str) {
     CASE(gIOdhw8o16i2o);
     CASE(gOIdhw8o8i);
     CASE(gOIdhw8o4i);
+    CASE(Goidhw4g);
+    CASE(Goidhw8g);
     CASE(Goidhw16g);
     CASE(Goidhw32g);
     CASE(gOIdhw2i4o2i);
@@ -1719,6 +1723,31 @@ dnnl_format_tag_t str2fmt_tag(const char *str) {
     return dnnl_format_tag_last;
 }
 
+#ifdef DNNL_EXPERIMENTAL_SPARSE
+dnnl_sparse_encoding_t str2sparse_encoding(const char *str) {
+#define CASE(_case) do { \
+    if (!strcmp(STRINGIFY(_case), str) \
+            || !strcmp("dnnl_" STRINGIFY(_case), str)) \
+        return CONCAT2(dnnl_, _case); \
+} while (0)
+    CASE(sparse_encoding_packed);
+    CASE(sparse_encoding_csr);
+    CASE(sparse_encoding_coo);
+    CASE(packed);
+    CASE(csr);
+    CASE(coo);
+#undef CASE
+    if (!strcmp("undef", str) || !strcmp("dnnl_sparse_encoding_undef", str))
+        return dnnl_sparse_encoding_undef;
+    if (!strcmp("any", str) || !strcmp("dnnl_sparse_encoding_any", str))
+        return dnnl_sparse_encoding_any;
+    printf("Error: sparse_encoding `%s` is not supported.\n", str);
+    assert(!"unknown sparse_encoding");
+    return dnnl_sparse_encoding_undef;
+}
+
+#endif
+
 const char *status2str(dnnl_status_t status) {
     return dnnl_status2str(status);
 }
@@ -1736,6 +1765,9 @@ const char *sparse_encoding2str(dnnl_sparse_encoding_t encoding) {
     return dnnl_sparse_encoding2str(encoding);
 }
 #endif
+const char *sparse_encoding2str(dnnl_sparse_encoding_t encoding) {
+    return dnnl_sparse_encoding2str(encoding);
+}
 
 const char *engine_kind2str(dnnl_engine_kind_t kind) {
     return dnnl_engine_kind2str(kind);
