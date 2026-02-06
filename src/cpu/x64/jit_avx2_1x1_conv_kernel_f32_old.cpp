@@ -397,6 +397,10 @@ void jit_avx2_1x1_conv_kernel_f32_old::generate() {
 
     std::size_t post_ops_pointers_count = 0;
     for (int i = 0; i < p.len(); i++) {
+        if (jcp.with_dw_conv && p.entry_[i].is_convolution()) {
+            // dw_conv and post_ops after it are handled externally in *dw_conv* kernels, so skip them here.
+            break;
+        }
         if (p.entry_[i].is_depthwise() || p.entry_[i].is_quantization()) {
             post_ops_pointers_count++;
         }
@@ -602,7 +606,7 @@ status_t jit_avx2_1x1_conv_kernel_f32_old::init_conf(jit_1x1_conv_conf_t &jcp,
         return status::unimplemented;
 
     if (jcp.with_dw_conv) {
-        // dw_conv and post_ops after it are handled externally, so skip them
+        // dw_conv and post_ops after it are handled externally in *dw_conv* kernels, so skip them here.
         jcp.post_ops.entry_.assign(p.entry_.cbegin(),
                                    p.entry_.cbegin() + dw_conv_ind);
 
