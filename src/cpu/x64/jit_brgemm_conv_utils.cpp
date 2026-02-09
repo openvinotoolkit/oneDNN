@@ -893,7 +893,7 @@ float brg_blocking_t::est_eff() {
     const dim_t max_job = (loop_order == loop_ndhwgc)
             ? grid_coverage(thread_job, oc, ngroups, oc_block, sp, sp_block)
             : grid_coverage(thread_job, sp, static_cast<dim_t>(nb_od) * nb_oh,
-                    sp_block, oc, oc_block);
+                      sp_block, oc, oc_block);
     const dim_t sum_job = static_cast<dim_t>(mb) * od * oh * ow * ngroups * oc;
 
     const float job_eff = max_job == 0
@@ -1211,8 +1211,10 @@ void brg_blocking_t::iterate_ker_block(brg_blocking_t &best_brgb, int kd_block_,
         // WA coredump: ws:2, pl: 1, will result r_pad=-1 and incorrect post ops jit kernel.
         // case: onednn_verbose,exec,cpu,convolution,brgconv:avx512_core,forward_inference,src_f32::blocked:acb:f0 wei_f32:p:blocked:Acb16a:f0 bia_undef::undef::f0 dst_f32::blocked:acb:f0,attr-post-ops:sum:1:0:f32+eltwise_hardswish+binary_min:f32:0+binary_max:f32:0+binary_mul:f32:0+binary_add:f32:0+eltwise_round_half_to_even+binary_mul:f32:0+binary_add:f32:0 ,alg:convolution_direct,mb2_ic112oc6_iw7ow4kw1sw2dw0pw1,63700.4
         if (exec_type == exec_base)
-            use_buffer = use_buffer || (maybe_use_buffer
-                            && (iwp != iw || (l_pad + nstl::max(0, r_pad)) > 0));
+            use_buffer = use_buffer
+                    || (maybe_use_buffer
+                            && (iwp != iw
+                                    || (l_pad + nstl::max(0, r_pad)) > 0));
 
         const status_t st = estimate_brgemm_ur();
         if (st != status::success) continue;
@@ -1323,7 +1325,7 @@ float brg_blocking_t::est_eff_1x1() {
     const auto amx_fac = maskrcnn_cond
             ? (div_up(M + M_tail, 16) / (M_n_sp_blks + M_tail_n_sp_blks))
             : (static_cast<float>(div_up(M + M_tail, 16))
-                    / (M_n_sp_blks + M_tail_n_sp_blks));
+                      / (M_n_sp_blks + M_tail_n_sp_blks));
 
     const auto brgemm_microkernel_eff = is_amx(isa)
             ? amx_fac * (static_cast<float>(ocb_ave) * spb_ave)
@@ -1380,15 +1382,15 @@ float brg_blocking_t::est_eff_1x1() {
     if (is_os_blocking) {
         max_job = (loop_order == loop_ndhwgc)
                 ? grid_coverage(thread_job, oc, ngroups, oc_block, os,
-                        static_cast<dim_t>(nb_os_blocking) * sp_block)
+                          static_cast<dim_t>(nb_os_blocking) * sp_block)
                 : grid_coverage(thread_job, os, 1,
-                        static_cast<dim_t>(nb_os_blocking) * sp_block, oc,
-                        oc_block);
+                          static_cast<dim_t>(nb_os_blocking) * sp_block, oc,
+                          oc_block);
     } else {
         max_job = (loop_order == loop_ndhwgc)
                 ? grid_coverage(thread_job, oc, ngroups, oc_block, sp, sp_block)
                 : grid_coverage(thread_job, sp, static_cast<dim_t>(od) * oh,
-                        sp_block, oc, oc_block);
+                          sp_block, oc, oc_block);
     }
 
     const dim_t sum_job = static_cast<dim_t>(mb) * od * oh * ow * ngroups * oc;
@@ -1567,9 +1569,9 @@ void brg_blocking_t::calc_blocks_1x1() {
         const auto max_os_block_thr
                 = (src_dsz * ic >= 1024 && src_dsz * ic < 4096)
                 ? nstl::max(nstl::min(16, os),
-                        div_up(os, div_up(nthr, mb * div_up(oc, oc_block))))
+                          div_up(os, div_up(nthr, mb * div_up(oc, oc_block))))
                 : nstl::max(div_up(2048, oc_block),
-                        static_cast<int>(div_up(mb * ngroups * os, nthr)));
+                          static_cast<int>(div_up(mb * ngroups * os, nthr)));
         const auto max_os_block_L2 = max_sp_block_L2;
 
         auto max_os_block_aliasing = 1000000 / nthr;
@@ -2369,12 +2371,13 @@ status_t init_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
         dim_t ds = jcp.copy_block_only
                 ? (brg_blocking_t::get_inp_size(jcp.idp, jcp.od_block, jcp.kd,
                            jcp.stride_d, jcp.dilate_d)
-                        + nstl::max(0, jcp.f_pad) + nstl::max(0, jcp.back_pad))
+                          + nstl::max(0, jcp.f_pad)
+                          + nstl::max(0, jcp.back_pad))
                 : jcp.idp;
         dim_t hs = jcp.copy_block_only
                 ? (brg_blocking_t::get_inp_size(jcp.ihp, jcp.oh_block, jcp.kh,
                            jcp.stride_h, jcp.dilate_h)
-                        + nstl::max(0, jcp.t_pad) + nstl::max(0, jcp.b_pad))
+                          + nstl::max(0, jcp.t_pad) + nstl::max(0, jcp.b_pad))
                 : jcp.ihp;
         if (jcp.is_os_blocking)
             hs = div_up(rnd_up(hs * jcp.iwp, jcp.brgM), jcp.iwp)
@@ -2707,8 +2710,13 @@ void set_amx_wsp_per_thread(jit_brgemm_conv_conf_t &jcp) {
             = utils::rnd_up(jcp.amx_buf_size_per_thread + 1, P4K);
 }
 
-void init_scratchpad(memory_tracking::registrar_t &scratchpad,
-        const jit_brgemm_conv_conf_t &jcp) {
+status_t init_scratchpad(memory_tracking::registrar_t &scratchpad,
+        const jit_brgemm_conv_conf_t &jcp, const memory_desc_t &src_md,
+        const memory_desc_t &weights_md, const memory_desc_t &dst_md) {
+    const memory_desc_wrapper src_d(&src_md);
+    const memory_desc_wrapper weights_d(&weights_md);
+    const memory_desc_wrapper dst_d(&dst_md);
+
     if (uses_batch_elements(jcp.brg_type, jcp.exec_type)) {
         scratchpad.book(key_brgemm_primitive_batch,
                 static_cast<size_t>(jcp.nthr) * jcp.adjusted_batch_size,
@@ -2767,6 +2775,20 @@ void init_scratchpad(memory_tracking::registrar_t &scratchpad,
         scratchpad.book(key_conv_dst_scales,
                 static_cast<size_t>(jcp.nthr) * sizeof(float), P4K);
     }
+
+    // Check scratchpad size to avoid allocating huge buffers
+    if (jcp.exec_type == exec_trans) {
+        constexpr size_t scratchpad_limit_by_absolute_value = (size_t)32
+                << 30; // 32Gb - TODO: may it's too large?
+        const size_t scratchpad_limit_by_tensor_sizes = (size_t)64 * jcp.nthr
+                * (src_d.size() + weights_d.size() + dst_d.size());
+        const size_t scratchpad_limit
+                = nstl::min(scratchpad_limit_by_absolute_value,
+                        scratchpad_limit_by_tensor_sizes);
+        if (scratchpad.size() > scratchpad_limit) return status::unimplemented;
+    }
+
+    return status::success;
 }
 
 void balance_bwd_w(jit_brgemm_conv_conf_t &jcp) {
