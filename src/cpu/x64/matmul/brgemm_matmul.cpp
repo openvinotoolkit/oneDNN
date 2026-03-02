@@ -787,7 +787,7 @@ void brgemm_matmul_t<isa>::compute_kernel(
                     static_cast<const void *>(zp_comp_b),
                     static_cast<const void *>(zp_c_val_ptr), false, 1, false,
                     false, brgmm_ctx.get_src_scales_ptr(),
-                    brgmm_ctx.get_wei_scales_ptr(n),
+                    brgmm_ctx.get_wei_scales_ptr(n, b_idx),
                     brgmm_ctx.get_dst_scales_inv_ptr(ithr)};
             brgemm_kernel_execute_postops(brg_kernel, gemm_batch, addr_batch,
                     (void *)ptr_C, (void *)ptr_D, post_ops_data, scratch,
@@ -843,7 +843,7 @@ void brgemm_matmul_t<isa>::compute_kernel(
                     static_cast<const void *>(zp_comp_b),
                     static_cast<const void *>(zp_c_val_ptr), false, 1, false,
                     false, brgmm_ctx.get_src_scales_ptr(),
-                    brgmm_ctx.get_wei_scales_ptr(n),
+                    brgmm_ctx.get_wei_scales_ptr(n, b_idx),
                     brgmm_ctx.get_dst_scales_inv_ptr(ithr)};
 
             brgemm_kernel_execute_postops(brg_kernel_k_tail, 1, addr_batch,
@@ -1152,7 +1152,7 @@ void brgemm_matmul_t<isa>::maybe_reduce_partial_results_and_apply_postops(
                                 static_cast<const void *>(zp_c_val_ptr),
                                 skip_accumulation, 1, false, false,
                                 brgmm_ctx.get_src_scales_ptr(),
-                                brgmm_ctx.get_wei_scales_ptr(n),
+                                brgmm_ctx.get_wei_scales_ptr(n, b),
                                 brgmm_ctx.get_dst_scales_inv_ptr(ithr)};
 
                         brgemm_kernel_execute_postops(brg_kernel, 0, nullptr,
@@ -2074,7 +2074,8 @@ struct brgemm_matmul_t<isa>::brg_matmul_exec_ctx_t {
         }
 
         if (bgmmc_.wei_scales_batch_gsize > 0) {
-            const auto b_idx = b / bgmmc_.wei_scales_batch_gsize;
+            const auto bb_idx = get_bb_idx(b, bgmmc_.bcast_B_desc);
+            const auto b_idx = bb_idx / bgmmc_.wei_scales_batch_gsize;
             offset += b_idx * bgmmc_.wei_scales_batch_offset;
         }
 
@@ -2113,7 +2114,8 @@ struct brgemm_matmul_t<isa>::brg_matmul_exec_ctx_t {
         }
 
         if (bgmmc_.wei_zp_batch_gsize > 0) {
-            const auto b_idx = b / bgmmc_.wei_zp_batch_gsize;
+                        const auto bb_idx = get_bb_idx(b, bgmmc_.bcast_B_desc);
+                        const auto b_idx = bb_idx / bgmmc_.wei_zp_batch_gsize;
             offset += b_idx * bgmmc_.wei_zp_batch_offset;
         }
 
