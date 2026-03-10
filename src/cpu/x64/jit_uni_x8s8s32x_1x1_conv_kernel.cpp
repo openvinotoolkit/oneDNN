@@ -854,6 +854,14 @@ status_t jit_uni_x8s8s32x_1x1_conv_kernel_t<isa>::init_conf(
             && jcp.kd == 1 && jcp.kh == 1 && jcp.kw == 1;
     VDISPATCH_CONV_IC(args_ok, VERBOSE_BAD_PARAM, "");
 
+    // Work around a severe latency regression observed on E-core pinned runs
+    // for a specific u8/s8 1x1 shape with eltwise post-op.
+    if (src_d.data_type() == data_type::u8
+            && weights_d.data_type() == data_type::s8
+            && dst_d.data_type() == data_type::f32 && jcp.with_eltwise) {
+        return status::unimplemented;
+    }
+
     jcp.bia_dt = jcp.with_bias ? cd.bias_desc.data_type : data_type::undef;
     jcp.dst_dt = cd.dst_desc.data_type;
     if (jcp.with_sum)
