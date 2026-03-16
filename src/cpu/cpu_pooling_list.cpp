@@ -36,7 +36,7 @@ using namespace dnnl::impl::cpu::aarch64;
 using namespace dnnl::impl::cpu::rv64;
 #endif // DNNL_RISCV_USE_RVV_INTRINSICS
 #endif
-#if DNNL_USE_ACL
+#if defined(DNNL_AARCH64_USE_ACL)
 #include "cpu/acl/acl_pooling.hpp"
 using namespace dnnl::impl::cpu::acl;
 #endif
@@ -136,4 +136,3 @@ const impl_list_item_t *get_pooling_impl_list(const pooling_desc_t *desc) {
 } // namespace cpu
 } // namespace impl
 } // namespace dnnl
-

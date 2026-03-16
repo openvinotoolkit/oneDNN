@@ -1,0 +1,374 @@
+# *******************************************************************************
+# Copyright 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# *******************************************************************************
+
+name: "CI CPU"
+
+on:
+  push:
+    branches: [v3.10_for_ie_master, "rls-*"]
+    paths:
+      - ".github/automation/aarch64/**"
+      - ".github/automation/x64/**"
+      - ".github/automation/clang-format.sh"
+      - ".github/automation/commit-msg-check.py"
+      - ".github/azure/**"
+      - ".github/workflows/ci.yml"
+      - "cmake/**"
+      - "examples/**"
+      - "include/**"
+      - "src/common/**"
+      - "src/cpu/*"
+      - "src/cpu/aarch64/**"
+      - "src/cpu/gemm/**"
+      - "src/cpu/matmul/**"
+      - "src/cpu/reorder/**"
+      - "src/cpu/rnn/**"
+      - "src/cpu/x64/**"
+      - "tests/**"
+      - "CMakeLists.txt"
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/automation/aarch64/**"
+      - ".github/automation/x64/**"
+      - ".github/automation/clang-format.sh"
+      - ".github/automation/commit-msg-check.py"
+      - ".github/azure/**"
+      - ".github/workflows/ci.yml"
+      - "cmake/**"
+      - "examples/**"
+      - "include/**"
+      - "src/common/**"
+      - "src/cpu/*"
+      - "src/cpu/aarch64/**"
+      - "src/cpu/gemm/**"
+      - "src/cpu/matmul/**"
+      - "src/cpu/reorder/**"
+      - "src/cpu/rnn/**"
+      - "src/cpu/x64/**"
+      - "tests/**"
+      - "CMakeLists.txt"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}
+  cancel-in-progress: ${{ github.ref != format('refs/heads/{0}', github.event.repository.default_branch) }}
+
+permissions: read-all
+
+jobs:
+  build-acl-cache:
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        config: [
+          { name: macOS ARM, label: macos-14, threading: SEQ, toolset: clang, build: RelWithAssert },
+          { name: Ubuntu ARM, label: ubuntu-24.04-arm, threading: OMP, toolset: gcc, build: RelWithAssert }
+        ]
+
+    name: ACL cache - ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.label }}
+    steps:
+      - name: Checkout oneDNN
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          path: oneDNN
+
+      - name: Read version file
+        id: get-versions
+        run: |
+          content=`cat ${{ github.workspace }}/oneDNN/.github/automation/aarch64/ci.json`
+          content="${content//[$'\t\r\n$ ']}"
+          echo "output=$content" >> $GITHUB_OUTPUT
+
+      - name: Clone ACL
+        run: ${{ github.workspace }}/oneDNN/.github/automation/aarch64/build_acl.sh
+        env:
+          ACL_ACTION: clone
+          ACL_ROOT_DIR: ${{ github.workspace }}/ComputeLibrary
+          ACL_VERSION: ${{ fromJson(steps.get-versions.outputs.output).dependencies.acl }}
+
+      - name: Get ACL commit hash for cache key
+        id: get-acl-commit-hash
+        run: (cd ${{ github.workspace }}/ComputeLibrary && echo "ACLCommitHash=$(git rev-parse --short HEAD)") >> $GITHUB_OUTPUT
+
+      - name: Get system name
+        id: get-system-name
+        run: (echo "SystemName=$(uname)") >> $GITHUB_OUTPUT
+
+      - name: Restore cached ACL
+        id: cache-acl-restore
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          key: ${{ steps.get-system-name.outputs.SystemName }}-acl-${{ matrix.config.toolset }}-${{ matrix.config.build }}-${{ steps.get-acl-commit-hash.outputs.ACLCommitHash }}
+          path: ${{ github.workspace }}/ComputeLibrary/build
+          lookup-only: true
+
+      - name: Install scons (macOS)
+        if: ${{ matrix.config.label == 'macos-14' && steps.cache-acl-restore.outputs.cache-hit != 'true' }}
+        run: brew install scons
+
+      - name: Install scons (Linux)
+        if: ${{ matrix.config.label == 'ubuntu-24.04-arm' && steps.cache-acl-restore.outputs.cache-hit != 'true' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y scons
+
+      - name: Install OpenMP (Linux)
+        if: ${{ matrix.config.label == 'ubuntu-24.04-arm' && steps.cache-acl-restore.outputs.cache-hit != 'true' }}
+        run: sudo apt-get install -y libomp-dev
+
+      - name: Install gcc (Linux)
+        if: ${{ matrix.config.label == 'ubuntu-24.04-arm' && steps.cache-acl-restore.outputs.cache-hit != 'true' }}
+        run: |
+          sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
+          sudo apt-get update
+          sudo apt-get install -y g++-${{ fromJson(steps.get-versions.outputs.output).dependencies.gcc }}
+
+      - name: Build ACL
+        if: ${{ steps.cache-acl-restore.outputs.cache-hit != 'true' }}
+        run: ${{ github.workspace }}/oneDNN/.github/automation/aarch64/build_acl.sh
+        env:
+          ACL_ACTION: build
+          ACL_ROOT_DIR: ${{ github.workspace }}/ComputeLibrary
+          ACL_THREADING: ${{ matrix.config.threading }}
+          BUILD_TOOLSET: ${{ matrix.config.toolset }}
+          ACL_BUILD_TYPE: ${{ matrix.config.build }}
+          GCC_VERSION: ${{ fromJson(steps.get-versions.outputs.output).dependencies.gcc }}
+
+      - name: Save ACL in cache
+        if: ${{ steps.cache-acl-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          key: ${{ steps.get-system-name.outputs.SystemName }}-acl-${{ matrix.config.toolset }}-${{ matrix.config.build }}-${{ steps.get-acl-commit-hash.outputs.ACLCommitHash }}
+          path: ${{ github.workspace }}/ComputeLibrary/build
+
+  build-test-linux-x64:
+    strategy:
+      fail-fast: true
+      matrix:
+        config: [
+          { name: Ubuntu x64 GCC, cc: gcc, cxx: g++, threading: omp, skip_tests_regex: "test_iface_attr|test_pooling_forward|test_benchdnn_modeC_concat_smoke_cpu|test_benchdnn_modeC_conv_smoke_cpu|test_benchdnn_modeC_deconv_smoke_cpu|test_benchdnn_modeC_pool_smoke_cpu|test_benchdnn_modeC_reorder_smoke_cpu|cpu-tutorials-matmul-sgemm-and-matmul-cpp|cpu-tutorials-matmul-weights-decompression-matmul-cpp|test_iface_sparse" },
+          { name: Ubuntu x64 Clang, cc: clang, cxx: clang++, threading: omp, skip_tests_regex: "test_iface_attr|test_pooling_forward|test_benchdnn_modeC_concat_smoke_cpu|test_benchdnn_modeC_conv_smoke_cpu|test_benchdnn_modeC_deconv_smoke_cpu|test_benchdnn_modeC_pool_smoke_cpu|test_benchdnn_modeC_reorder_smoke_cpu|cpu-tutorials-matmul-sgemm-and-matmul-cpp|cpu-tutorials-matmul-weights-decompression-matmul-cpp|test_iface_sparse" }
+        ]
+
+    name: ${{ matrix.config.name }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout oneDNN
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          path: oneDNN
+
+      - name: Get latest CMake and Ninja
+        uses: lukka/get-cmake@56d043d188c3612951d8755da8f4b709ec951ad6 # v3.31.6
+        with:
+          cmakeVersion: 3.31.0
+          ninjaVersion: 1.12.0
+
+      - name: Install clang
+        if: ${{ matrix.config.cc == 'clang' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libomp-dev
+
+      - name: Setup ccache
+        uses: Chocobo1/setup-ccache-action@f433cb1e0b3ed576864d7fc361ce43b23b181e67 # v1.5.4
+        with:
+          remove_stale_cache: false
+          ccache_options: |
+            max_size=750M
+
+      - name: Build oneDNN
+        working-directory: ${{ github.workspace }}/oneDNN
+        env:
+          CC: ${{ matrix.config.cc }}
+          CXX: ${{ matrix.config.cxx }}
+          CCACHE_BASEDIR: ${{ github.workspace }}/oneDNN
+        run: .github/azure/build.sh --threading ${{ matrix.config.threading }} --mode Release --source-dir "$PWD" --build-dir "$PWD/build" --cmake-opt "-G Ninja -DONEDNN_BUILD_GRAPH=OFF -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
+
+      - name: Run oneDNN tests
+        working-directory: ${{ github.workspace }}/oneDNN
+        env:
+          ONEDNN_SKIP_TESTS_REGEX: ${{ matrix.config.skip_tests_regex }}
+        run: .github/azure/test.sh --build-dir "$PWD/build" --report-dir "$PWD/report"
+
+  build-test-windows-x64:
+    name: Windows x64
+    runs-on: windows-2022
+    steps:
+      - name: Checkout oneDNN
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          path: oneDNN
+
+      - name: Get latest CMake and Ninja
+        uses: lukka/get-cmake@56d043d188c3612951d8755da8f4b709ec951ad6 # v3.31.6
+        with:
+          cmakeVersion: 3.31.0
+          ninjaVersion: 1.12.0
+
+      - name: Install LLVM
+        uses: KyleMayes/install-llvm-action@ebc0426251bc40c7cd31162802432c68818ab8f0 # v2.0.9
+        with:
+          version: 19.1.7
+          directory: ${{ runner.temp }}\llvm
+
+      - name: Setup ccache
+        uses: Chocobo1/setup-ccache-action@f433cb1e0b3ed576864d7fc361ce43b23b181e67 # v1.5.4
+        with:
+          windows_compile_environment: msvc
+          remove_stale_cache: false
+          ccache_options: |
+            max_size=750M
+
+      - name: Build oneDNN
+        working-directory: ${{ github.workspace }}/oneDNN
+        shell: cmd
+        env:
+          CCACHE_BASEDIR: ${{ github.workspace }}\oneDNN
+        run: |
+          call "%ProgramFiles%\Microsoft Visual Studio\2022\Enterprise\Common7\Tools\VsDevCmd.bat" -arch=x64
+          set "PATH=%LLVM_PATH%\bin;%PATH%"
+          where clang
+          clang --version
+          .github\azure\build.bat /THREADING omp /MODE Release /SOURCEDIR %CD% /BUILDDIR %CD%\build /CMAKEOPT "-G Ninja -DCMAKE_PREFIX_PATH=%LLVM_PATH% -DCMAKE_C_COMPILER=%LLVM_PATH%\bin\clang.exe -DCMAKE_CXX_COMPILER=%LLVM_PATH%\bin\clang++.exe -DCMAKE_C_COMPILER_LAUNCHER:FILEPATH=${{ env.ccache_symlinks_path }} -DCMAKE_CXX_COMPILER_LAUNCHER:FILEPATH=${{ env.ccache_symlinks_path }} -DOpenMP_C_FLAGS=-fopenmp=libomp -DOpenMP_CXX_FLAGS=-fopenmp=libomp -DOpenMP_C_LIB_NAMES=libomp -DOpenMP_CXX_LIB_NAMES=libomp -DOpenMP_libomp_LIBRARY=%LLVM_PATH%\lib\libomp.lib -DOpenMP_C_SPEC_DATE=201811 -DOpenMP_CXX_SPEC_DATE=201811 -DONEDNN_BUILD_GRAPH=OFF"
+
+      - name: Run oneDNN tests
+        working-directory: ${{ github.workspace }}/oneDNN
+        shell: cmd
+        env:
+          ONEDNN_SKIP_TESTS_REGEX: test_iface_attr|test_pooling_forward|test_benchdnn_modeC_concat_smoke_cpu|test_benchdnn_modeC_conv_smoke_cpu|test_benchdnn_modeC_deconv_smoke_cpu|test_benchdnn_modeC_pool_smoke_cpu|test_benchdnn_modeC_reorder_smoke_cpu|cpu-tutorials-matmul-sgemm-and-matmul-cpp|cpu-tutorials-matmul-weights-decompression-matmul-cpp|test_iface_sparse
+        run: .github\azure\test.bat /BUILDDIR %CD%\build /MODE Release /REPORTDIR %CD%\report
+
+  build-test-arm:
+    needs: build-acl-cache
+    strategy:
+      fail-fast: true
+      matrix:
+        config: [
+          { name: macOS ARM, label: macos-14, threading: SEQ, toolset: clang, build: RelWithAssert, testset: SMOKE },
+          { name: Ubuntu ARM, label: ubuntu-24.04-arm, threading: OMP, toolset: gcc, build: RelWithAssert, testset: SMOKE }
+        ]
+
+    name: ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.label }}
+    steps:
+      - name: Checkout oneDNN
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          path: oneDNN
+
+      - name: Read version file
+        id: get-versions
+        run: |
+          content=`cat ${{ github.workspace }}/oneDNN/.github/automation/aarch64/ci.json`
+          content="${content//[$'\t\r\n$ ']}"
+          echo "output=$content" >> $GITHUB_OUTPUT
+
+      - name: Get latest CMake and Ninja
+        uses: lukka/get-cmake@56d043d188c3612951d8755da8f4b709ec951ad6 # v3.31.6
+        with:
+          cmakeVersion: 3.31.0
+          ninjaVersion: 1.12.0
+
+      - name: Install OpenMP (Linux)
+        if: ${{ matrix.config.label == 'ubuntu-24.04-arm' }}
+        run: sudo apt-get install -y libomp-dev
+
+      - name: Install gcc (Linux)
+        if: ${{ matrix.config.label == 'ubuntu-24.04-arm' }}
+        run: |
+          sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
+          sudo apt-get update
+          sudo apt-get install -y g++-${{ fromJson(steps.get-versions.outputs.output).dependencies.gcc }}
+
+      - name: Setup ccache
+        uses: Chocobo1/setup-ccache-action@f433cb1e0b3ed576864d7fc361ce43b23b181e67 # v1.5.4
+        with:
+          remove_stale_cache: false
+          ccache_options: |
+            max_size=750M
+
+      - name: Clone ACL
+        run: ${{ github.workspace }}/oneDNN/.github/automation/aarch64/build_acl.sh
+        env:
+          ACL_ACTION: clone
+          ACL_ROOT_DIR: ${{ github.workspace }}/ComputeLibrary
+          ACL_VERSION: ${{ fromJson(steps.get-versions.outputs.output).dependencies.acl }}
+
+      - name: Get ACL commit hash for cache key
+        id: get-acl-commit-hash
+        run: (cd ${{ github.workspace }}/ComputeLibrary && echo "ACLCommitHash=$(git rev-parse --short HEAD)") >> $GITHUB_OUTPUT
+
+      - name: Get system name
+        id: get-system-name
+        run: (echo "SystemName=$(uname)") >> $GITHUB_OUTPUT
+
+      - name: Restore cached ACL
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          key: ${{ steps.get-system-name.outputs.SystemName }}-acl-${{ matrix.config.toolset }}-${{ matrix.config.build }}-${{ steps.get-acl-commit-hash.outputs.ACLCommitHash }}
+          path: ${{ github.workspace }}/ComputeLibrary/build
+          fail-on-cache-miss: true
+
+      - name: Configure oneDNN
+        run: ${{ github.workspace }}/oneDNN/.github/automation/aarch64/build.sh
+        working-directory: ${{ github.workspace }}/oneDNN
+        env:
+          ACL_ROOT_DIR: ${{ github.workspace }}/ComputeLibrary
+          BUILD_TOOLSET: ${{ matrix.config.toolset }}
+          CMAKE_BUILD_TYPE: ${{ matrix.config.build }}
+          CMAKE_GENERATOR: Ninja
+          GCC_VERSION: ${{ fromJson(steps.get-versions.outputs.output).dependencies.gcc }}
+          ONEDNN_ACTION: configure
+          ONEDNN_BUILD_GRAPH: OFF
+          ONEDNN_CMAKE_EXTRA_FLAGS: -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          ONEDNN_TEST_SET: ${{ matrix.config.testset }}
+          ONEDNN_THREADING: ${{ matrix.config.threading }}
+          CCACHE_BASEDIR: ${{ github.workspace }}/oneDNN
+
+      - name: Build oneDNN
+        run: ${{ github.workspace }}/oneDNN/.github/automation/aarch64/build.sh
+        working-directory: ${{ github.workspace }}/oneDNN
+        env:
+          BUILD_TOOLSET: ${{ matrix.config.toolset }}
+          GCC_VERSION: ${{ fromJson(steps.get-versions.outputs.output).dependencies.gcc }}
+          ONEDNN_ACTION: build
+          CCACHE_BASEDIR: ${{ github.workspace }}/oneDNN
+
+      - name: Run oneDNN tests
+        run: ${{ github.workspace }}/oneDNN/.github/automation/aarch64/test.sh ${{ github.workspace }}/test_results.xml ${{ github.workspace }}/test_results.log
+        working-directory: ${{ github.workspace }}/oneDNN/build
+        env:
+          CTEST_PARALLEL_LEVEL: 6
+          DYLD_LIBRARY_PATH: ${{ github.workspace }}/ComputeLibrary/build
+          LD_LIBRARY_PATH: ${{ github.workspace }}/ComputeLibrary/build
+          ONEDNN_THREADING: ${{ matrix.config.threading }}
+
+  status:
+    needs: [build-test-linux-x64, build-test-windows-x64, build-test-arm]
+    runs-on: ubuntu-24.04
+    name: "CI CPU"
+    steps:
+      - name: Print success
+        run: echo Success

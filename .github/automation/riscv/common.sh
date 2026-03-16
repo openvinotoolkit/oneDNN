@@ -1,7 +1,8 @@
-#!/usr/bin/env bash
+#! /bin/bash
 
 # *******************************************************************************
 # Copyright 2024-2025 Arm Limited and affiliates.
+# Copyright 2025 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,29 +18,27 @@
 # limitations under the License.
 # *******************************************************************************
 
-# Test oneDNN for aarch64.
+# Common variables for RISC-V CI. Exports:
+# CC, CXX, OS, CMAKE_TOOLCHAIN_FILE
 
 set -o errexit -o pipefail -o noclobber
 
+export OS=$(uname)
+
+if [[ "$OS" == "Linux" ]]; then
+    export MP="-j$(nproc)"
+fi
+
+if [[ "$BUILD_TOOLSET" == "gcc" ]]; then
+    export CC=riscv64-linux-gnu-gcc-${GCC_VERSION}
+    export CXX=riscv64-linux-gnu-g++-${GCC_VERSION}
+fi
+
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
-OUTPUT_XML=$1
-OUTPUT_LOG=$2
+export CMAKE_TOOLCHAIN_FILE="${SCRIPT_DIR}/../../../cmake/toolchains/riscv64.cmake"
 
-if [[ -z "${OUTPUT_XML}" || -z "${OUTPUT_LOG}" ]]; then
-    echo "Usage: $0 <output-xml> <output-log>" >&2
-    exit 2
-fi
-
-# Defines MP, CC, CXX and OS.
-source ${SCRIPT_DIR}/common.sh
-
-# Sequential (probably macOS) builds should use num proc parallelism.
-if [[ "$ONEDNN_THREADING" == "SEQ" ]]; then
-    export CTEST_PARALLEL_LEVEL=""
-fi
-
-CTEST_OPTS=(--no-tests=error --output-on-failure -E "$("${SCRIPT_DIR}"/skipped-tests.sh)" --output-junit "${OUTPUT_XML}")
-
-set -x
-ctest "${CTEST_OPTS[@]}" | tee "${OUTPUT_LOG}"
-set +x
+echo "Cross-compilation mode for RISC-V"
+echo "OS: $OS"
+echo "CC: $CC"
+echo "CXX: $CXX"
+echo "CMAKE_TOOLCHAIN_FILE: $CMAKE_TOOLCHAIN_FILE"

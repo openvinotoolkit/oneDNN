@@ -18,9 +18,9 @@
 # limitations under the License.
 # *******************************************************************************
 
+import re
 import argparse
 import subprocess
-import re
 
 # Ensure the scope ends in a colon and that same level scopes are
 # comma delimited.
@@ -30,9 +30,21 @@ import re
 def __scopeCheck(msg: str):
     status = "Message scope: "
 
-    if not re.match('^[a-z0-9_]+(, [a-z0-9_]+)*: ', msg):
-        print(f"{status} FAILED: Commit message must follow the format "
-               "<scope>:[ <scope>:] <short description>")
+    if not re.match(r"^[a-z0-9_]+(, [a-z0-9_]+)*: ", msg):
+        if re.match(r"^\s+", msg):
+            print(
+                f"{status} FAILED: Commit message shouldn't have leading spaces"
+            )
+            return False
+
+        if re.match(r"^Merge ", msg):
+            print(f"{status} FAILED: Merge commits are not allowed")
+            return False
+
+        print(
+            f"{status} FAILED: Commit message must follow the format "
+            "<scope>:[ <scope>:] <short description>"
+        )
         return False
 
     print(f"{status} OK")
@@ -45,14 +57,20 @@ def __numCharacterCheck(msg: str):
         print(f"{status} OK")
         return True
     else:
-        # Fixup commits usually include the full name of the commit they are
-        # fixing, which adds 6 more symbols to the message. Let them in.
-        if re.match('^fixup: ', msg):
+        # Fixup or revert commits usually include the full name of the commit
+        # they are fixing, which adds 6 more symbols to the message.
+        # Let them in.
+        if re.match(r"^fixup: ", msg):
             print(f"{status} Fixup message, OK")
             return True
+        elif re.match(r"^revert: ", msg):
+            print(f"{status} Revert message, OK")
+            return True
         else:
-            print(f"{status} FAILED: Commit message summary must not "
-                   "exceed 72 characters.")
+            print(
+                f"{status} FAILED: Commit message summary must not "
+                "exceed 72 characters."
+            )
             return False
 
 def main():
@@ -64,23 +82,28 @@ def main():
     head: str = args.head
 
     commit_range = base + ".." + head
-    messages = subprocess.run(["git", "rev-list", "--format=oneline",
-        commit_range], capture_output=True, text=True).stdout
+    messages = subprocess.run(
+        ["git", "rev-list", "--format=oneline", commit_range],
+        capture_output=True,
+        text=True,
+    ).stdout
 
     is_ok = True
     for i in messages.splitlines():
-      print(i)
-      commit_msg=i.split(' ', 1)[1]
-      result = __numCharacterCheck(commit_msg)
-      is_ok = is_ok and result
-      result = __scopeCheck(commit_msg)
-      is_ok = is_ok and result
+        print(i)
+        commit_msg = i.split(" ", 1)[1]
+        result = __numCharacterCheck(commit_msg)
+        is_ok = is_ok and result
+        result = __scopeCheck(commit_msg)
+        is_ok = is_ok and result
 
     if is_ok:
         print("All commmit messages are formatted correctly. ")
     else:
-        print("Some commit message checks failed. Please align commit messages "
-              "with Contributing Guidelines and update the PR.")
+        print(
+            "Some commit message checks failed. Please align commit messages "
+            "with Contributing Guidelines and update the PR."
+        )
         exit(1)
 
 
