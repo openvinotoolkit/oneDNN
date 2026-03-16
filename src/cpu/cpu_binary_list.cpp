@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2019 Intel Corporation
+* Copyright 2019-2025 Intel Corporation
 * Copyright 2022 Arm Ltd. and affiliates
 * Copyright 2022 FUJITSU LIMITED
 *
@@ -25,13 +25,11 @@
 using namespace dnnl::impl::cpu::x64;
 #elif DNNL_AARCH64
 #include "cpu/aarch64/jit_uni_binary.hpp"
-#if defined(DNNL_AARCH64_USE_ACL)
-#include "cpu/aarch64/acl_binary.hpp"
-#endif
 using namespace dnnl::impl::cpu::aarch64;
-#elif DNNL_RV64
-#include "cpu/rv64/jit_uni_binary.hpp"
-using namespace dnnl::impl::cpu::rv64;
+#endif
+#if defined(DNNL_AARCH64_USE_ACL)
+#include "cpu/acl/acl_binary.hpp"
+using namespace dnnl::impl::cpu::acl;
 #endif
 
 namespace dnnl {
@@ -45,8 +43,7 @@ using namespace dnnl::impl::data_type;
 const impl_list_item_t impl_list[] = REG_BINARY_P({
         CPU_INSTANCE_X64(jit_uni_binary_t)
         CPU_INSTANCE_AARCH64(jit_uni_binary_t)
-        CPU_INSTANCE_AARCH64_ACL(acl_binary_t)
-        CPU_INSTANCE_RV64(jit_uni_binary_t)
+        CPU_INSTANCE_ACL(acl_binary_t)
         CPU_INSTANCE(ref_binary_t)
         /* eol */
         nullptr,

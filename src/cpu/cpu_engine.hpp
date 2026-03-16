@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2016 Intel Corporation
+* Copyright 2016-2025 Intel Corporation
 * Copyright 2020-2023 Arm Ltd. and affiliates
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,7 +30,7 @@
 #include "cpu/platform.hpp"
 
 #if DNNL_AARCH64 && defined(DNNL_AARCH64_USE_ACL)
-#include "cpu/aarch64/acl_thread.hpp"
+#include "cpu/acl/acl_thread.hpp"
 #endif
 
 #define CPU_INSTANCE_IMPL(...) \
@@ -46,23 +46,12 @@
 #define CPU_INSTANCE_AVX512(...) REG_AVX512_ISA(CPU_INSTANCE(__VA_ARGS__))
 #define CPU_INSTANCE_AMX(...) REG_AMX_ISA(CPU_INSTANCE(__VA_ARGS__))
 #define CPU_INSTANCE_AARCH64(...) DNNL_AARCH64_ONLY(CPU_INSTANCE(__VA_ARGS__))
-#define CPU_INSTANCE_AARCH64_ACL(...) \
-    DNNL_AARCH64_ACL_ONLY(CPU_INSTANCE(__VA_ARGS__))
-#define CPU_INSTANCE_RV64(...) DNNL_RV64_ONLY(CPU_INSTANCE(__VA_ARGS__))
-// TODO: CPU_INSTANCE_RV64GCV[_ZVFH] gate registration on the build-time
-// RVV/Zvfh intrinsics flags (legacy build-time ISA identification). Once the
-// remaining intrinsic-based RV64 primitives are migrated to JIT and onto
-// CPU_INSTANCE_RV64 (runtime mayiuse dispatch), remove these two macros.
+#define CPU_INSTANCE_ARM(...) DNNL_ARM_ONLY(CPU_INSTANCE(__VA_ARGS__))
+#define CPU_INSTANCE_ACL(...) DNNL_ACL_ONLY(CPU_INSTANCE(__VA_ARGS__))
 #define CPU_INSTANCE_RV64GCV(...) DNNL_RV64GCV_ONLY(CPU_INSTANCE(__VA_ARGS__))
 #define CPU_INSTANCE_RV64GCV_ZVFH(...) \
     DNNL_RV64GCV_ZVFH_ONLY(CPU_INSTANCE(__VA_ARGS__))
 #define CPU_INSTANCE_PPC64(...) DNNL_PPC64_ONLY(CPU_INSTANCE(__VA_ARGS__))
-
-#if DNNL_EXPERIMENTAL_GROUPED_MEMORY
-#define CPU_INSTANCE_GROUPED(...) CPU_INSTANCE(__VA_ARGS__)
-#else
-#define CPU_INSTANCE_GROUPED(...)
-#endif
 
 namespace dnnl {
 namespace impl {
@@ -125,7 +114,6 @@ public:
             CASE(shuffle);
             CASE(softmax);
             case primitive_kind::sdpa: return empty_list;
-            case primitive_kind::gated_mlp: return empty_list;
             default: assert(!"unknown primitive kind"); return empty_list;
         }
 #undef CASE
@@ -176,10 +164,10 @@ public:
                 engine_kind::cpu, get_cpu_native_runtime(), 0));
 
 #if DNNL_AARCH64 && defined(DNNL_AARCH64_USE_ACL)
-        dnnl::impl::cpu::aarch64::acl_thread_utils::set_acl_threading();
+        dnnl::impl::cpu::acl::acl_thread_utils::set_acl_threading();
 #endif
         return status::success;
-    }
+    };
 };
 
 engine_t *get_service_engine();

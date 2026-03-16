@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2020 Intel Corporation
+* Copyright 2020-2025 Intel Corporation
 * Copyright 2022 Arm Ltd. and affiliates
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
@@ -393,7 +393,7 @@ struct ref_fused_convolution_fwd_t : public primitive_t {
         return status::success;
     }
 
-#if DNNL_AARCH64 && defined(DNNL_AARCH64_USE_ACL)
+#if defined(DNNL_AARCH64_USE_ACL)
     status_t create_resource(
             engine_t *engine, resource_mapper_t &mapper) const override {
         for (auto &p : primitives_) {
@@ -405,7 +405,7 @@ struct ref_fused_convolution_fwd_t : public primitive_t {
 
     status_t execute(const exec_ctx_t &ctx) const override {
         engine_t *engine = ctx.stream()->engine();
-        const auto &scratchpad = ctx.get_scratchpad_grantor();
+        const auto scratchpad = ctx.get_scratchpad_grantor();
 
         const auto inout_buffer = scratchpad.get_memory_storage(
                 memory_tracking::names::key_fusion_inout_buffer);
@@ -427,18 +427,16 @@ struct ref_fused_convolution_fwd_t : public primitive_t {
                     inout_memory.emplace_back(new memory_t(engine, &arg_info.md,
                             inout_buffer->get_sub_storage(arg_info.offset,
                                     memory_desc_wrapper(arg_info.md).size())));
-                    exec_args[arg_info.op_arg]
-                            = {inout_memory.back().get(), arg_info.is_const};
+                    exec_args[arg_info.op_arg].mem = inout_memory.back().get();
+                    exec_args[arg_info.op_arg].is_const = arg_info.is_const;
                 }
             }
 
             exec_ctx_t op_ctx(ctx, std::move(exec_args));
 
-            auto *nested_grantor = create_nested_grantor(
-                    ctx.get_scratchpad_grantor(),
-                    memory_tracking::names::key_fusion_forward_scratchpad,
-                    op->pd()->scratchpad_registry());
-            op_ctx.set_scratchpad_grantor(nested_grantor);
+            nested_scratchpad_t ns(ctx,
+                    memory_tracking::names::key_fusion_forward_scratchpad, op);
+            op_ctx.set_scratchpad_grantor(ns.grantor());
             CHECK(op->execute(op_ctx));
         }
 

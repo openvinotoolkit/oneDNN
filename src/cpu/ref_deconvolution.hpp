@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2018 Intel Corporation
+* Copyright 2018-2025 Intel Corporation
 * Copyright 2022 Arm Ltd. and affiliates
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
@@ -417,7 +417,7 @@ struct ref_deconvolution_bwd_data_t : public primitive_t {
         return pd()->conv_pd_->create_primitive(conv_p_, engine);
     }
 
-#if DNNL_AARCH64 && defined(DNNL_AARCH64_USE_ACL)
+#if defined(DNNL_AARCH64_USE_ACL)
     status_t create_resource(
             engine_t *engine, resource_mapper_t &mapper) const override {
         CHECK(conv_p_->create_resource(engine, mapper));

@@ -1939,6 +1939,7 @@ const char *dnnl_alg_kind2str(dnnl_alg_kind_t v) {
         return "quantization_quantize_dequantize";
     if (v == dnnl_quantization_quantize) return "quantization_quantize";
     if (v == dnnl_binarization_depthwise) return "binarization_depthwise";
+    if (v == dnnl::impl::alg_kind::softmax_accurate_inf_as_zero) return "softmax_accurate_inf_as_zero";
     assert(!"unknown alg_kind");
     return "unknown alg_kind";
 }
