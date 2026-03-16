@@ -55,9 +55,9 @@
 #include "cpu/x64/jit_uni_dw_convolution.hpp"
 #include "cpu/x64/jit_uni_fork_dw_convolution.hpp"
 #include "cpu/x64/jit_uni_ncsp_convolution.hpp"
+#include "cpu/x64/jit_uni_planar_convolution.hpp"
 #include "cpu/x64/jit_uni_x8s8s32x_1x1_convolution.hpp"
 #include "cpu/x64/jit_uni_x8s8s32x_convolution.hpp"
-#include "cpu/x64/jit_uni_planar_convolution.hpp"
 using namespace dnnl::impl::cpu::x64;
 #elif DNNL_AARCH64
 #include "cpu/aarch64/jit_brdgmm_dw_conv.hpp"
@@ -70,10 +70,10 @@ using namespace dnnl::impl::cpu::x64;
 #include "cpu/aarch64/jit_uni_dw_convolution.hpp"
 using namespace dnnl::impl::cpu::aarch64;
 #endif
-#if DNNL_USE_ACL
+#if defined(DNNL_AARCH64_USE_ACL)
+#include "cpu/acl/acl_depthwise_convolution.hpp"
 #include "cpu/acl/acl_gemm_convolution.hpp"
 #include "cpu/acl/acl_indirect_gemm_convolution.hpp"
-#include "cpu/acl/acl_depthwise_convolution.hpp"
 #include "cpu/acl/acl_winograd_convolution.hpp"
 using namespace dnnl::impl::cpu::acl;
 #endif
@@ -997,4 +997,3 @@ const impl_list_item_t *get_convolution_impl_list(
 } // namespace cpu
 } // namespace impl
 } // namespace dnnl
-

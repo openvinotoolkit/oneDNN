@@ -29,7 +29,7 @@ using namespace dnnl::impl::cpu::x64;
 #include "cpu/aarch64/jit_uni_eltwise_int.hpp"
 using namespace dnnl::impl::cpu::aarch64;
 #endif
-#if DNNL_USE_ACL
+#if defined(DNNL_AARCH64_USE_ACL)
 #include "cpu/acl/acl_eltwise.hpp"
 using namespace dnnl::impl::cpu::acl;
 #endif

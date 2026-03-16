@@ -21,14 +21,14 @@
 #include "cpu/ref_softmax.hpp"
 
 #if DNNL_X64
-#include "cpu/x64/jit_uni_softmax.hpp"
 #include "cpu/x64/jit_uni_fork_softmax.hpp"
+#include "cpu/x64/jit_uni_softmax.hpp"
 using namespace dnnl::impl::cpu::x64;
 #elif DNNL_AARCH64
 #include "cpu/aarch64/jit_uni_softmax.hpp"
 using namespace dnnl::impl::cpu::aarch64;
 #endif
-#if DNNL_USE_ACL
+#if defined(DNNL_AARCH64_USE_ACL)
 #include "cpu/acl/acl_softmax.hpp"
 using namespace dnnl::impl::cpu::acl;
 #endif
