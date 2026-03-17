@@ -89,6 +89,7 @@ inline void dnnl_thr_barrier() {
 #elif DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_THREADPOOL
 #include <thread>
 #include "oneapi/dnnl/dnnl_threadpool_iface.hpp"
+#include "counting_barrier.hpp"
 #define DNNL_THR_SYNC 0
 
 #include "cpu/platform.hpp"
