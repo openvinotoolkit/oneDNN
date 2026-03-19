@@ -45,14 +45,20 @@ status_t jit_uni_dw_conv_fwd_kernel_t<isa, kernel_dt>::init_conf(
             VERBOSE_BAD_PARAM, "large size is not supported");
 
     const int ndims = src_d.ndims();
-    // Currently this kernel only supports 2D convolutions.
-    VDISPATCH_CONV_IC(ndims == 4, "kernel supports only 2D convolutions");
+    // Support 1D and 2D convolutions
+    VDISPATCH_CONV_IC(utils::one_of(ndims, 3, 4),
+            "kernel supports only 1D and 2D convolutions");
 
+    jcp.ndims = ndims;
     jcp.prop_kind = cd.prop_kind;
 
-    const auto blocked_tag = is_superset(isa, avx512_core) ? nChw16c : nChw8c;
-    const auto wei_tag = is_superset(isa, avx512_core) ? Goihw16g : Goihw8g;
-    const auto nxc_tag = nhwc;
+    const auto blocked_tag = is_superset(isa, avx512_core)
+            ? pick(ndims - 3, nCw16c, nChw16c)
+            : pick(ndims - 3, nCw8c, nChw8c);
+    const auto wei_tag = is_superset(isa, avx512_core)
+            ? pick(ndims - 3, Goiw16g, Goihw16g)
+            : pick(ndims - 3, Goiw8g, Goihw8g);
+    const auto nxc_tag = pick(ndims - 3, nwc, nhwc);
     const auto def_tag
             = (mayiuse(avx512_core)
                       && jcp.prop_kind == prop_kind::forward_inference)
@@ -117,22 +123,25 @@ status_t jit_uni_dw_conv_fwd_kernel_t<isa, kernel_dt>::init_conf(
     jcp.oc_without_padding = jcp.oc;
     jcp.ic = src_d.dims()[1];
 
-    jcp.ih = src_d.dims()[2];
-    jcp.iw = src_d.dims()[3];
-    jcp.oh = dst_d.dims()[2];
-    jcp.ow = dst_d.dims()[3];
+    // For 1D (ndims=3): dims are [N, C, W] - no H dimension
+    // For 2D (ndims=4): dims are [N, C, H, W]
+    jcp.ih = (ndims == 3) ? 1 : src_d.dims()[ndims - 2];
+    jcp.iw = src_d.dims()[ndims - 1];
+    jcp.oh = (ndims == 3) ? 1 : dst_d.dims()[ndims - 2];
+    jcp.ow = dst_d.dims()[ndims - 1];
 
-    jcp.kh = weights_d.dims()[3];
-    jcp.kw = weights_d.dims()[4];
+    // Weights dims: [G, O, I, (H), W] for grouped depthwise
+    jcp.kh = (ndims == 3) ? 1 : weights_d.dims()[ndims - 1];
+    jcp.kw = weights_d.dims()[ndims];
 
-    jcp.t_pad = cd.padding[0][0];
-    jcp.l_pad = cd.padding[0][1];
+    jcp.t_pad = (ndims == 3) ? 0 : cd.padding[0][ndims - 4];
+    jcp.l_pad = cd.padding[0][ndims - 3];
 
-    jcp.stride_h = cd.strides[0];
-    jcp.stride_w = cd.strides[1];
+    jcp.stride_h = (ndims == 3) ? 1 : cd.strides[ndims - 4];
+    jcp.stride_w = cd.strides[ndims - 3];
 
-    jcp.dilate_h = cd.dilates[0];
-    jcp.dilate_w = cd.dilates[1];
+    jcp.dilate_h = (ndims == 3) ? 0 : cd.dilates[ndims - 4];
+    jcp.dilate_w = cd.dilates[ndims - 3];
 
     int ext_kw = calculate_extended_filter_size(jcp.kw, jcp.dilate_w);
     int ext_kh = calculate_extended_filter_size(jcp.kh, jcp.dilate_h);
@@ -140,9 +149,11 @@ status_t jit_uni_dw_conv_fwd_kernel_t<isa, kernel_dt>::init_conf(
             jcp.l_pad, jcp.ow, jcp.iw, jcp.stride_w, ext_kw);
     jcp.b_pad = calculate_end_padding(
             jcp.t_pad, jcp.oh, jcp.ih, jcp.stride_h, ext_kh);
-    bool kernel_outside_src = false || ext_kw <= jcp.l_pad
-            || ext_kw <= jcp.r_pad || ext_kh <= jcp.t_pad
-            || ext_kh <= jcp.b_pad;
+    // Use '<' instead of '<=' to allow K=1 with pad=1 configurations
+    // where some outputs can still access valid input
+    bool kernel_outside_src = false || ext_kw < jcp.l_pad
+            || ext_kw < jcp.r_pad || ext_kh < jcp.t_pad
+            || ext_kh < jcp.b_pad;
     VDISPATCH_CONV_IC(!kernel_outside_src, VERBOSE_UNSUPPORTED_PAD_FEATURE,
             "weights and src size mismatch");
 
@@ -330,6 +341,11 @@ status_t jit_uni_dw_conv_bwd_data_kernel_t<isa, kernel_dt>::init_conf(
             "non-grouped convolution in depthwise implementation");
 
     const int ndims = diff_src_d.ndims();
+    // Support 1D and 2D convolutions
+    VDISPATCH_CONV_IC(utils::one_of(ndims, 3, 4),
+            "kernel supports only 1D and 2D convolutions");
+
+    jcp.ndims = ndims;
     jcp.ngroups = weights_d.dims()[0];
     jcp.mb = diff_src_d.dims()[0];
 
@@ -337,22 +353,25 @@ status_t jit_uni_dw_conv_bwd_data_kernel_t<isa, kernel_dt>::init_conf(
     jcp.oc_without_padding = jcp.oc;
     jcp.ic = diff_src_d.dims()[1];
 
-    jcp.ih = diff_src_d.dims()[2];
-    jcp.iw = diff_src_d.dims()[3];
-    jcp.oh = diff_dst_d.dims()[2];
-    jcp.ow = diff_dst_d.dims()[3];
+    // For 1D (ndims=3): dims are [N, C, W] - no H dimension
+    // For 2D (ndims=4): dims are [N, C, H, W]
+    jcp.ih = (ndims == 3) ? 1 : diff_src_d.dims()[ndims - 2];
+    jcp.iw = diff_src_d.dims()[ndims - 1];
+    jcp.oh = (ndims == 3) ? 1 : diff_dst_d.dims()[ndims - 2];
+    jcp.ow = diff_dst_d.dims()[ndims - 1];
 
-    jcp.kh = weights_d.dims()[3];
-    jcp.kw = weights_d.dims()[4];
+    // Weights dims: [G, O, I, (H), W] for grouped depthwise
+    jcp.kh = (ndims == 3) ? 1 : weights_d.dims()[ndims - 1];
+    jcp.kw = weights_d.dims()[ndims];
 
-    jcp.t_pad = cd.padding[0][0];
-    jcp.l_pad = cd.padding[0][1];
+    jcp.t_pad = (ndims == 3) ? 0 : cd.padding[0][ndims - 4];
+    jcp.l_pad = cd.padding[0][ndims - 3];
 
-    jcp.stride_h = cd.strides[0];
-    jcp.stride_w = cd.strides[1];
+    jcp.stride_h = (ndims == 3) ? 1 : cd.strides[ndims - 4];
+    jcp.stride_w = cd.strides[ndims - 3];
 
-    jcp.dilate_h = cd.dilates[0];
-    jcp.dilate_w = cd.dilates[1];
+    jcp.dilate_h = (ndims == 3) ? 0 : cd.dilates[ndims - 4];
+    jcp.dilate_w = cd.dilates[ndims - 3];
 
     const int ext_kw = calculate_extended_filter_size(jcp.kw, jcp.dilate_w);
     const int ext_kh = calculate_extended_filter_size(jcp.kh, jcp.dilate_h);
@@ -365,8 +384,12 @@ status_t jit_uni_dw_conv_bwd_data_kernel_t<isa, kernel_dt>::init_conf(
     jcp.iwp = jcp.iw + jcp.l_pad + jcp.r_pad;
 
     const auto dat_tag_nxc = pick(ndims - 3, nwc, nhwc, ndhwc);
-    const auto dat_tag_blocked = isa == avx512_core ? nChw16c : nChw8c;
-    const auto wei_tag = isa == avx512_core ? Goihw16g : Goihw8g;
+    const auto dat_tag_blocked = isa == avx512_core
+            ? pick(ndims - 3, nCw16c, nChw16c)
+            : pick(ndims - 3, nCw8c, nChw8c);
+    const auto wei_tag = isa == avx512_core
+            ? pick(ndims - 3, Goiw16g, Goihw16g)
+            : pick(ndims - 3, Goiw8g, Goihw8g);
 
     auto curr_src_tag
             = diff_src_d.mb_stride_relaxed_match(dat_tag_nxc, dat_tag_blocked);
@@ -501,6 +524,11 @@ status_t jit_uni_dw_conv_bwd_weights_kernel_t<isa, kernel_dt>::init_conf(
 
     jcp.dwei_dt = cd.diff_weights_desc.data_type;
     const int ndims = src_d.ndims();
+    // Support 1D and 2D convolutions
+    VDISPATCH_CONV_IC(utils::one_of(ndims, 3, 4),
+            "kernel supports only 1D and 2D convolutions");
+
+    jcp.ndims = ndims;
     const bool is_bf16 = src_d.data_type() == data_type::bf16;
     jcp.isa = (is_bf16 && mayiuse(avx512_core_bf16)) ? avx512_core_bf16 : isa;
 
@@ -521,22 +549,25 @@ status_t jit_uni_dw_conv_bwd_weights_kernel_t<isa, kernel_dt>::init_conf(
 
     jcp.mb = src_d.dims()[0];
 
-    jcp.ih = src_d.dims()[2];
-    jcp.iw = src_d.dims()[3];
-    jcp.oh = diff_dst_d.dims()[2];
-    jcp.ow = diff_dst_d.dims()[3];
+    // For 1D (ndims=3): dims are [N, C, W] - no H dimension
+    // For 2D (ndims=4): dims are [N, C, H, W]
+    jcp.ih = (ndims == 3) ? 1 : src_d.dims()[ndims - 2];
+    jcp.iw = src_d.dims()[ndims - 1];
+    jcp.oh = (ndims == 3) ? 1 : diff_dst_d.dims()[ndims - 2];
+    jcp.ow = diff_dst_d.dims()[ndims - 1];
 
-    jcp.kh = diff_weights_d.dims()[3];
-    jcp.kw = diff_weights_d.dims()[4];
+    // Weights dims: [G, O, I, (H), W] for grouped depthwise
+    jcp.kh = (ndims == 3) ? 1 : diff_weights_d.dims()[ndims - 1];
+    jcp.kw = diff_weights_d.dims()[ndims];
 
-    jcp.stride_h = cd.strides[0];
-    jcp.stride_w = cd.strides[1];
+    jcp.stride_h = (ndims == 3) ? 1 : cd.strides[ndims - 4];
+    jcp.stride_w = cd.strides[ndims - 3];
 
-    jcp.t_pad = cd.padding[0][0];
-    jcp.l_pad = cd.padding[0][1];
+    jcp.t_pad = (ndims == 3) ? 0 : cd.padding[0][ndims - 4];
+    jcp.l_pad = cd.padding[0][ndims - 3];
 
-    jcp.dilate_h = cd.dilates[0];
-    jcp.dilate_w = cd.dilates[1];
+    jcp.dilate_h = (ndims == 3) ? 0 : cd.dilates[ndims - 4];
+    jcp.dilate_w = cd.dilates[ndims - 3];
 
     jcp.with_bias = cd.diff_bias_desc.format_kind != format_kind::undef;
 
@@ -553,9 +584,12 @@ status_t jit_uni_dw_conv_bwd_weights_kernel_t<isa, kernel_dt>::init_conf(
     jcp.iwp = jcp.iw + jcp.l_pad + jcp.r_pad;
 
     const auto dat_tag_nxc = pick(ndims - 3, nwc, nhwc, ndhwc);
-    const auto dat_tag_blocked
-            = isa == avx512_core ? nChw16c : nChw8c; // dnnl_aBcd16b
-    const auto wei_tag = isa == avx512_core ? Goihw16g : Goihw8g;
+    const auto dat_tag_blocked = isa == avx512_core
+            ? pick(ndims - 3, nCw16c, nChw16c)
+            : pick(ndims - 3, nCw8c, nChw8c);
+    const auto wei_tag = isa == avx512_core
+            ? pick(ndims - 3, Goiw16g, Goihw16g)
+            : pick(ndims - 3, Goiw8g, Goihw8g);
     auto curr_src_tag = src_d.matches_one_of_tag(dat_tag_nxc, dat_tag_blocked);
     auto curr_dst_tag
             = diff_dst_d.matches_one_of_tag(dat_tag_nxc, dat_tag_blocked);
