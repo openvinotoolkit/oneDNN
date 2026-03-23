@@ -180,7 +180,7 @@ const std::map<pk_dt_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map()
             CPU_INSTANCE_AARCH64(brgemm_convolution_fwd_t, sve_128)
             // CPU_INSTANCE_X64(jit_uni_ncsp_convolution_fwd_t)
 
-            //CPU_INSTANCE_RV64GCV(jit_rvv_1x1_convolution_fwd_t)
+            CPU_INSTANCE_RV64GCV(jit_rvv_1x1_convolution_fwd_t)
             CPU_INSTANCE_RV64GCV(riscv_gemm_convolution_fwd_t)
             
 
