@@ -145,33 +145,55 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
 
         int ic_groups = div_up(jbgp.ic, jbgp.src_quant_group_size);
         int ic_sum_groups = div_up(jbgp.ic, jbgp.src_sum_group_size);
-        auto src_ptr = reinterpret_cast<const float*>(src);
+        const size_t orig_src_dt_size = types::data_type_size(jbgp.orig_src_dt);
+        auto src_ptr_f32 = reinterpret_cast<const float *>(src);
+        auto src_ptr_bf16 = reinterpret_cast<const bfloat16_t *>(src);
         auto qsrc_ptr = qsrc;
         auto src_dscales_ptr = src_dscales;
         auto src_grouped_sum_ptr = src_grouped_sum;
         int vec_loop_end = rnd_dn(jbgp.ic, jbgp.src_quant_group_size);
 
+        // orig_src_dt is loop-invariant across all mb iterations; resolve it once
+        // here so the tail loops below stay branch-free.
+        const bool is_bf16_src = (jbgp.orig_src_dt == data_type::bf16);
+
         parallel_nd(jbgp.mb, [&](int mb) {
             src_quantization_runtime_params_t rt_params = {};
-            rt_params.src_ptr = src_ptr + mb * jbgp.ic;
+            rt_params.src_ptr = src + mb * jbgp.ic * orig_src_dt_size;
             rt_params.qsrc_ptr = qsrc_ptr + mb * jbgp.ic;
             rt_params.src_scales_ptr = src_dscales_ptr + mb * ic_groups;
             rt_params.src_grouped_sum_ptr = src_grouped_sum_ptr + mb * ic_sum_groups;
             rt_params.ic_size = vec_loop_end;
             (*brg_src_quant_kernel_)(&rt_params);
 
+            // Scalar tail for ic elements not covered by the JIT kernel
             if (vec_loop_end != jbgp.ic) {
                 float amax = 0;
-                for (int ic = vec_loop_end; ic < jbgp.ic; ic++) {
-                    amax = std::max(amax, std::abs(src_ptr[mb * jbgp.ic + ic]));
+                if (is_bf16_src) {
+                    for (int ic = vec_loop_end; ic < jbgp.ic; ic++) {
+                        amax = std::max(amax,
+                                std::abs(static_cast<float>(src_ptr_bf16[mb * jbgp.ic + ic])));
+                    }
+                } else {
+                    for (int ic = vec_loop_end; ic < jbgp.ic; ic++) {
+                        amax = std::max(amax, std::abs(src_ptr_f32[mb * jbgp.ic + ic]));
+                    }
                 }
 
                 const float dscale = amax / 127;
                 const float qscale  = (dscale != 0) ? (1.0f / dscale) : 0;
 
                 src_dscales_ptr[mb * ic_groups + ic_groups - 1] = dscale;
-                for (int ic = vec_loop_end; ic < jbgp.ic; ic++) {
-                    qsrc_ptr[mb * jbgp.ic + ic] = std::round(src_ptr[mb * jbgp.ic + ic] * qscale);
+                if (is_bf16_src) {
+                    for (int ic = vec_loop_end; ic < jbgp.ic; ic++) {
+                        qsrc_ptr[mb * jbgp.ic + ic] = std::round(
+                                static_cast<float>(src_ptr_bf16[mb * jbgp.ic + ic]) * qscale);
+                    }
+                } else {
+                    for (int ic = vec_loop_end; ic < jbgp.ic; ic++) {
+                        qsrc_ptr[mb * jbgp.ic + ic] = std::round(
+                                src_ptr_f32[mb * jbgp.ic + ic] * qscale);
+                    }
                 }
             }
 

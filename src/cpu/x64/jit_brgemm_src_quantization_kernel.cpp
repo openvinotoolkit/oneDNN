@@ -39,6 +39,12 @@ void jit_brgemm_src_quantization_kernel_t<isa>::load_src(Vmm vmm_load, const Xby
             uni_vmovups(vmm_load, addr);
             break;
         }
+        case data_type::bf16: {
+            // Upconvert bf16 payload to f32 by placing bf16 bits in high 16 bits of each dword.
+            uni_vpmovzxwd(vmm_load, addr);
+            uni_vpslld(vmm_load, vmm_load, 16);
+            break;
+        }
         default: assert(!"unsupported data type");
     }
 }
