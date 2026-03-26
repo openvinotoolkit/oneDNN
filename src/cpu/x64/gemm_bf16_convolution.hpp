@@ -48,9 +48,6 @@ struct gemm_bf16_convolution_fwd_t : public primitive_t {
         status_t init(engine_t *engine) {
             using namespace dnnl::impl::data_type;
 
-            VDISPATCH_CONV(
-                    DNNL_CPU_THREADING_RUNTIME != DNNL_RUNTIME_THREADPOOL,
-                    VERBOSE_UNSUPPORTED_THREADPOOL_RUNTIME);
             VDISPATCH_CONV(is_fwd(), VERBOSE_BAD_PROPKIND);
             VDISPATCH_CONV(
                     expect_data_types(bf16, bf16, dnnl::impl::data_type::undef,
