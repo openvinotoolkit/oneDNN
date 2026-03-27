@@ -84,8 +84,10 @@ void jit_uni_dw_convolution_fwd_t<isa, src_type, dst_type>::execute_forward(
     const int iw = 0;
     const int kw = 0;
     const int chb_work = utils::div_up(jcp.nb_ch, ch_step);
-    const auto is_src_layout_nxc = jcp.src_tag == format_tag::nhwc;
-    const auto is_dst_layout_nxc = jcp.dst_tag == format_tag::nhwc;
+    const auto is_src_layout_nxc
+            = utils::one_of(jcp.src_tag, format_tag::nwc, format_tag::nhwc);
+    const auto is_dst_layout_nxc
+            = utils::one_of(jcp.dst_tag, format_tag::nwc, format_tag::nhwc);
 
     const int work_amount = jcp.mb * chb_work * jcp.oh;
     const auto nthr = jcp.nthr;
