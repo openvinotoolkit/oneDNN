@@ -467,13 +467,15 @@ status_t brgemm_matmul_conf_utils_t::set_or_check_B_tag(memory_desc_t &B_md,
             bgmmc.wei_tag = blocked_B_layouts_allowed && !bgmmc.is_runtime_N
                             && !bgmmc.is_int4_weights
                     ? memory_desc_matches_one_of_tag(B_md,
-                            plain_tensor_layout_tag,
-                            transposed_tensor_layout_tag,
-                            blocked_64n_B_layout_tag, blocked_48n_B_layout_tag,
-                            blocked_32n_B_layout_tag, blocked_16n_B_layout_tag)
+                              plain_tensor_layout_tag,
+                              transposed_tensor_layout_tag,
+                              blocked_64n_B_layout_tag,
+                              blocked_48n_B_layout_tag,
+                              blocked_32n_B_layout_tag,
+                              blocked_16n_B_layout_tag)
                     : memory_desc_matches_one_of_tag(B_md,
-                            plain_tensor_layout_tag,
-                            transposed_tensor_layout_tag, acbd, adbc);
+                              plain_tensor_layout_tag,
+                              transposed_tensor_layout_tag, acbd, adbc);
             const bool plain_transposed_matched
                     = memory_desc_matches_tag(B_md, plain_tensor_layout_tag)
                     && memory_desc_matches_tag(
@@ -545,15 +547,16 @@ status_t brgemm_matmul_conf_utils_t::set_or_check_tags(memory_desc_t &A_md,
                               || this->is_f16_with_int_wei() || this->is_tf32()
                               || this->is_f32_with_int_wei())
                     && !xf16_avx2_vnni_2;
-            bgmmc.src_tag = is_adbc_allowed ? memory_desc_matches_one_of_tag(
-                                    A_md, plain_tensor_layout_tag,
-                                    transposed_tensor_layout_tag, acbd, adbc)
+            bgmmc.src_tag = is_adbc_allowed
+                    ? memory_desc_matches_one_of_tag(A_md,
+                              plain_tensor_layout_tag,
+                              transposed_tensor_layout_tag, acbd, adbc)
                     : is_int8_avx512_core
                     ? memory_desc_matches_one_of_tag(A_md,
-                            plain_tensor_layout_tag,
-                            transposed_tensor_layout_tag, acbd)
+                              plain_tensor_layout_tag,
+                              transposed_tensor_layout_tag, acbd)
                     : memory_desc_matches_one_of_tag(
-                            A_md, plain_tensor_layout_tag, acbd);
+                              A_md, plain_tensor_layout_tag, acbd);
             if (bgmmc.src_tag == format_tag::undef
                     || (memory_desc_matches_tag(
                                 A_md, transposed_tensor_layout_tag)
@@ -655,8 +658,7 @@ format_tag_t brgemm_matmul_conf_utils_t::pick_blocked_B_layout(
     const bool is_amx_or_avx2_vnni_2 = is_superset(bgmmc.isa, avx512_core_amx)
             || is_superset(bgmmc.isa, avx2_vnni_2);
     const bool prefer_amx_or_avx2_vnni_2 = is_f16() || is_f32_f16()
-            || is_f32_bf16() || is_f16_with_int_wei()
-            || is_f32_with_int_wei();
+            || is_f32_bf16() || is_f16_with_int_wei() || is_f32_with_int_wei();
 
     if ((prefer_amx_or_avx2_vnni_2 && is_amx_or_avx2_vnni_2) || is_bf16()
             || is_bf16_with_int_wei()) {
@@ -672,8 +674,7 @@ format_tag_t brgemm_matmul_conf_utils_t::pick_blocked_B_layout(
     // Note: bf32 assumes f32 blocking
     if (is_f32() || is_bf32() || is_f16() || is_f32_f16() || is_f32_bf16()
             || is_f16_with_int_wei() || is_tf32()
-            || (is_f32_with_int_wei()
-                    && is_superset(bgmmc.isa, avx512_core))) {
+            || (is_f32_with_int_wei() && is_superset(bgmmc.isa, avx512_core))) {
         switch (n_blk) {
             case 64: return bgmmc.ndims == 3 ? aCB16b64c : BA16a64b;
             case 48: return bgmmc.ndims == 3 ? aCB16b48c : BA16a48b;
@@ -1262,9 +1263,9 @@ status_t compute_blocking_heuristic(brgemm_matmul_conf_t &bgmmc,
 
         const float best_imbalance = is_f32
                 ? compute_blocking_heuristic_avx2_f32(
-                        bgmmc, bm_conf_utils, matmul, best_blocking)
+                          bgmmc, bm_conf_utils, matmul, best_blocking)
                 : compute_blocking_heuristic_avx2(
-                        bgmmc, bm_conf_utils, matmul, best_blocking);
+                          bgmmc, bm_conf_utils, matmul, best_blocking);
 
         VCONDCHECK_BG(best_imbalance != 1.f, VERBOSE_BLOCKING_FAIL, "")
 
@@ -1748,9 +1749,9 @@ status_t init_brgemm_matmul_conf(cpu_isa_t isa, brgemm_matmul_conf_t &bgmmc,
     bgmmc.N_tail = bgmmc.is_runtime_N ? 0 : bgmmc.N % bgmmc.N_blk;
     bgmmc.K_tail = bgmmc.K > bgmmc.K_blk
             ? ((bgmmc.extendable_k || bgmmc.use_fused_copy_a)
-                            ? bgmmc.K % bgmmc.K_blk
-                            : rnd_up(bgmmc.K % bgmmc.K_blk,
-                                    bgmmc.required_k_granularity))
+                              ? bgmmc.K % bgmmc.K_blk
+                              : rnd_up(bgmmc.K % bgmmc.K_blk,
+                                        bgmmc.required_k_granularity))
             : 0;
 
     bgmmc.LDB = bm_conf_utils.get_actual_LDB();
