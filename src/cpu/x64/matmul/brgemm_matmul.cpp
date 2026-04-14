@@ -339,11 +339,11 @@ status_t brgemm_matmul_t<isa>::pd_t::init(engine_t *engine) {
     // processing for tail kernel
     const auto backup_isa = is_amx && bgmmc_.is_runtime_M && !is_s8s8
             ? (is_f16 || is_f32_f16 || is_f16_with_int_wei
-                            ? avx512_core_fp16
-                            : (is_bf16 || is_f32_bf16 || is_bf16_with_int_wei
-                                            ? avx512_core_bf16
-                                            : (is_int8 ? avx512_core_vnni
-                                                       : avx512_core)))
+                              ? avx512_core_fp16
+                              : (is_bf16 || is_f32_bf16 || is_bf16_with_int_wei
+                                                ? avx512_core_bf16
+                                                : (is_int8 ? avx512_core_vnni
+                                                           : avx512_core)))
             : isa;
 
     const int i_bs_end = bgmmc_.brgemm_batch_tail_size ? 2 : 1;
@@ -767,7 +767,7 @@ void brgemm_matmul_t<isa>::compute_kernel(
             void *scratch = is_amx
                     ? static_cast<void *>(wsp_tile)
                     : static_cast<void *>(brgmm_ctx.get_s8s8_comp_ptr(
-                            ithr, b_idx, n_blk_idx));
+                              ithr, b_idx, n_blk_idx));
 
             const size_t dst_row_logical_off
                     = brgmm_ctx.get_M_idx(m_blk_idx, true);
@@ -823,7 +823,7 @@ void brgemm_matmul_t<isa>::compute_kernel(
             void *scratch = is_amx
                     ? static_cast<void *>(wsp_tile)
                     : static_cast<void *>(brgmm_ctx.get_s8s8_comp_ptr(
-                            ithr, b_idx, n_blk_idx));
+                              ithr, b_idx, n_blk_idx));
 
             const size_t dst_row_logical_off
                     = brgmm_ctx.get_M_idx(m_blk_idx, true);
@@ -1379,20 +1379,20 @@ struct brgemm_matmul_t<isa>::brg_matmul_exec_ctx_t {
 
         zero_point_a_negative_val_ = src_zero_points
                 ? -cpu::io::load_int_value(
-                        pd->attr()->zero_points_.get_data_type(DNNL_ARG_SRC),
-                        src_zero_points, 0)
+                          pd->attr()->zero_points_.get_data_type(DNNL_ARG_SRC),
+                          src_zero_points, 0)
                 : 0;
         zero_point_c_val_ = dst_zero_points
                 ? cpu::io::load_int_value(
-                        pd->attr()->zero_points_.get_data_type(DNNL_ARG_DST),
-                        dst_zero_points, 0)
+                          pd->attr()->zero_points_.get_data_type(DNNL_ARG_DST),
+                          dst_zero_points, 0)
                 : 0;
 
         wei_zp_neg_val_ = (-1)
                 * (wei_zp_ptr_ ? cpu::io::load_int_value(
-                           pd->attr()->zero_points_.get_data_type(
-                                   DNNL_ARG_WEIGHTS),
-                           wei_zp_ptr_, 0)
+                                         pd->attr()->zero_points_.get_data_type(
+                                                 DNNL_ARG_WEIGHTS),
+                                         wei_zp_ptr_, 0)
                                : 0);
         memory_tracking::grantor_t scratchpad = ctx.get_scratchpad_grantor();
 
@@ -1429,35 +1429,35 @@ struct brgemm_matmul_t<isa>::brg_matmul_exec_ctx_t {
 
         buf_reduce_ptr_ = bgmmc.use_buffer_reduce
                 ? scratchpad.template get<char>(
-                        key_brgemm_primitive_buffer_reduce)
+                          key_brgemm_primitive_buffer_reduce)
                 : nullptr;
 
         is_amx_ = is_superset(isa, avx512_core_amx);
         wsp_tile_ptr_ = is_amx_
                 ? ctx.get_scratchpad_grantor().template get<char>(
-                        key_conv_amx_tile_buffer)
+                          key_conv_amx_tile_buffer)
                 : nullptr;
 
         const dim_t comp_offset = bgmmc_.b_dt_sz
                 * (weights_d.size() - weights_d.additional_buffer_size());
         s8s8_compensation_ptr_ = (bgmmc.s8s8_compensation_required)
                 ? ((bgmmc.use_buffer_b)
-                                ? scratchpad.template get<int32_t>(
-                                        key_brgemm_primitive_buffer_comp)
-                                : const_cast<int32_t *>(
-                                        reinterpret_cast<const int32_t *>(
-                                                &data_B_ptr_[comp_offset])))
+                                  ? scratchpad.template get<int32_t>(
+                                            key_brgemm_primitive_buffer_comp)
+                                  : const_cast<int32_t *>(
+                                            reinterpret_cast<const int32_t *>(
+                                                    &data_B_ptr_[comp_offset])))
                 : nullptr;
         assert(IMPLICATION(bgmmc.s8s8_compensation_required,
                 bgmmc_.b_dt_sz == bgmmc_.tr_b_dt_sz));
 
         zero_point_a_compensations_ptr_ = bgmmc.has_zero_point_a
                 ? scratchpad.template get<int32_t>(
-                        key_brgemm_primitive_zp_comp_a)
+                          key_brgemm_primitive_zp_comp_a)
                 : nullptr;
         zero_point_b_compensations_ptr_ = bgmmc.has_zero_point_b
                 ? scratchpad.template get<int32_t>(
-                        key_brgemm_primitive_zp_comp_b)
+                          key_brgemm_primitive_zp_comp_b)
                 : nullptr;
 
         zero_point_mixed_ab_compensation_component_
