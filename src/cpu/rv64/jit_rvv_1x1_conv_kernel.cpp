@@ -211,6 +211,10 @@ status_t jit_rvv_1x1_conv_kernel_t::init_conf(jit_1x1_conv_conf_t &jcp,
             = jcp.ic_without_padding * jcp.oc_block * jcp.typesize_in;
     jcp.load_loop_iter_step = jcp.oc_block;
 
+    if (jcp.reduce_loop_load_step > (1LL << 40) / jcp.reduce_loop_unroll) {
+        return status::unimplemented;
+    }
+
     return status::success;
 }
 
@@ -225,7 +229,6 @@ void jit_rvv_1x1_conv_kernel_t::balance(jit_1x1_conv_conf_t &jcp) {
 }
 
 void jit_rvv_1x1_conv_kernel_t::generate() {
-    static_assert(sizeof(size_t) == 8, "oneDNN RV64 requires 64-bit pointer arithmetic");
 
     preamble();
 
@@ -286,13 +289,17 @@ void jit_rvv_1x1_conv_kernel_t::generate() {
 
     L(load_loop_tail);
     {
-        Label tail_loop;
+        Label tail_loop, tail_end;
         L(tail_loop);
-        blez(reg_load_loop_work, load_loop_end);
+        blez(reg_load_loop_work, tail_end);
 
         // Last block may be partial, use vsetvli to set VL dynamically
-        vsetvli(reg_tmp_imm, reg_load_loop_work, Xbyak_riscv::SEW::e32,
-                Xbyak_riscv::LMUL::m1);
+        if (jcp.oc_block <= 31) {
+            vsetivli(reg_tmp_imm, jcp.oc_block, Xbyak_riscv::SEW::e32, Xbyak_riscv::LMUL::m1);
+        } else {
+            li(reg_tmp_imm, jcp.oc_block);
+            vsetvli(reg_tmp_imm, reg_tmp_imm, Xbyak_riscv::SEW::e32, Xbyak_riscv::LMUL::m1);
+        }
 
         bcast_loop(1);
 
@@ -305,11 +312,12 @@ void jit_rvv_1x1_conv_kernel_t::generate() {
         }
         li(reg_tmp_imm, jcp.oc_block * jcp.typesize_out);
         add(reg_output_data, reg_output_data, reg_tmp_imm);
-
+    
         li(reg_tmp_imm, jcp.oc_block);
         sub(reg_load_loop_work, reg_load_loop_work, reg_tmp_imm);
-
+    
         jal(x0, tail_loop);
+        L(tail_end);
     }
     L(load_loop_end);
 
@@ -369,8 +377,17 @@ void jit_rvv_1x1_conv_kernel_t::bcast_loop(int load_loop_blk) {
         Label bcast_loop_tail_end;
         blez(reg_bcast_loop_iter, bcast_loop_tail_end);
 
-        reduce_loop(load_loop_blk, jcp.ur_tail);
+        auto restore_vl = [=]() {
+            if (jcp.oc_block <= 31) {
+                vsetivli(reg_tmp_imm, jcp.oc_block, SEW::e32, LMUL::m1);
+            } else {
+                li(reg_tmp_imm, jcp.oc_block);
+                vsetvli(reg_tmp_imm, reg_tmp_imm, SEW::e32, LMUL::m1);
+            }
+        };
 
+        reduce_loop(load_loop_blk, jcp.ur_tail);
+        restore_vl(); 
         L(bcast_loop_tail_end);
     }
 }
@@ -429,8 +446,6 @@ void jit_rvv_1x1_conv_kernel_t::reduce_loop(int load_loop_blk, int ur) {
     auto store = [=]() {
         mv(reg_tmp_addr, aux_reg_output_data);
 
-        bool has_relu = false;
-
         for (int i_ur = 0; i_ur < ur; ++i_ur) {
             for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
 
@@ -488,7 +503,10 @@ void jit_rvv_1x1_conv_kernel_t::reduce_loop(int load_loop_blk, int ur) {
                     li(reg_tmp_addr, weight_off + 256);
 
                     add(reg_tmp_addr, aux_reg_load_data, reg_tmp_addr);
-                    flw(x0, reg_tmp_addr, 0); 
+                    #if defined(__riscv_zicbom)
+                        // cbo.prefetch.i: 0b0000000_00010_00000_010_00000_0001111
+                        asm volatile(".word 0x0020000f" : : "r"(reg_tmp_addr));
+                    #endif
 
                     li(reg_tmp_addr, weight_off);
                     add(reg_tmp_addr, aux_reg_load_data, reg_tmp_addr);
@@ -503,8 +521,8 @@ void jit_rvv_1x1_conv_kernel_t::reduce_loop(int load_loop_blk, int ur) {
     // Load first round of weights (IC=0..unroll-1)
     for (int i_unroll = 0; i_unroll < jcp.reduce_loop_unroll; ++i_unroll) {
         for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
-            size_t weight_off = (size_t)i_unroll * jcp.reduce_loop_load_step
-                    + (size_t)i_load * jcp.load_loop_load_step;
+            ptrdiff_t weight_off = (ptrdiff_t)i_unroll * jcp.reduce_loop_load_step
+                    + (ptrdiff_t)i_load * jcp.load_loop_load_step;
             if (weight_off == 0) {
                 vle32_v(vreg_load(i_load, i_unroll), aux_reg_load_data);
             } else {
@@ -547,7 +565,7 @@ void jit_rvv_1x1_conv_kernel_t::reduce_loop(int load_loop_blk, int ur) {
         L(tail_loop);
         {
             for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
-                size_t weight_off = (size_t)i_load * jcp.load_loop_load_step;
+                ptrdiff_t weight_off = (ptrdiff_t)i_load * jcp.load_loop_load_step;
                 if (weight_off == 0) {
                     vle32_v(vreg_load(i_load, 0), aux_reg_load_data);
                 } else {
