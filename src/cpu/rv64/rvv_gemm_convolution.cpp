@@ -106,12 +106,17 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_thr_nspc(
         // jit_gemm_convolution_utils::im2col_dt_3d() requires external
         // data initialization by zeroes
 
+        const size_t total_sz = jcp.im2col_sz;
+        const size_t vlmax = __riscv_vsetvlmax_e32m1();
+        const vfloat32m1_t v_zero = __riscv_vfmv_v_f_f32m1(0.0f, vlmax);
         ptrdiff_t i = 0;
-        while (i < jcp.im2col_sz) {
-            size_t vl = __riscv_vsetvl_e32m1(jcp.im2col_sz - i);
-            vfloat32m1_t v_zero = __riscv_vfmv_v_f_f32m1(0.0f, vl);
+
+        for (; i <= (ptrdiff_t)total_sz - (ptrdiff_t)vlmax; i += (ptrdiff_t)vlmax) {
+            __riscv_vse32_v_f32m1(col + i, v_zero, vlmax);
+        }
+        if (i < (ptrdiff_t)total_sz) {
+            size_t vl = __riscv_vsetvl_e32m1(total_sz - i);
             __riscv_vse32_v_f32m1(col + i, v_zero, vl);
-            i += vl;
         }
     }
 

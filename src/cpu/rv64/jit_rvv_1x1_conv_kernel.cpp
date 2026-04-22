@@ -225,12 +225,17 @@ void jit_rvv_1x1_conv_kernel_t::balance(jit_1x1_conv_conf_t &jcp) {
 }
 
 void jit_rvv_1x1_conv_kernel_t::generate() {
+    static_assert(sizeof(size_t) == 8, "oneDNN RV64 requires 64-bit pointer arithmetic");
+
     preamble();
 
     // Set initial VL to oc_block (4)
-    li(reg_tmp_imm, jcp.oc_block);
-    vsetvli(reg_tmp_imm, reg_tmp_imm, Xbyak_riscv::SEW::e32,
-            Xbyak_riscv::LMUL::m1);
+    if (jcp.oc_block <= 31) {
+        vsetivli(reg_tmp_imm, jcp.oc_block, Xbyak_riscv::SEW::e32, Xbyak_riscv::LMUL::m1);
+    } else {
+        li(reg_tmp_imm, jcp.oc_block);
+        vsetvli(reg_tmp_imm, reg_tmp_imm, Xbyak_riscv::SEW::e32, Xbyak_riscv::LMUL::m1);
+    }
 
     // Load parameters
     ld(reg_bcast_data, reg_param, GET_OFF(bcast_data));
@@ -423,9 +428,14 @@ void jit_rvv_1x1_conv_kernel_t::reduce_loop(int load_loop_blk, int ur) {
 
     auto store = [=]() {
         mv(reg_tmp_addr, aux_reg_output_data);
+
+        bool has_relu = false;
+
         for (int i_ur = 0; i_ur < ur; ++i_ur) {
             for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
+
                 vse32_v(vreg_accum(i_load, i_ur), reg_tmp_addr);
+
                 if (i_load + 1 < load_loop_blk)
                     addi(reg_tmp_addr, reg_tmp_addr,
                             jcp.load_block * jcp.typesize_out);
@@ -449,8 +459,8 @@ void jit_rvv_1x1_conv_kernel_t::reduce_loop(int load_loop_blk, int ur) {
                 }
 
                 if (i_ur + 1 < ur) {
-                    size_t offset
-                            = (size_t)(i_ur + 1) * jcp.bcast_loop_bcast_step;
+                    ptrdiff_t offset
+                            = (ptrdiff_t)(i_ur + 1) * jcp.bcast_loop_bcast_step;
                     if (offset <= 2047) {
                         flw(freg_bcast, aux_reg_bcast_data, offset);
                     } else {
@@ -470,12 +480,16 @@ void jit_rvv_1x1_conv_kernel_t::reduce_loop(int load_loop_blk, int ur) {
 
         // Prefetch weights for next iteration
         if (!last_block) {
-            for (int i_unroll = 0; i_unroll < jcp.reduce_loop_unroll;
-                    ++i_unroll) {
+            for (int i_unroll = 0; i_unroll < jcp.reduce_loop_unroll; ++i_unroll) {
                 for (int i_load = 0; i_load < load_loop_blk; ++i_load) {
-                    size_t weight_off
-                            = (size_t)i_unroll * jcp.reduce_loop_load_step
-                            + (size_t)i_load * jcp.load_loop_load_step;
+                    ptrdiff_t weight_off = (ptrdiff_t)i_unroll * jcp.reduce_loop_load_step
+                                         + (ptrdiff_t)i_load * jcp.load_loop_load_step;
+
+                    li(reg_tmp_addr, weight_off + 256);
+
+                    add(reg_tmp_addr, aux_reg_load_data, reg_tmp_addr);
+                    flw(x0, reg_tmp_addr, 0); 
+
                     li(reg_tmp_addr, weight_off);
                     add(reg_tmp_addr, aux_reg_load_data, reg_tmp_addr);
                     vle32_v(vreg_load(i_load, i_unroll), reg_tmp_addr);
