@@ -53,9 +53,8 @@ namespace cpu {
 // - dense_tag -> encoding
 // - encoding -> dense_tag
 #define SIMPLE_SPARSE_REORDER_V0_TEMPL_DECL \
-    impl::data_type_t type_i, format_tag_t fmt_i, \
-            impl::data_type_t type_o, format_tag_t fmt_o, \
-            bool order_keep
+    impl::data_type_t type_i, format_tag_t fmt_i, impl::data_type_t type_o, \
+            format_tag_t fmt_o, bool order_keep
 
 #define SIMPLE_SPARSE_REORDER_V0_TEMPL_CALL \
     type_i, fmt_i, type_o, fmt_o, order_keep
@@ -87,8 +86,11 @@ using namespace data_type;
 /* specific reorders: IP compression */
 template <SIMPLE_SPARSE_REORDER_V0_TEMPL_DECL>
 struct simple_sparse_reorder_v0_impl<SIMPLE_SPARSE_REORDER_V0_TEMPL_CALL,
-        typename utils::enable_if<(is_format_tag_v(fmt_i) && (fmt_i == format_tag::oi || fmt_i == format_tag::io))
-                               && (is_format_tag_v(fmt_o) && (fmt_o == format_tag::OI16i64o4i)),
+        typename utils::enable_if<(is_format_tag_v(fmt_i)
+                                          && (fmt_i == format_tag::oi
+                                                  || fmt_i == format_tag::io))
+                        && (is_format_tag_v(fmt_o)
+                                && (fmt_o == format_tag::OI16i64o4i)),
                 sparse_spec::reference>::type> {
 
     static status_t is_applicable(const memory_desc_wrapper &input_d,
@@ -96,10 +98,12 @@ struct simple_sparse_reorder_v0_impl<SIMPLE_SPARSE_REORDER_V0_TEMPL_CALL,
 
         VDISPATCH_REORDER_IC(!input_d.has_runtime_dims_or_strides(),
                 VERBOSE_RUNTIMEDIM_UNSUPPORTED);
-        const size_t D_mask = utils::array_product(
-                input_d.dims(), math::ilog2q(attr->scales_.get_mask(DNNL_ARG_SRC) - INT_MIN + 1));
+        const size_t D_mask = utils::array_product(input_d.dims(),
+                math::ilog2q(
+                        attr->scales_.get_mask(DNNL_ARG_SRC) - INT_MIN + 1));
         const size_t oc = (input_d.dims()[0]);
-        VDISPATCH_REORDER_IC(output_d.matches_tag(fmt_o) && input_d.matches_tag(fmt_i),
+        VDISPATCH_REORDER_IC(
+                output_d.matches_tag(fmt_o) && input_d.matches_tag(fmt_i),
                 VERBOSE_RUNTIMEDIM_UNSUPPORTED);
         // VDISPATCH_REORDER_IC(
         //         input_d.is_blocking_desc(), VERBOSE_UNSUPPORTED_FORMAT_KIND);
@@ -113,10 +117,12 @@ struct simple_sparse_reorder_v0_impl<SIMPLE_SPARSE_REORDER_V0_TEMPL_CALL,
         //         VERBOSE_UNSUPPORTED_TENSOR_LAYOUT, "dst");
         // VDISPATCH_REORDER_IC(output_d.blk_size() % 64 == 0,
         //         VERBOSE_UNSUPPORTED_TENSOR_LAYOUT, "dst");
-        VDISPATCH_REORDER_IC(utils::one_of(input_d.data_type(), data_type::f32, data_type::s8),
-                VERBOSE_UNSUPPORTED_DT, "src");
-        VDISPATCH_REORDER_IC(utils::one_of(output_d.data_type(), data_type::s8) && (D_mask == 1 || D_mask == oc),
-                VERBOSE_UNSUPPORTED_DT, "dst");
+        VDISPATCH_REORDER_IC(utils::one_of(input_d.data_type(), data_type::f32,
+                                     data_type::s8),
+                VERBOSE_UNSUPPORTED_DT);
+        VDISPATCH_REORDER_IC(utils::one_of(output_d.data_type(), data_type::s8)
+                        && (D_mask == 1 || D_mask == oc),
+                VERBOSE_UNSUPPORTED_DT);
 
         return status::success;
     }
@@ -146,12 +152,16 @@ struct simple_sparse_reorder_v0_impl<SIMPLE_SPARSE_REORDER_V0_TEMPL_CALL,
 
         int total_blocks = offset / 4096;
         using comp_tile_len_type = int;
-        comp_tile_len_type *comp_tile_len_ptr = reinterpret_cast<comp_tile_len_type *>(output);
+        comp_tile_len_type *comp_tile_len_ptr
+                = reinterpret_cast<comp_tile_len_type *>(output);
         int comp_tile_len_index = 0;
         int cl_length = 0;
         // Wasting memory space due to allocation a buffer for the whole tensor?
-        int output_offset = ceil((float)total_blocks * sizeof(comp_tile_len_type) / 64.0) * 64;
-        uint64_t *bitmask_ptr = reinterpret_cast<uint64_t *>(output + output_offset + offset);
+        int output_offset
+                = ceil((float)total_blocks * sizeof(comp_tile_len_type) / 64.0)
+                * 64;
+        uint64_t *bitmask_ptr
+                = reinterpret_cast<uint64_t *>(output + output_offset + offset);
         auto outp = &output[output_d.blk_off(0, 0, 0, 0) + output_offset];
 
         // TODO: add threading.
@@ -192,7 +202,8 @@ struct simple_sparse_reorder_v0_impl<SIMPLE_SPARSE_REORDER_V0_TEMPL_CALL,
                         if (count % 64 == 0) { bitmask_idx++; }
                     }
                 }
-                comp_tile_len_type cl = (comp_tile_len_type)ceil(non_zeros / 64.0);
+                comp_tile_len_type cl
+                        = (comp_tile_len_type)ceil(non_zeros / 64.0);
                 comp_tile_len_index++;
                 cl_length = comp_tile_len_ptr[comp_tile_len_index - 1] + cl;
                 int unsed_bytes_in_cl = 64 - (non_zeros % 64);
@@ -218,11 +229,11 @@ struct simple_sparse_reorder_v0_t : public primitive_t {
                 const memory_desc_t *dst_md) {
 
             const bool ok = src_md->data_type == type_i
-                    && dst_md->data_type == type_o
-                    && attr->has_default_values()
+                    && dst_md->data_type == type_o && attr->has_default_values()
                     && simple_sparse_reorder_v0_impl<
-                            SIMPLE_SPARSE_REORDER_V0_TEMPL_CALL,
-                            spec>::is_applicable(src_md, dst_md, attr) == status::success;
+                               SIMPLE_SPARSE_REORDER_V0_TEMPL_CALL,
+                               spec>::is_applicable(src_md, dst_md, attr)
+                            == status::success;
             if (!ok) return status::invalid_arguments;
 
             auto _pd = new pd_t(attr, src_engine->kind(), src_md,
@@ -243,8 +254,8 @@ struct simple_sparse_reorder_v0_t : public primitive_t {
     simple_sparse_reorder_v0_t(const pd_t *apd) : primitive_t(apd) {}
 
     status_t execute(const exec_ctx_t &ctx) const override {
-        return simple_sparse_reorder_v0_impl<SIMPLE_SPARSE_REORDER_V0_TEMPL_CALL,
-                spec>::execute(pd(), ctx);
+        return simple_sparse_reorder_v0_impl<
+                SIMPLE_SPARSE_REORDER_V0_TEMPL_CALL, spec>::execute(pd(), ctx);
     }
 
 private:

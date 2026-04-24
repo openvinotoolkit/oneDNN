@@ -29,7 +29,7 @@
 
 #include "cpu/platform.hpp"
 
-#if DNNL_USE_ACL
+#if DNNL_AARCH64 && defined(DNNL_AARCH64_USE_ACL)
 #include "cpu/acl/acl_thread.hpp"
 #endif
 
@@ -91,7 +91,7 @@ public:
             const op_desc_t *desc) {
         static const impl_list_item_t empty_list[] = {nullptr};
 
-// clang-format off
+        // clang-format off
 #define CASE(kind) \
     case primitive_kind::kind: \
         return get_##kind##_impl_list((const kind##_desc_t *)desc);
@@ -163,7 +163,7 @@ public:
         *engine = new cpu_engine_t(new impl::engine_impl_t(
                 engine_kind::cpu, get_cpu_native_runtime(), 0));
 
-#if DNNL_USE_ACL
+#if DNNL_AARCH64 && defined(DNNL_AARCH64_USE_ACL)
         dnnl::impl::cpu::acl::acl_thread_utils::set_acl_threading();
 #endif
         return status::success;

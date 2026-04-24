@@ -268,8 +268,7 @@ struct brgemm_matmul_conf_utils_t {
         return blocked_B_layouts_allowed && !bgmmc.is_runtime_N
                 && utils::one_of(matrix_b_tag, blocked_64n_B_layout_tag,
                         blocked_48n_B_layout_tag, blocked_32n_B_layout_tag,
-                        blocked_24n_B_layout_tag, blocked_16n_B_layout_tag,
-                        blocked_8n_B_layout_tag);
+                        blocked_16n_B_layout_tag);
     }
 
     inline bool check_b_layout_blocked_32_by_n(
@@ -427,8 +426,7 @@ private:
     const format_tag_t plain_tensor_layout_tag;
     const format_tag_t transposed_tensor_layout_tag;
     const format_tag_t blocked_64n_B_layout_tag, blocked_48n_B_layout_tag,
-            blocked_32n_B_layout_tag, blocked_24n_B_layout_tag,
-            blocked_16n_B_layout_tag, blocked_8n_B_layout_tag;
+            blocked_32n_B_layout_tag, blocked_16n_B_layout_tag;
     const bool blocked_B_layouts_allowed;
     const bool n_blk_fixed;
     const cpu_isa_t isa_;
@@ -458,6 +456,19 @@ int get_n_block_from_tag(format_tag_t matrix_b_tag);
 void mem_advice_init(brgemm_matmul_conf_t &bgmmc);
 
 bool is_batch_layout_trivial(const memory_desc_wrapper &mdw, const dim_t batch);
+
+/**
+ * Returns the total block size along the K dimension, as the product of
+ * the fixed outer block size and the VNNI granularity.
+ *
+ * Example: For format tag BA16a16b4a, the block size is
+ * 16 (outer) * 4 (VNNI granularity) = 64.
+ *
+ * @param wei_dt Weights data type.
+ *
+ * @return The total K dimension block size.
+ */
+int get_wei_k_blk(data_type_t wei_dt);
 
 } // namespace matmul
 } // namespace x64

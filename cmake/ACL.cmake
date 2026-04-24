@@ -101,7 +101,7 @@ if(ACL_FOUND)
     message(STATUS "Arm Compute Library: ${ACL_LIBRARIES}")
     message(STATUS "Arm Compute Library headers: ${ACL_INCLUDE_DIRS}")
 
-    add_definitions(-DDNNL_USE_ACL)
+    add_definitions(-DDNNL_AARCH64_USE_ACL)
     set(CMAKE_CXX_STANDARD 14)
     set(CMAKE_CXX_EXTENSIONS "OFF")
 endif()

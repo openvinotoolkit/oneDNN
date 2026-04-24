@@ -21,7 +21,7 @@
 
 set -o errexit -o pipefail -o noclobber
 
-SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 
 # Defines MP, CC, CXX and OS.
 source ${SCRIPT_DIR}/common.sh
@@ -31,37 +31,52 @@ export ACL_ROOT_DIR=${ACL_ROOT_DIR:-"${PWD}/ComputeLibrary"}
 CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-"Release"}
 ONEDNN_TEST_SET=${ONEDNN_TEST_SET:-"SMOKE"}
 ONEDNN_BUILD_GRAPH=${ONEDNN_BUILD_GRAPH:-"ON"}
+ONEDNN_EXPERIMENTAL_UKERNEL=${ONEDNN_EXPERIMENTAL_UKERNEL:-"ON"}
+ONEDNN_CMAKE_EXTRA_FLAGS=${ONEDNN_CMAKE_EXTRA_FLAGS:-""}
+
+GENERATOR_ARGS=()
+if [[ -n "${CMAKE_GENERATOR}" ]]; then
+    GENERATOR_ARGS=(-G "${CMAKE_GENERATOR}")
+fi
 
 if [[ "$ONEDNN_ACTION" == "configure" ]]; then
     if [[ "$GITHUB_JOB" == "pr-clang-tidy" ]]; then
         CC=clang CXX=clang++ \
         cmake \
+            "${GENERATOR_ARGS[@]}" \
             -Bbuild -S. \
             -DDNNL_USE_ACL=ON \
-            -DONEDNN_BUILD_GRAPH=ON \
+            -DONEDNN_BUILD_GRAPH=OFF \
             -DDNNL_CPU_RUNTIME=OMP \
-            -DONEDNN_WERROR=ON \
+            -DDNNL_WERROR=ON \
             -DDNNL_BUILD_FOR_CI=ON \
             -DONEDNN_TEST_SET=NO_CORR \
             -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DDNNL_EXPERIMENTAL_UKERNEL=ON \
+            ${ONEDNN_CMAKE_EXTRA_FLAGS}
         set +x
     else
         set -x
         cmake \
+            "${GENERATOR_ARGS[@]}" \
             -Bbuild -S. \
             -DDNNL_USE_ACL=ON \
             -DONEDNN_BUILD_GRAPH=$ONEDNN_BUILD_GRAPH \
             -DDNNL_CPU_RUNTIME=$ONEDNN_THREADING \
-            -DONEDNN_WERROR=ON \
+            -DDNNL_WERROR=ON \
             -DDNNL_BUILD_FOR_CI=ON \
             -DONEDNN_TEST_SET=$ONEDNN_TEST_SET \
-            -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE
+            -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
+            -DCMAKE_SKIP_BUILD_RPATH=FALSE \
+            -DCMAKE_BUILD_RPATH_USE_ORIGIN=ON \
+            -DDNNL_EXPERIMENTAL_UKERNEL=$ONEDNN_EXPERIMENTAL_UKERNEL \
+            ${ONEDNN_CMAKE_EXTRA_FLAGS}
         set +x
     fi
 elif [[ "$ONEDNN_ACTION" == "build" ]]; then
     set -x
-    cmake --build build 
+    cmake --build build --parallel "${MP#-j}"
     set +x
 else
     echo "Unknown action: $ONEDNN_ACTION"
