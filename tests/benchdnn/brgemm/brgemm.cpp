@@ -1239,11 +1239,11 @@ int doit(const prb_t *prb, res_t *res) {
     const int32_t *dst_zp_ptr
             = mem_map.count(DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_DST)
             ? (const int32_t *)mem_map.at(
-                    DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_DST)
+                      DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_DST)
             : nullptr;
     int32_t zp_a_val = mem_map.count(DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_SRC)
             ? *(const int32_t *)mem_map.at(
-                    DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_SRC)
+                      DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_SRC)
             : 0;
     const char *bia_dt_ptr = mem_map.count(DNNL_ARG_BIAS)
             ? (const char *)mem_map.at(DNNL_ARG_BIAS)
@@ -1339,11 +1339,12 @@ int doit(const prb_t *prb, res_t *res) {
     DNN_SAFE(dnnl_ukernel_attr_params_set_post_ops_args(
                      attr_params, binary_po_v.data()),
             WARN);
-
+#if defined(brg_x64)
     DNN_SAFE(dnnl_ukernel_attr_params_set_A_scales(attr_params, src_scales_ptr),
             WARN);
     DNN_SAFE(dnnl_ukernel_attr_params_set_B_scales(attr_params, wei_scales_ptr),
             WARN);
+#endif
     DNN_SAFE(dnnl_ukernel_attr_params_set_D_scales(attr_params, dst_scales_ptr),
             WARN);
 #endif

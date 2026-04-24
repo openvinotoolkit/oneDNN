@@ -23,7 +23,7 @@
 #include "cpu/x64/prelu/jit_prelu_forward.hpp"
 
 using namespace dnnl::impl::cpu::x64;
-#elif DNNL_USE_ACL
+#elif defined(DNNL_AARCH64_USE_ACL)
 #include "cpu/acl/acl_prelu.hpp"
 using namespace dnnl::impl::cpu::acl;
 #endif

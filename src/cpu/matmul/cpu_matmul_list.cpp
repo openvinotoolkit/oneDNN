@@ -44,7 +44,7 @@ using namespace dnnl::impl::cpu::rv64;
 #endif
 #endif
 
-#ifdef DNNL_USE_ACL
+#ifdef DNNL_AARCH64_USE_ACL
 #include "cpu/acl/matmul/acl_lowp_matmul.hpp"
 #include "cpu/acl/matmul/acl_lowp_matmul_sq.hpp"
 #include "cpu/acl/matmul/acl_matmul.hpp"

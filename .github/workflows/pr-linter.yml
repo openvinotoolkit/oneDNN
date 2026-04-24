@@ -20,59 +20,63 @@ name: "PR Linters"
 
 on:
   pull_request:
-    types: [opened, edited, synchronize, reopened]
+    types: [opened, synchronize, reopened]
 
 # Declare default permissions as read only.
 permissions: read-all
 
 # Kill stale checks
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ${{ github.workflow }}-${{ format('pr-{0}', github.event.pull_request.number) }}
+  cancel-in-progress: true
 
 jobs:
   pr-commits:
     name: Commit messages
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           fetch-depth: 0
       - name: Check commit messages
         run: python3 ./.github/automation/commit-msg-check.py "${{ github.event.pull_request.head.sha }}" "${{ github.event.pull_request.base.sha }}"
 
   pr-header-guards:
     name: Header guards
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           fetch-depth: 0
       - name: Check header guards
         run: ./scripts/fix_header_guards.py -v $(git diff --name-only "${{ github.event.pull_request.base.sha }}")
 
   pr-clang-format:
     name: Clang-Format
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           fetch-depth: 0
       - name: Install clang-format
-        run: sudo apt update && sudo apt install -y "clang-format-11"
+        run: sudo apt update && sudo apt install -y "clang-format-18"
       - name: Check code formatting
-        run: .github/automation/clang-format.sh
+        run: .github/automation/clang-format.sh ${{ github.event.pull_request.base.sha }}
 
   pr-format-tags:
     name: Format tags consistency
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout oneDNN
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
+          persist-credentials: false
           path: source
 
       - name: Install clang
@@ -102,7 +106,7 @@ jobs:
 
   pr-status:
     name: Formatting
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [ pr-commits, pr-clang-format, pr-format-tags ]
     steps:
       - name: Print success

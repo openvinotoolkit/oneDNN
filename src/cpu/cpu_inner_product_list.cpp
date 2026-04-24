@@ -27,7 +27,7 @@
 #include "cpu/x64/jit_brgemm_inner_product.hpp"
 #include "cpu/x64/matmul_inner_product.hpp"
 using namespace dnnl::impl::cpu::x64;
-#elif DNNL_USE_ACL
+#elif defined(DNNL_AARCH64_USE_ACL)
 #include "cpu/acl/acl_inner_product.hpp"
 using namespace dnnl::impl::cpu::acl;
 #endif
@@ -505,4 +505,3 @@ const impl_list_item_t *get_inner_product_impl_list(
 } // namespace cpu
 } // namespace impl
 } // namespace dnnl
-
