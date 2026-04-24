@@ -18,6 +18,7 @@
 
 #include <riscv_vector.h>
 
+
 namespace dnnl {
 namespace impl {
 namespace cpu {
