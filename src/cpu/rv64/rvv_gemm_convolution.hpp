@@ -68,6 +68,8 @@ struct riscv_gemm_convolution_fwd_t : public primitive_t {
 
             // TODO: make `init_conf` assign initialized object to `jcp_`
             jcp_ = conv_gemm_conf_t();
+
+            std::cout << "GEMM INIT CONSTRUCTION" << std::endl;
             return jit_gemm_convolution_utils::init_conf(jcp_, scratchpad,
                     *desc(), src_md_, weights_md_, dst_md_, bias_md_, attr_,
                     dnnl_get_max_threads());
@@ -113,18 +115,24 @@ struct riscv_gemm_convolution_fwd_t : public primitive_t {
         : primitive_t(apd), post_ops_(nullptr) {}
 
     status_t init(engine_t *engine) override {
+        std::cout << "GEMM INIT" << std::endl;
         const auto &jcp = pd()->jcp_;
 
         if (jcp.with_eltwise || jcp.with_binary) {
             CHECK(safe_ptr_assign(post_ops_, new ref_post_ops_t(jcp.post_ops)));
             CHECK(post_ops_->init(pd()->dst_md()));
         }
+
+        std::cout << "GEMM SUCCESS" << std::endl;
         return status::success;
     }
 
     using data_t = typename prec_traits_t<data_type::f32>::type;
 
     status_t execute(const exec_ctx_t &ctx) const override {
+        fprintf(stderr, "[RVV EXECUTE] Layer executed!\n");
+        fflush(stderr);
+
         bool is_nspc = pd()->jcp_.is_nspc;
         return is_nspc ? execute_forward_nspc(ctx) : execute_forward_ncsp(ctx);
     }

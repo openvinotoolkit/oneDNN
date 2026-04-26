@@ -184,9 +184,9 @@ const std::map<pk_dt_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map()
             CPU_INSTANCE_RV64GCV(riscv_gemm_convolution_fwd_t)
             
 
-            // CPU_INSTANCE(gemm_convolution_fwd_t)
-            // CPU_INSTANCE(ref_convolution_fwd_t)
-            // CPU_INSTANCE(ref_fused_convolution_fwd_t)
+            CPU_INSTANCE(gemm_convolution_fwd_t)
+            CPU_INSTANCE(ref_convolution_fwd_t)
+            CPU_INSTANCE(ref_fused_convolution_fwd_t)
             nullptr,
         }},
         {{forward, f32, f16, f32}, {
