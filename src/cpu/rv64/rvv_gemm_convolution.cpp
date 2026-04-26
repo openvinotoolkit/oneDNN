@@ -1,22 +1,17 @@
 /*******************************************************************************
-* Copyright 2016 Intel Corporation
-*
-* Licensed under the Apache License, Version 2.0 (the "License");
-* you may not use this file except in compliance with the License.
-* You may obtain a copy of the License at
-*
-*     http://www.apache.org/licenses/LICENSE-2.0
-*
-* Unless required by applicable law or agreed to in writing, software
-* distributed under the License is distributed on an "AS IS" BASIS,
-* WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-* See the License for the specific language governing permissions and
-* limitations under the License.
+Copyright 2016 Intel Corporation
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 *******************************************************************************/
-
 #include <atomic>
 #include <riscv_vector.h>
-
 #include "common/c_types_map.hpp"
 #include "common/dnnl_thread.hpp"
 #include "common/type_helpers.hpp"
@@ -38,10 +33,102 @@ struct im_pos_t {
     dim_t n, g, od, sp, ic, oc;
     bool do_im2col(const im_pos_t &prev) const {
         return true
-                && (n != prev.n || g != prev.g || od != prev.od || sp != prev.sp
-                        || ic != prev.ic);
+            && (n != prev.n || g != prev.g || od != prev.od || sp != prev.sp
+                    || ic != prev.ic);
     }
 };
+
+// Helper function to apply bias and eltwise using RVV in NSPC layout
+// Using float explicitly as data_t is float in this specialization
+static void apply_bias_eltwise_rvv_nspc(
+        const float *__restrict bia_arr,
+        float *__restrict dst_arr,
+        size_t start_oc, size_t end_oc,
+        bool with_bias,
+        bool with_eltwise,
+        const ref_post_ops_t *post_ops,
+        const exec_ctx_t &ctx,
+        const memory_desc_t *dst_md, // Changed to pointer to memory_desc_t
+        const conv_gemm_conf_t &jcp,
+        size_t g, size_t os_offset_factor) {
+    
+    size_t n_elems = end_oc - start_oc + 1;
+    if (n_elems == 0) return;
+
+    size_t oc = 0;
+    const float *b_ptr = with_bias ? (bia_arr + start_oc) : nullptr;
+    float *d_ptr = dst_arr + start_oc;
+
+    // Prepare eltwise params if needed
+    float eltwise_alpha = 0.0f;
+    float eltwise_scale = 1.0f;
+    bool is_fast_relu = false;
+    
+    if (with_eltwise && jcp.post_ops.len() == 1) {
+        const auto &eltwise = jcp.post_ops.entry_.back().eltwise;
+        if (eltwise.alg == alg_kind::eltwise_relu) {
+            eltwise_alpha = eltwise.alpha;
+            eltwise_scale = eltwise.scale;
+            is_fast_relu = true;
+        }
+    }
+
+    while (oc < n_elems) {
+        size_t vl = __riscv_vsetvl_e32m1(n_elems - oc);
+        
+        vfloat32m1_t v_dst = __riscv_vle32_v_f32m1(d_ptr + oc, vl);
+
+        // 1. Add Bias
+        if (with_bias) {
+            vfloat32m1_t v_bias = __riscv_vle32_v_f32m1(b_ptr + oc, vl);
+            v_dst = __riscv_vfadd_vv_f32m1(v_dst, v_bias, vl);
+        }
+
+        // 2. Apply Eltwise (Fast ReLU path)
+        if (is_fast_relu) {
+            if (eltwise_alpha == 0.0f) {
+                // Standard ReLU
+                v_dst = __riscv_vfmax_vf_f32m1(v_dst, 0.0f, vl);
+            } else {
+                // Leaky ReLU-like
+                vbool32_t mask = __riscv_vmflt_vf_f32m1_b32(v_dst, 0.0f, vl);
+                v_dst = __riscv_vfmul_vf_f32m1_m(mask, v_dst, eltwise_alpha, vl);
+            }
+            
+            if (eltwise_scale != 1.0f) {
+                v_dst = __riscv_vfmul_vf_f32m1(v_dst, eltwise_scale, vl);
+            }
+            __riscv_vse32_v_f32m1(d_ptr + oc, v_dst, vl);
+            oc += vl;
+        } else {
+            // If not fast relu, break to handle scalarly or generic post-ops
+            break; 
+        }
+    }
+
+    // Handle remaining elements or generic post-ops scalarly
+    if (oc < n_elems || (!is_fast_relu && with_eltwise)) {
+        for (size_t i = oc; i < n_elems; ++i) {
+            size_t cur_oc = start_oc + i;
+            float *dst_val = dst_arr + cur_oc;
+            
+            if (with_bias) {
+                *dst_val += bia_arr[cur_oc];
+            }
+            
+            if (with_eltwise || jcp.with_binary) {
+                 ref_post_ops_t::args_t args;
+                 args.ctx = &ctx;
+                 args.dst_md = dst_md; // Use the passed pointer
+                 // Calculate offset correctly
+                 // Note: l_offset calculation might need adjustment based on exact memory layout expectations of post_ops
+                 args.l_offset = (g * jcp.oc + cur_oc) * (jcp.os * jcp.od);
+                 post_ops->execute(*dst_val, args);
+            }
+        }
+    }
+}
+
 } // namespace
 
 status_t riscv_gemm_convolution_fwd_t::execute_forward_nspc(
@@ -50,7 +137,6 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_nspc(
     auto wei_base = CTX_IN_MEM(const data_t *, DNNL_ARG_WEIGHTS);
     auto bia_base = CTX_IN_MEM(const data_t *, DNNL_ARG_BIAS);
     auto dst_base = CTX_OUT_MEM(data_t *, DNNL_ARG_DST);
-
     auto scratchpad = ctx.get_scratchpad_grantor();
     const conv_gemm_conf_t &jcp = pd()->jcp_;
     std::atomic<status_t> st(status::success);
@@ -58,7 +144,11 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_nspc(
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
         status_t st_thr = execute_forward_thr_nspc(ctx, ithr, nthr, src_base,
                 wei_base, bia_base, dst_base, scratchpad);
-        if (st_thr != status::success) st = st_thr;
+
+        if (st_thr != status::success) {
+            status_t expected = status::success;
+            st.compare_exchange_strong(expected, st_thr);
+        }
     });
 
     return st;
@@ -69,7 +159,6 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_thr_nspc(
         const data_t *src_base, const data_t *wei_base, const data_t *bia_base,
         data_t *dst_base, const memory_tracking::grantor_t &scratchpad) const {
     const conv_gemm_conf_t &jcp = pd()->jcp_;
-
     // Src Format: mb-spatial-groups-input_channels
     const dim_t src_mb_stride = jcp.id * jcp.ih * jcp.iw * jcp.ngroups * jcp.ic;
     const dim_t src_g_stride = jcp.ic;
@@ -92,7 +181,7 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_thr_nspc(
 
     assert(IMPLICATION(is_problem_3d,
             jcp.oh_block == jcp.oh && jcp.ow_block == jcp.ow
-                    && jcp.ic_block == jcp.ic));
+                     && jcp.ic_block == jcp.ic));
     assert(IMPLICATION(jcp.ow_block != jcp.ow, jcp.oh_block == 1));
 
     const dim_t nb_oh = div_up(jcp.oh, jcp.oh_block);
@@ -102,10 +191,8 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_thr_nspc(
     balance211(work_amount, nthr, ithr, start, end);
     nd_iterator_init(start, n, jcp.mb, g, jcp.ngroups, ohb, nb_oh, owb, nb_ow);
 
+    // Pre-zeroing for 3D problem if needed (outside loop)
     if (jcp.im2col_sz && is_problem_3d) {
-        // jit_gemm_convolution_utils::im2col_dt_3d() requires external
-        // data initialization by zeroes
-
         const size_t total_sz = jcp.im2col_sz;
         const size_t vlmax = __riscv_vsetvlmax_e32m1();
         const vfloat32m1_t v_zero = __riscv_vfmv_v_f_f32m1(0.0f, vlmax);
@@ -120,6 +207,10 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_thr_nspc(
         }
     }
 
+    // Cache post_ops pointer and dst_md
+    const ref_post_ops_t *post_ops_ptr = post_ops_.get();
+    const memory_desc_t *dst_md_ptr = pd()->dst_md();
+
     for (dim_t iwork = start; iwork < end; ++iwork) {
         dim_t oh = ohb * jcp.oh_block;
         dim_t ow = owb * jcp.ow_block;
@@ -129,14 +220,16 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_thr_nspc(
 
         const int h_step = nstl::min(jcp.oh_block, jcp.oh - oh);
         const int w_step = nstl::min(jcp.ow_block, jcp.ow - ow);
+        
         if (jcp.im2col_sz && is_problem_3d) {
-            jit_gemm_convolution_utils::transpose_dt(jcp, src, imtr);
+             jit_gemm_convolution_utils::transpose_dt(jcp, src, imtr);
         }
 
         for (int od = 0; od < jcp.od; od++) {
             data_t *__restrict dst = dst_base + n * dst_mb_stride
                     + g * dst_g_stride
                     + ((od * jcp.oh + oh) * jcp.ow + ow) * dst_os_stride;
+            
             if (jcp.im2col_sz) {
                 if (is_problem_3d)
                     jit_gemm_convolution_utils::im2col_dt_3d<data_t, data_t>(
@@ -152,25 +245,27 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_thr_nspc(
             const dim_t LDA = M * jcp.ngroups;
             const dim_t LDB = jcp.im2col_sz ? N : K * jcp.ngroups;
             const dim_t LDC = M * jcp.ngroups;
-            const char *BT = jcp.im2col_sz ? "T" : "N";
+            const char *BT = jcp.im2col_sz ? "T " : "N ";
             const data_t onef = 1.f;
             const float beta = jcp.with_sum ? 1.0f : 0.0f;
             const data_t *__restrict src_od
                     = src + od * jcp.oh * jcp.ow * jcp.ngroups * jcp.ic;
-            status_t st = extended_sgemm("N", BT, &M, &N, &K, &onef, wei, &LDA,
+            
+            status_t st = extended_sgemm("N ", BT, &M, &N, &K, &onef, wei, &LDA,
                     jcp.im2col_sz ? col : (data_t *)src_od, &LDB, &beta, dst,
                     &LDC);
             if (st != status::success) return st;
 
             if (jcp.with_bias || jcp.with_eltwise || jcp.with_binary) {
-                parallel(0, [&](int ithr, int nthr) {
-                    dim_t start, end;
-                    balance211(N * jcp.oc, nthr, ithr, start, end);
+                // NOTE: Keeping parallel(0, ...) as requested
+                parallel(0, [&](int ithr_inner, int nthr_inner) {
+                    dim_t start_inner, end_inner;
+                    balance211(N * jcp.oc, nthr_inner, ithr_inner, start_inner, end_inner);
 
-                    const size_t first_oc = start % jcp.oc;
-                    const size_t last_oc = (end - 1) % jcp.oc;
-                    const size_t first_os = start / jcp.oc;
-                    const size_t last_os = (end - 1) / jcp.oc;
+                    const size_t first_oc = start_inner % jcp.oc;
+                    const size_t last_oc = (end_inner - 1) % jcp.oc;
+                    const size_t first_os = start_inner / jcp.oc;
+                    const size_t last_os = (end_inner - 1) / jcp.oc;
 
                     for (size_t os = first_os; os <= last_os; ++os) {
                         const size_t start_oc = (os == first_os) ? first_oc : 0;
@@ -181,60 +276,36 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_thr_nspc(
                                 = bia_base ? bia_base + g * jcp.oc : nullptr;
                         data_t *__restrict dst_arr = dst + os * dst_os_stride;
 
-                        if (jcp.with_bias) {
-                            size_t n_elems = end_oc - start_oc + 1;
-                            if (n_elems > 0) {
-                                size_t oc = 0;
-                                const data_t *b_ptr = bia_arr + start_oc;
-                                data_t *d_ptr = dst_arr + start_oc;
-
-                                while (oc < n_elems) {
-                                    size_t vl = __riscv_vsetvl_e32m1(
-                                            n_elems - oc);
-                                    vfloat32m1_t v_dst = __riscv_vle32_v_f32m1(
-                                            d_ptr + oc, vl);
-                                    vfloat32m1_t v_bias = __riscv_vle32_v_f32m1(
-                                            b_ptr + oc, vl);
-                                    v_dst = __riscv_vfadd_vv_f32m1(
-                                            v_dst, v_bias, vl);
-                                    __riscv_vse32_v_f32m1(
-                                            d_ptr + oc, v_dst, vl);
-                                    oc += vl;
-                                }
-                            }
-                        }
-
-                        if (jcp.with_eltwise || jcp.with_binary) {
-                            bool fast_relu_done = false;
-                            if (jcp.with_eltwise && jcp.post_ops.len() == 1) {
-                                // fast branch for ReLU case
-                                const auto &eltwise
-                                        = jcp.post_ops.entry_.back().eltwise;
-
-                                if (eltwise.alg == alg_kind::eltwise_relu) {
-                                    const auto alpha = eltwise.alpha;
-                                    const auto scale = eltwise.scale;
-                                    PRAGMA_OMP_SIMD()
-                                    for (size_t oc = start_oc; oc <= end_oc;
-                                            oc++) {
-                                        if (dst_arr[oc] < 0)
-                                            dst_arr[oc] *= alpha;
-                                        dst_arr[oc] *= scale;
+                        // Check if we can use optimized RVV path
+                        bool has_binary = jcp.with_binary;
+                        bool has_complex_eltwise = jcp.with_eltwise && !(jcp.post_ops.len() == 1 && jcp.post_ops.entry_.back().eltwise.alg == alg_kind::eltwise_relu);
+                        
+                        if (!has_binary && !has_complex_eltwise) {
+                             apply_bias_eltwise_rvv_nspc(
+                                (const float*)bia_arr, (float*)dst_arr, start_oc, end_oc,
+                                jcp.with_bias, jcp.with_eltwise,
+                                post_ops_ptr, ctx, dst_md_ptr, jcp, g, 0);
+                        } else {
+                            // Fallback to original scalar logic for complex cases
+                            if (jcp.with_bias) {
+                                size_t n_elems = end_oc - start_oc + 1;
+                                if (n_elems > 0) {
+                                    // Scalar bias add
+                                    for(size_t k=0; k<n_elems; ++k) {
+                                        dst_arr[start_oc + k] += bia_arr[start_oc + k];
                                     }
-                                    fast_relu_done = true;
                                 }
                             }
-                            if (!fast_relu_done) {
+                            
+                            if (jcp.with_eltwise || jcp.with_binary) {
                                 ref_post_ops_t::args_t args;
                                 args.ctx = &ctx;
-                                args.dst_md = pd()->dst_md();
-
+                                args.dst_md = dst_md_ptr;
+                                
                                 for (size_t oc = start_oc; oc <= end_oc; oc++) {
-                                    // jcp.od is not part of jcp.os, so multiply
-                                    // jcp.od to get spatial offset.
                                     args.l_offset = (g * jcp.oc + oc)
                                             * (jcp.os * jcp.od);
-                                    post_ops_->execute(dst_arr[oc], args);
+                                    post_ops_ptr->execute(dst_arr[oc], args);
                                 }
                             }
                         }
@@ -253,7 +324,6 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_ncsp(
     auto weights = CTX_IN_MEM(const data_t *, DNNL_ARG_WEIGHTS);
     auto bias = CTX_IN_MEM(const data_t *, DNNL_ARG_BIAS);
     auto dst = CTX_OUT_MEM(data_t *, DNNL_ARG_DST);
-
     auto col = ctx.get_scratchpad_grantor().get<data_t>(key_conv_gemm_col);
 
     const conv_gemm_conf_t &jcp = this->pd()->jcp_;
@@ -278,7 +348,7 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_ncsp(
 
     assert(IMPLICATION(is_problem_3d,
             jcp.os_block == jcp.os && jcp.ic_block == jcp.ic
-                    && jcp.os_nb_block == 1));
+                     && jcp.os_nb_block == 1));
 
     status_t st = status::success;
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
@@ -288,9 +358,20 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_ncsp(
         // external data initialization by zeroes
         const bool outer_padding = jcp.os_nb_block == 1;
         if (outer_padding && is_problem_3d) {
-            for (ptrdiff_t i = 0; i < jcp.im2col_sz; i++)
-                _col[i] = (data_t)0;
+            // OPTIMIZATION: Vectorized zeroing
+            const size_t total_sz = jcp.im2col_sz;
+            const size_t vlmax = __riscv_vsetvlmax_e32m1();
+            const vfloat32m1_t v_zero = __riscv_vfmv_v_f_f32m1(0.0f, vlmax);
+            ptrdiff_t i = 0;
+            for (; i <= (ptrdiff_t)total_sz - (ptrdiff_t)vlmax; i += (ptrdiff_t)vlmax) {
+                __riscv_vse32_v_f32m1(_col + i, v_zero, vlmax);
+            }
+            if (i < (ptrdiff_t)total_sz) {
+                size_t vl = __riscv_vsetvl_e32m1(total_sz - i);
+                __riscv_vse32_v_f32m1(_col + i, v_zero, vl);
+            }
         }
+        
         auto inner_ker = [&](int spatial, const im_pos_t &curr, im_pos_t &prev,
                                  im_pos_t &step, const im_pos_t &end) {
             const data_t *_src
@@ -315,7 +396,7 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_ncsp(
             const data_t one = 1.0;
 
             const dim_t M = jcp.os * jcp.od;
-            const dim_t m = step.sp;
+            const dim_t m = step.sp ;
             const dim_t LDA = jcp.im2col_sz ? m : M;
             data_t *_dst = dst + curr.n * dst_mb_stride + curr.g * dst_g_stride
                     + curr.oc * M + curr.od * jcp.os + curr.sp;
@@ -331,14 +412,11 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_ncsp(
             const data_t *_weights = weights + curr.g * weights_g_size
                     + curr.oc * weights_oc_size + curr.ic * jcp.ks;
 
-            status_t st = extended_sgemm("N", "N", &m, &N, &K, &one, _source,
+            status_t st = extended_sgemm("N ", "N ", &m, &N, &K, &one, _source,
                     &LDA, _weights, &LDB, &beta, _dst, &M);
             if (st != status::success) return st;
 
             if (curr.ic == jcp.ic - step.ic) {
-                // TODO: for "outer threading" we have parallel section within
-                // outermost "parallel". It is not good. Consider to use
-                // "parallel" here with number of threads passed as parameter
                 const int oc_start = curr.g * jcp.oc + curr.oc;
                 if (jcp.with_eltwise || jcp.with_binary) {
                     bool fast_relu_done = false;
@@ -364,11 +442,11 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_ncsp(
                                                 v_d, b, vl); // Add bias
 
                                         v_d = __riscv_vfmax_vf_f32m1(
-                                                v_d, 0.0f, vl);
+                                                 v_d, 0.0f, vl);
 
                                         if (eltwise.scale != 1.0f) {
                                             v_d = __riscv_vfmul_vf_f32m1(
-                                                    v_d, eltwise.scale, vl);
+                                                     v_d, eltwise.scale, vl);
                                         }
 
                                         __riscv_vse32_v_f32m1(d_ + oS, v_d, vl);
@@ -385,10 +463,10 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_ncsp(
                                         v_d = __riscv_vfadd_vf_f32m1(
                                                 v_d, b, vl); // Add bias
                                         vbool32_t mask
-                                                = __riscv_vmflt_vf_f32m1_b32(
+                                                 = __riscv_vmflt_vf_f32m1_b32(
                                                         v_d, 0.0f, vl);
                                         v_d = __riscv_vfmul_vf_f32m1_m(
-                                                mask, v_d, eltwise.alpha, vl);
+                                                 mask, v_d, eltwise.alpha, vl);
                                         v_d = __riscv_vfmul_vf_f32m1(
                                                 v_d, eltwise.scale, vl);
                                         __riscv_vse32_v_f32m1(d_ + oS, v_d, vl);
