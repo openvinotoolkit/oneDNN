@@ -38,7 +38,7 @@ struct riscv_gemm_convolution_fwd_t : public primitive_t {
     struct pd_t : public cpu_convolution_fwd_pd_t {
         using cpu_convolution_fwd_pd_t::cpu_convolution_fwd_pd_t;
 
-        DECLARE_COMMON_PD_T(GEMM_IMPL_STR, riscv_gemm_convolution_fwd_t,
+        DECLARE_COMMON_PD_T("gemm:any", riscv_gemm_convolution_fwd_t,
                 USE_GLOBAL_SCRATCHPAD);
 
         status_t init(engine_t *engine) {
@@ -68,8 +68,7 @@ struct riscv_gemm_convolution_fwd_t : public primitive_t {
 
             // TODO: make `init_conf` assign initialized object to `jcp_`
             jcp_ = conv_gemm_conf_t();
-
-            return jit_gemm_convolution_utils::init_conf(jcp_, scratchpad,
+                return jit_gemm_convolution_utils::init_conf(jcp_, scratchpad,
                     *desc(), src_md_, weights_md_, dst_md_, bias_md_, attr_,
                     dnnl_get_max_threads());
         }
@@ -114,7 +113,6 @@ struct riscv_gemm_convolution_fwd_t : public primitive_t {
         : primitive_t(apd), post_ops_(nullptr) {}
 
     status_t init(engine_t *engine) override {
-        std::cout << "GEMM INIT" << std::endl;
         const auto &jcp = pd()->jcp_;
 
         if (jcp.with_eltwise || jcp.with_binary) {
@@ -122,16 +120,12 @@ struct riscv_gemm_convolution_fwd_t : public primitive_t {
             CHECK(post_ops_->init(pd()->dst_md()));
         }
 
-        std::cout << "GEMM SUCCESS" << std::endl;
         return status::success;
     }
 
     using data_t = typename prec_traits_t<data_type::f32>::type;
 
     status_t execute(const exec_ctx_t &ctx) const override {
-        fprintf(stderr, "[RVV EXECUTE] Layer executed!\n");
-        fflush(stderr);
-
         bool is_nspc = pd()->jcp_.is_nspc;
         return is_nspc ? execute_forward_nspc(ctx) : execute_forward_ncsp(ctx);
     }

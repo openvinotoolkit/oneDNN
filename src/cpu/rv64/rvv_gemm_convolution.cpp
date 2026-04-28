@@ -48,7 +48,7 @@ static void apply_bias_eltwise_rvv_nspc(
         bool with_eltwise,
         const ref_post_ops_t *post_ops,
         const exec_ctx_t &ctx,
-        const memory_desc_t *dst_md, // Changed to pointer to memory_desc_t
+        const memory_desc_t *dst_md,
         const conv_gemm_conf_t &jcp,
         size_t g, size_t os_offset_factor) {
     
@@ -350,7 +350,7 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_ncsp(
             jcp.os_block == jcp.os && jcp.ic_block == jcp.ic
                      && jcp.os_nb_block == 1));
 
-    status_t st = status::success;
+    std::atomic<status_t> st(status::success);
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
         data_t *_col = col + (ptrdiff_t)ithr * jcp.im2col_sz;
 
@@ -547,7 +547,8 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_ncsp(
                         status_t st_thr
                                 = inner_ker(spatial, curr, prev, step, end);
                         if (st_thr != status::success) {
-                            st = st_thr;
+                            status_t expected = status::success;
+                            st.compare_exchange_strong(expected, st_thr);
                             return;
                         }
                     }
@@ -562,13 +563,16 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_ncsp(
                         status_t st_thr
                                 = inner_ker(spatial, curr, prev, step, end);
                         if (st_thr != status::success) {
-                            st = st_thr;
+                            status_t expected = status::success;
+                            st.compare_exchange_strong(expected, st_thr);
                             return;
                         }
                     }
             }
-        else
-            st = status::unimplemented;
+        else {
+            status_t expected = status::success;
+            st.compare_exchange_strong(expected, status::unimplemented);
+        }
     });
 
     return st;
