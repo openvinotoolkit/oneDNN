@@ -19,8 +19,8 @@
 #include "common/dnnl_thread.hpp"
 #include "common/type_helpers.hpp"
 #include "common/utils.hpp"
-#include "cpu/scale_utils.hpp"
 #include "cpu/platform.hpp"
+#include "cpu/scale_utils.hpp"
 
 #ifdef DNNL_RISCV_USE_RVV_INTRINSICS
 #include <riscv_vector.h>
@@ -49,9 +49,9 @@ namespace jit_gemm_convolution_utils {
 template <typename data_type_t>
 void im2col_3d(const conv_gemm_conf_t &jcp, const data_type_t *im,
         data_type_t *col, dim_t od, int spatial_step, int spatial_block) {
-    using data_t = typename conditional<data_traits_t<data_type_t>::data_type
-                        == bf16,
-                uint16_t, data_type_t>::type;
+    using data_t =
+            typename conditional<data_traits_t<data_type_t>::data_type == bf16,
+                    uint16_t, data_type_t>::type;
     const data_t *__restrict _im
             = reinterpret_cast<const data_t *__restrict>(im);
     data_t *__restrict _col = reinterpret_cast<data_t *__restrict>(col);
@@ -97,8 +97,7 @@ void im2col_3d(const conv_gemm_conf_t &jcp, const data_type_t *im,
                     col_ += jcp.kw * OHW;
                 }
             } else {
-                const data_t *__restrict im_
-                        = im_loc + id * jcp.ih * jcp.iw;
+                const data_t *__restrict im_ = im_loc + id * jcp.ih * jcp.iw;
                 dim_t ih_ = -jcp.t_pad;
                 for (dim_t kh = 0; kh < jcp.kh; ++kh) {
                     dim_t ih = ih_;
@@ -233,8 +232,8 @@ void transpose_dt(const conv_gemm_conf_t &jcp, const T *__restrict im,
     const dim_t ic_stride = jcp.id * jcp.ih * jcp.iw;
     const dim_t IC = jcp.ngroups * jcp.ic;
     const dim_t IHW = jcp.ih * jcp.iw;
-    const dim_t ic_block = nstl::max<dim_t>(
-            1, platform::get_cache_line_size() / sizeof(T));
+    const dim_t ic_block
+            = nstl::max<dim_t>(1, platform::get_cache_line_size() / sizeof(T));
     const dim_t nb_ic = jcp.ic / ic_block;
     const dim_t ic_blocked = nb_ic * ic_block;
     parallel_nd(jcp.id, jcp.ih, [&](dim_t id, dim_t ih) {
@@ -315,19 +314,16 @@ void im2col_dt_3d(const conv_gemm_conf_t &jcp, const void *__restrict _imtr,
                     }
                     const im_dt *__restrict imtr_loc
                             = imtr + (ic * jcp.id + id) * IHW;
-                    const dim_t oh_start
-                            = saturate(dim_t(0), jcp.oh, tp - kh);
+                    const dim_t oh_start = saturate(dim_t(0), jcp.oh, tp - kh);
                     const dim_t oh_end
                             = saturate(dim_t(0), jcp.oh, jcp.ih + tp - kh);
-                    const dim_t ow_start
-                            = saturate(dim_t(0), jcp.ow, lp - kw);
+                    const dim_t ow_start = saturate(dim_t(0), jcp.ow, lp - kw);
                     const dim_t ow_end
                             = saturate(dim_t(0), jcp.ow, jcp.iw + lp - kw);
                     for (dim_t oh = oh_start, ih = oh_start - tp + kh;
                             oh < oh_end; oh++, ih++) {
                         col_dt *__restrict col_h = col_loc + oh * jcp.ow;
-                        const im_dt *__restrict imtr_h
-                                = imtr_loc + ih * jcp.iw;
+                        const im_dt *__restrict imtr_h = imtr_loc + ih * jcp.iw;
                         for (dim_t ow = ow_start, iw = ow_start - lp + kw;
                                 ow < ow_end; ow++, iw++) {
                             col_h[ow] = imtr_h[iw];
@@ -358,8 +354,7 @@ void im2col_dt_3d(const conv_gemm_conf_t &jcp, const void *__restrict _imtr,
                     for (dim_t oh = oh_start, ih = oh_start * 2 - tp + kh;
                             oh < oh_end; ++oh, ih += 2) {
                         col_dt *__restrict col_h = col_loc + oh * jcp.ow;
-                        const im_dt *__restrict imtr_h
-                                = imtr_loc + ih * jcp.iw;
+                        const im_dt *__restrict imtr_h = imtr_loc + ih * jcp.iw;
                         for (dim_t ow = ow_start, iw = ow_start * 2 - lp + kw;
                                 ow < ow_end; ++ow, iw += 2) {
                             col_h[ow] = imtr_h[iw];
@@ -390,10 +385,9 @@ void im2col_dt_3d(const conv_gemm_conf_t &jcp, const void *__restrict _imtr,
                     for (dim_t oh = oh_start, ih = oh_start * sh - tp + kh * dh;
                             oh < oh_end; ++oh, ih += sh) {
                         col_dt *__restrict col_h = col_loc + oh * jcp.ow;
-                        const im_dt *__restrict imtr_h
-                                = imtr_loc + ih * jcp.iw;
+                        const im_dt *__restrict imtr_h = imtr_loc + ih * jcp.iw;
                         for (dim_t ow = ow_start,
-                                  iw = ow_start * sw - lp + kw * dw;
+                                   iw = ow_start * sw - lp + kw * dw;
                                 ow < ow_end; ++ow, iw += sw) {
                             col_h[ow] = imtr_h[iw];
                         }
@@ -515,14 +509,13 @@ void im2col(const conv_gemm_conf_t &jcp, const data_type_t *__restrict im,
                     [&](dim_t ic, dim_t kh, dim_t kw, dim_t ohr) {
                         const dim_t oh = ohr + oh_begin;
                         const dim_t ih = oh * sh - tp + kh * dh;
-                        const dim_t ow_start
-                                = (oh == first_oh) ? first_ow : 0;
+                        const dim_t ow_start = (oh == first_oh) ? first_ow : 0;
                         const dim_t ow_end
                                 = (oh == last_oh) ? (last_ow + 1) : jcp.ow;
                         data_t *__restrict col_oh = _col + ic * col_step
                                 + (kh * jcp.kw + kw) * sb + oh * jcp.ow - ss;
-                        const data_t *__restrict im_ = _im + (ic + cs) * im_step
-                                + ih * jcp.iw;
+                        const data_t *__restrict im_
+                                = _im + (ic + cs) * im_step + ih * jcp.iw;
                         const dim_t iw_shift = kw * dw - lp;
                         if (ih < 0 || ih >= jcp.ih)
                             for (dim_t ow = ow_start; ow < ow_end; ow++)
@@ -541,13 +534,13 @@ void im2col(const conv_gemm_conf_t &jcp, const data_type_t *__restrict im,
                     [&](dim_t ic, dim_t kh, dim_t kw, dim_t ohr) {
                         const dim_t oh = ohr + oh_begin;
                         const dim_t ih = oh * sh - tp + kh * dh;
-                        const dim_t ow_start
-                                = (oh == first_oh) ? first_ow : 0;
+                        const dim_t ow_start = (oh == first_oh) ? first_ow : 0;
                         const dim_t ow_end
                                 = (oh == last_oh) ? (last_ow + 1) : jcp.ow;
                         data_t *__restrict col_oh = _col + ic * col_step
                                 + (kh * jcp.kw + kw) * sb + oh * jcp.ow - ss;
-                        const data_t *__restrict im_ = _im + (ic + cs) * im_step;
+                        const data_t *__restrict im_
+                                = _im + (ic + cs) * im_step;
                         if (ih < 0 || ih >= jcp.ih)
                             for (dim_t ow = ow_start; ow < ow_end; ow++)
                                 col_oh[ow] = zero_val;
@@ -566,8 +559,8 @@ void im2col(const conv_gemm_conf_t &jcp, const data_type_t *__restrict im,
 }
 
 template void im2col<float>(const conv_gemm_conf_t &jcp,
-        const float *__restrict im, float *__restrict col, dim_t hs,
-        dim_t hb, dim_t ws, dim_t wb);
+        const float *__restrict im, float *__restrict col, dim_t hs, dim_t hb,
+        dim_t ws, dim_t wb);
 template void im2col<bfloat16_t>(const conv_gemm_conf_t &jcp,
         const bfloat16_t *__restrict im, bfloat16_t *__restrict col, dim_t hs,
         dim_t hb, dim_t ws, dim_t wb);
@@ -577,14 +570,15 @@ template <typename orig_im_dt, typename orig_col_dt>
 void im2col_dt(const conv_gemm_conf_t &jcp, const void *__restrict _im,
         void *__restrict _imtr, orig_col_dt *__restrict _col, dim_t hs,
         dim_t hb, dim_t ws, dim_t wb) {
-    using im_dt = typename utils::conditional<
-            data_traits_t<orig_im_dt>::data_type == bf16, uint16_t,
-            orig_im_dt>::type;
-    using col_dt = typename utils::conditional<
-            data_traits_t<orig_col_dt>::data_type == bf16, uint16_t,
-            orig_col_dt>::type;
-    const im_dt *__restrict im
-            = reinterpret_cast<const im_dt *__restrict>(_im);
+    using im_dt =
+            typename utils::conditional<data_traits_t<orig_im_dt>::data_type
+                            == bf16,
+                    uint16_t, orig_im_dt>::type;
+    using col_dt =
+            typename utils::conditional<data_traits_t<orig_col_dt>::data_type
+                            == bf16,
+                    uint16_t, orig_col_dt>::type;
+    const im_dt *__restrict im = reinterpret_cast<const im_dt *__restrict>(_im);
     im_dt *__restrict imtr = reinterpret_cast<im_dt *__restrict>(_imtr);
     col_dt *__restrict col = reinterpret_cast<col_dt *__restrict>(_col);
     col_dt shift = static_cast<col_dt>(jcp.signed_input ? 128 : 0);
@@ -673,16 +667,16 @@ void im2col_dt(const conv_gemm_conf_t &jcp, const void *__restrict _im,
                     const dim_t ih = (oh + hs) * sh - hp;
                     const ptrdiff_t col_idx_base
                             = (((kh * jcp.kw + kw) * jcp.ic + ic) * hb + oh)
-                                    * wb;
+                            * wb;
                     if (ih < 0 || ih >= jcp.ih)
                         for (dim_t ow = 0; ow < wb; ow++)
                             col[col_idx_base + ow] = shift;
                     else {
                         const dim_t wp = lp - kw * dw;
-                        const dim_t ow_start = saturate(
-                                dim_t(0), wb, div_up(wp, sw) - ws);
-                        const dim_t ow_end = saturate(dim_t(0), wb,
-                                div_up(jcp.iw + wp, sw) - ws);
+                        const dim_t ow_start
+                                = saturate(dim_t(0), wb, div_up(wp, sw) - ws);
+                        const dim_t ow_end = saturate(
+                                dim_t(0), wb, div_up(jcp.iw + wp, sw) - ws);
                         for (dim_t ow = 0; ow < ow_start; ow++)
                             col[col_idx_base + ow] = shift;
                         const dim_t iw_base = ws * sw - wp;
@@ -1212,7 +1206,7 @@ status_t init_conf(conv_gemm_conf_t &jcp,
     // to the number of threads and multiplied by a heuristic coefficient (15)
     const size_t zp_src_pad_comp_size = zp_src_with_padding
             ? (jcp.oc * jcp.ngroups * jcp.zp.src_pad_comp.d
-                       * jcp.zp.src_pad_comp.h * jcp.zp.src_pad_comp.w)
+                      * jcp.zp.src_pad_comp.h * jcp.zp.src_pad_comp.w)
             : 0u;
     const size_t zp_src_comp_size = jcp.zp.src_is_common
             ? utils::rnd_up(jcp.oc * jcp.ngroups,
@@ -1507,7 +1501,8 @@ status_t init_conf(conv_gemm_conf_t &jcp,
             //  64K - this is heuristic gemm size per thread threshold.
             constexpr size_t gemm_thrld = 64 * 1024;
             if (!jcp.outer_threading && !is_3d) {
-                bool is_depthwise = jcp.ic == 1 && jcp.oc == 1 && jcp.ngroups != 1;
+                bool is_depthwise
+                        = jcp.ic == 1 && jcp.oc == 1 && jcp.ngroups != 1;
                 const size_t outer_work = jcp.ngroups * jcp.mb;
                 const float outer_thr_eff
                         = (float)outer_work / rnd_up(outer_work, max_threads);
@@ -1515,8 +1510,9 @@ status_t init_conf(conv_gemm_conf_t &jcp,
                         = div_up(jcp.is, simd_w) * div_up(jcp.ic, simd_w);
                 const float inner_thr_eff
                         = (float)inner_work / rnd_up(inner_work, max_threads);
-                jcp.outer_threading = (is_depthwise
-                                              || (jcp.is / max_threads < 64 && jcp.mb != 1))
+                jcp.outer_threading
+                        = (is_depthwise
+                                  || (jcp.is / max_threads < 64 && jcp.mb != 1))
                         && (outer_thr_eff / inner_thr_eff >= 1.f
                                 || (static_cast<size_t>(jcp.os) * jcp.ic
                                            * jcp.oc)
@@ -1540,7 +1536,7 @@ status_t init_conf(conv_gemm_conf_t &jcp,
                     gemm_col_datatype_size);
             if (is_bf16_conv && jcp.with_bias
                     && one_of(data_type::bf16, cd.diff_bias_desc.data_type,
-                           cd.bias_desc.data_type)) {
+                            cd.bias_desc.data_type)) {
                 scratchpad.book<float>(
                         key_conv_bias_bf16_convert_wsp, jcp.ngroups * jcp.oc);
             }
@@ -1556,17 +1552,17 @@ status_t init_conf(conv_gemm_conf_t &jcp,
             // gemm implementation which we cannot control
             bool is_blocking_applicable = true && !is_3d
                     && (!jcp.im2col_sz
-                               // spatial is small
-                               || spatial >= max_threads * simd_w
-                               // inner threading work is greater then outer
-                               // threading work
-                               || jcp.os < jcp.mb * jcp.ngroups * jcp.od
-                               // im2col is big
-                               || (sw == 1 && K <= 0.05 * jcp.oc))
+                            // spatial is small
+                            || spatial >= max_threads * simd_w
+                            // inner threading work is greater then outer
+                            // threading work
+                            || jcp.os < jcp.mb * jcp.ngroups * jcp.od
+                            // im2col is big
+                            || (sw == 1 && K <= 0.05 * jcp.oc))
                     // heuristic condition
                     && (jcp.im2col_sz
-                               || (jcp.ic / jcp.oc < 42
-                                          && jcp.ic * jcp.oc * jcp.is < 1024));
+                            || (jcp.ic / jcp.oc < 42
+                                    && jcp.ic * jcp.oc * jcp.is < 1024));
 
             if (is_blocking_applicable) {
                 const dim_t min_oc_block = 8;
@@ -1582,7 +1578,8 @@ status_t init_conf(conv_gemm_conf_t &jcp,
                         + gemm_eff_k + gemm_calc_eff_k;
 
                 auto calc_max_icb = [=](dim_t nthr_oc, dim_t ocb, dim_t osb,
-                                            dim_t oc_per_thr, dim_t os_per_thr) {
+                                            dim_t oc_per_thr,
+                                            dim_t os_per_thr) {
                     const dim_t block_out_size = ocb * osb;
                     // TODO: need more precise calculation if stride more than
                     // kernel size
@@ -1921,10 +1918,11 @@ status_t init_conf(conv_gemm_conf_t &jcp,
             if (jcp.im2col_sz)
                 jcp.im2col_sz = (ptrdiff_t)jcp.ic_block * jcp.ks * jcp.os_block;
         } else if (jcp.is_nspc && is_bwd_d) {
-            jcp.im2col_sz = !everyone_is(true, jcp.ow == jcp.iw, jcp.oh == jcp.ih,
-                                      jcp.od == jcp.id, jcp.stride_w == 1,
-                                      jcp.stride_h == 1, jcp.stride_d == 1, jcp.ks == 1,
-                                      !jcp.signed_input)
+            jcp.im2col_sz
+                    = !everyone_is(true, jcp.ow == jcp.iw, jcp.oh == jcp.ih,
+                              jcp.od == jcp.id, jcp.stride_w == 1,
+                              jcp.stride_h == 1, jcp.stride_d == 1, jcp.ks == 1,
+                              !jcp.signed_input)
                     ? (ptrdiff_t)jcp.ic * jcp.ks * jcp.os * jcp.od
                     : 0;
 
@@ -1938,7 +1936,7 @@ status_t init_conf(conv_gemm_conf_t &jcp,
                     = (float)inner_work / rnd_up(inner_work, max_threads);
             jcp.outer_threading = !is_3d
                     && (is_depthwise
-                               || (jcp.is / max_threads < 64 && jcp.mb != 1))
+                            || (jcp.is / max_threads < 64 && jcp.mb != 1))
                     && (outer_thr_eff / inner_thr_eff >= 1.f
                             || (static_cast<size_t>(jcp.is) * jcp.ic * jcp.oc)
                                             / max_threads
@@ -1964,10 +1962,11 @@ status_t init_conf(conv_gemm_conf_t &jcp,
                             || (jcp.is * jcp.ic * jcp.oc) / max_threads
                                     < gemm_thrld);
         } else if (jcp.is_nspc && is_bwd_w) {
-            jcp.im2col_sz = !everyone_is(true, jcp.ow == jcp.iw, jcp.oh == jcp.ih,
-                                      jcp.od == jcp.id, jcp.stride_w == 1,
-                                      jcp.stride_h == 1, jcp.stride_d == 1, jcp.ks == 1,
-                                      !jcp.signed_input)
+            jcp.im2col_sz
+                    = !everyone_is(true, jcp.ow == jcp.iw, jcp.oh == jcp.ih,
+                              jcp.od == jcp.id, jcp.stride_w == 1,
+                              jcp.stride_h == 1, jcp.stride_d == 1, jcp.ks == 1,
+                              !jcp.signed_input)
                     ? (ptrdiff_t)jcp.ic * jcp.ks * jcp.os
                     : 0;
             const size_t gemm_col_datatype_size
@@ -1983,7 +1982,7 @@ status_t init_conf(conv_gemm_conf_t &jcp,
                 thr_mem_estimate += sizeof(float) * weights_d.size();
                 if (jcp.with_bias
                         && one_of(data_type::bf16, cd.diff_bias_desc.data_type,
-                               cd.bias_desc.data_type))
+                                cd.bias_desc.data_type))
                     thr_mem_estimate += sizeof(float) * jcp.ngroups * jcp.oc;
             }
             const bool outer_threading_mem_ok
@@ -2010,7 +2009,7 @@ status_t init_conf(conv_gemm_conf_t &jcp,
             }
             if ((is_bf16_conv) && jcp.with_bias
                     && one_of(data_type::bf16, cd.diff_bias_desc.data_type,
-                           cd.bias_desc.data_type))
+                            cd.bias_desc.data_type))
                 scratchpad.book<float>(
                         key_conv_bias_bf16_convert_wsp, jcp.ngroups * jcp.oc);
         } else if (!jcp.is_nspc && is_bwd_w) {
@@ -2022,7 +2021,7 @@ status_t init_conf(conv_gemm_conf_t &jcp,
                 thr_mem_estimate += sizeof(float) * weights_d.size();
                 if (jcp.with_bias
                         && one_of(data_type::bf16, cd.diff_bias_desc.data_type,
-                               cd.bias_desc.data_type))
+                                cd.bias_desc.data_type))
                     thr_mem_estimate += sizeof(float) * jcp.ngroups * jcp.oc;
             }
             const size_t gemm_col_datatype_size
@@ -2031,7 +2030,8 @@ status_t init_conf(conv_gemm_conf_t &jcp,
             thr_mem_estimate += gemm_col_datatype_size * max_threads * jcp.ic
                     * jcp.ks * simd_w;
 
-            const bool outer_threading_mem_ok = thr_mem_estimate < scratchpad_limit;
+            const bool outer_threading_mem_ok
+                    = thr_mem_estimate < scratchpad_limit;
             jcp.outer_threading = outer_threading_mem_ok
                     && jcp.os / max_threads < 256
                     && (jcp.mb != 1 || jcp.ngroups > 2);
@@ -2062,7 +2062,7 @@ status_t init_conf(conv_gemm_conf_t &jcp,
                         key_conv_int_dat_in_acc_dt, conv_acc_buffer_size);
                 if ((is_fwd || is_bwd_w) && jcp.with_bias
                         && one_of(data_type::bf16, cd.diff_bias_desc.data_type,
-                               cd.bias_desc.data_type))
+                                cd.bias_desc.data_type))
                     scratchpad.book<float>(key_conv_bias_bf16_convert_wsp,
                             jcp.ngroups * jcp.oc);
             }
@@ -2077,7 +2077,8 @@ status_t init_conf(conv_gemm_conf_t &jcp,
                 VDISPATCH_CONV_IC(scratchpad_limit >= scratchpad.size(),
                         VERBOSE_SCRATCHPAD_LIMIT);
 
-                const size_t available_mem = scratchpad_limit - scratchpad.size();
+                const size_t available_mem
+                        = scratchpad_limit - scratchpad.size();
                 if (available_mem
                         < gemm_col_memory_sz * gemm_col_datatype_size) {
                     // Required memory in this scenario overflows the
@@ -2118,7 +2119,8 @@ status_t init_conf(conv_gemm_conf_t &jcp,
         if (size) scratchpad.book<int32_t>(key_conv_gemm_zp_src_comp, size);
     }
 
-    VDISPATCH_CONV_IC(scratchpad.size() <= scratchpad_limit, VERBOSE_SCRATCHPAD_LIMIT);
+    VDISPATCH_CONV_IC(
+            scratchpad.size() <= scratchpad_limit, VERBOSE_SCRATCHPAD_LIMIT);
 
     return status::success;
 }

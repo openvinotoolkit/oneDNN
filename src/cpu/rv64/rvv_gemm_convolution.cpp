@@ -11,12 +11,12 @@ See the License for the specific language governing permissions and
 limitations under the License.
 *******************************************************************************/
 #include <atomic>
-#include <riscv_vector.h>
 #include "common/c_types_map.hpp"
 #include "common/dnnl_thread.hpp"
 #include "common/type_helpers.hpp"
 #include "common/utils.hpp"
 #include "cpu/rv64/rvv_gemm_convolution.hpp"
+#include <riscv_vector.h>
 
 namespace dnnl {
 namespace impl {
@@ -33,25 +33,19 @@ struct im_pos_t {
     dim_t n, g, od, sp, ic, oc;
     bool do_im2col(const im_pos_t &prev) const {
         return true
-            && (n != prev.n || g != prev.g || od != prev.od || sp != prev.sp
-                    || ic != prev.ic);
+                && (n != prev.n || g != prev.g || od != prev.od || sp != prev.sp
+                        || ic != prev.ic);
     }
 };
 
 // Helper function to apply bias and eltwise using RVV in NSPC layout
 // Using float explicitly as data_t is float in this specialization
-static void apply_bias_eltwise_rvv_nspc(
-        const float *__restrict bia_arr,
-        float *__restrict dst_arr,
-        size_t start_oc, size_t end_oc,
-        bool with_bias,
-        bool with_eltwise,
-        const ref_post_ops_t *post_ops,
-        const exec_ctx_t &ctx,
-        const memory_desc_t *dst_md,
-        const conv_gemm_conf_t &jcp,
-        size_t g, size_t os_offset_factor) {
-    
+static void apply_bias_eltwise_rvv_nspc(const float *__restrict bia_arr,
+        float *__restrict dst_arr, size_t start_oc, size_t end_oc,
+        bool with_bias, bool with_eltwise, const ref_post_ops_t *post_ops,
+        const exec_ctx_t &ctx, const memory_desc_t *dst_md,
+        const conv_gemm_conf_t &jcp, size_t g, size_t os_offset_factor) {
+
     size_t n_elems = end_oc - start_oc + 1;
     if (n_elems == 0) return;
 
@@ -63,7 +57,7 @@ static void apply_bias_eltwise_rvv_nspc(
     float eltwise_alpha = 0.0f;
     float eltwise_scale = 1.0f;
     bool is_fast_relu = false;
-    
+
     if (with_eltwise && jcp.post_ops.len() == 1) {
         const auto &eltwise = jcp.post_ops.entry_.back().eltwise;
         if (eltwise.alg == alg_kind::eltwise_relu) {
@@ -75,7 +69,7 @@ static void apply_bias_eltwise_rvv_nspc(
 
     while (oc < n_elems) {
         size_t vl = __riscv_vsetvl_e32m1(n_elems - oc);
-        
+
         vfloat32m1_t v_dst = __riscv_vle32_v_f32m1(d_ptr + oc, vl);
 
         // 1. Add Bias
@@ -92,9 +86,10 @@ static void apply_bias_eltwise_rvv_nspc(
             } else {
                 // Leaky ReLU-like
                 vbool32_t mask = __riscv_vmflt_vf_f32m1_b32(v_dst, 0.0f, vl);
-                v_dst = __riscv_vfmul_vf_f32m1_m(mask, v_dst, eltwise_alpha, vl);
+                v_dst = __riscv_vfmul_vf_f32m1_m(
+                        mask, v_dst, eltwise_alpha, vl);
             }
-            
+
             if (eltwise_scale != 1.0f) {
                 v_dst = __riscv_vfmul_vf_f32m1(v_dst, eltwise_scale, vl);
             }
@@ -102,7 +97,7 @@ static void apply_bias_eltwise_rvv_nspc(
             oc += vl;
         } else {
             // If not fast relu, break to handle scalarly or generic post-ops
-            break; 
+            break;
         }
     }
 
@@ -111,19 +106,17 @@ static void apply_bias_eltwise_rvv_nspc(
         for (size_t i = oc; i < n_elems; ++i) {
             size_t cur_oc = start_oc + i;
             float *dst_val = dst_arr + cur_oc;
-            
-            if (with_bias) {
-                *dst_val += bia_arr[cur_oc];
-            }
-            
+
+            if (with_bias) { *dst_val += bia_arr[cur_oc]; }
+
             if (with_eltwise || jcp.with_binary) {
-                 ref_post_ops_t::args_t args;
-                 args.ctx = &ctx;
-                 args.dst_md = dst_md; // Use the passed pointer
-                 // Calculate offset correctly
-                 // Note: l_offset calculation might need adjustment based on exact memory layout expectations of post_ops
-                 args.l_offset = (g * jcp.oc + cur_oc) * (jcp.os * jcp.od);
-                 post_ops->execute(*dst_val, args);
+                ref_post_ops_t::args_t args;
+                args.ctx = &ctx;
+                args.dst_md = dst_md; // Use the passed pointer
+                // Calculate offset correctly
+                // Note: l_offset calculation might need adjustment based on exact memory layout expectations of post_ops
+                args.l_offset = (g * jcp.oc + cur_oc) * (jcp.os * jcp.od);
+                post_ops->execute(*dst_val, args);
             }
         }
     }
@@ -181,7 +174,7 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_thr_nspc(
 
     assert(IMPLICATION(is_problem_3d,
             jcp.oh_block == jcp.oh && jcp.ow_block == jcp.ow
-                     && jcp.ic_block == jcp.ic));
+                    && jcp.ic_block == jcp.ic));
     assert(IMPLICATION(jcp.ow_block != jcp.ow, jcp.oh_block == 1));
 
     const dim_t nb_oh = div_up(jcp.oh, jcp.oh_block);
@@ -198,7 +191,8 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_thr_nspc(
         const vfloat32m1_t v_zero = __riscv_vfmv_v_f_f32m1(0.0f, vlmax);
         ptrdiff_t i = 0;
 
-        for (; i <= (ptrdiff_t)total_sz - (ptrdiff_t)vlmax; i += (ptrdiff_t)vlmax) {
+        for (; i <= (ptrdiff_t)total_sz - (ptrdiff_t)vlmax;
+                i += (ptrdiff_t)vlmax) {
             __riscv_vse32_v_f32m1(col + i, v_zero, vlmax);
         }
         if (i < (ptrdiff_t)total_sz) {
@@ -220,16 +214,16 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_thr_nspc(
 
         const int h_step = nstl::min(jcp.oh_block, jcp.oh - oh);
         const int w_step = nstl::min(jcp.ow_block, jcp.ow - ow);
-        
+
         if (jcp.im2col_sz && is_problem_3d) {
-             jit_gemm_convolution_utils::transpose_dt(jcp, src, imtr);
+            jit_gemm_convolution_utils::transpose_dt(jcp, src, imtr);
         }
 
         for (int od = 0; od < jcp.od; od++) {
             data_t *__restrict dst = dst_base + n * dst_mb_stride
                     + g * dst_g_stride
                     + ((od * jcp.oh + oh) * jcp.ow + ow) * dst_os_stride;
-            
+
             if (jcp.im2col_sz) {
                 if (is_problem_3d)
                     jit_gemm_convolution_utils::im2col_dt_3d<data_t, data_t>(
@@ -250,7 +244,7 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_thr_nspc(
             const float beta = jcp.with_sum ? 1.0f : 0.0f;
             const data_t *__restrict src_od
                     = src + od * jcp.oh * jcp.ow * jcp.ngroups * jcp.ic;
-            
+
             status_t st = extended_sgemm("N ", BT, &M, &N, &K, &onef, wei, &LDA,
                     jcp.im2col_sz ? col : (data_t *)src_od, &LDB, &beta, dst,
                     &LDC);
@@ -260,7 +254,8 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_thr_nspc(
                 // NOTE: Keeping parallel(0, ...) as requested
                 parallel(0, [&](int ithr_inner, int nthr_inner) {
                     dim_t start_inner, end_inner;
-                    balance211(N * jcp.oc, nthr_inner, ithr_inner, start_inner, end_inner);
+                    balance211(N * jcp.oc, nthr_inner, ithr_inner, start_inner,
+                            end_inner);
 
                     const size_t first_oc = start_inner % jcp.oc;
                     const size_t last_oc = (end_inner - 1) % jcp.oc;
@@ -278,30 +273,35 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_thr_nspc(
 
                         // Check if we can use optimized RVV path
                         bool has_binary = jcp.with_binary;
-                        bool has_complex_eltwise = jcp.with_eltwise && !(jcp.post_ops.len() == 1 && jcp.post_ops.entry_.back().eltwise.alg == alg_kind::eltwise_relu);
-                        
+                        bool has_complex_eltwise = jcp.with_eltwise
+                                && !(jcp.post_ops.len() == 1
+                                        && jcp.post_ops.entry_.back()
+                                                        .eltwise.alg
+                                                == alg_kind::eltwise_relu);
+
                         if (!has_binary && !has_complex_eltwise) {
-                             apply_bias_eltwise_rvv_nspc(
-                                (const float*)bia_arr, (float*)dst_arr, start_oc, end_oc,
-                                jcp.with_bias, jcp.with_eltwise,
-                                post_ops_ptr, ctx, dst_md_ptr, jcp, g, 0);
+                            apply_bias_eltwise_rvv_nspc((const float *)bia_arr,
+                                    (float *)dst_arr, start_oc, end_oc,
+                                    jcp.with_bias, jcp.with_eltwise,
+                                    post_ops_ptr, ctx, dst_md_ptr, jcp, g, 0);
                         } else {
                             // Fallback to original scalar logic for complex cases
                             if (jcp.with_bias) {
                                 size_t n_elems = end_oc - start_oc + 1;
                                 if (n_elems > 0) {
                                     // Scalar bias add
-                                    for(size_t k=0; k<n_elems; ++k) {
-                                        dst_arr[start_oc + k] += bia_arr[start_oc + k];
+                                    for (size_t k = 0; k < n_elems; ++k) {
+                                        dst_arr[start_oc + k]
+                                                += bia_arr[start_oc + k];
                                     }
                                 }
                             }
-                            
+
                             if (jcp.with_eltwise || jcp.with_binary) {
                                 ref_post_ops_t::args_t args;
                                 args.ctx = &ctx;
                                 args.dst_md = dst_md_ptr;
-                                
+
                                 for (size_t oc = start_oc; oc <= end_oc; oc++) {
                                     args.l_offset = (g * jcp.oc + oc)
                                             * (jcp.os * jcp.od);
@@ -348,7 +348,7 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_ncsp(
 
     assert(IMPLICATION(is_problem_3d,
             jcp.os_block == jcp.os && jcp.ic_block == jcp.ic
-                     && jcp.os_nb_block == 1));
+                    && jcp.os_nb_block == 1));
 
     std::atomic<status_t> st(status::success);
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
@@ -363,7 +363,8 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_ncsp(
             const size_t vlmax = __riscv_vsetvlmax_e32m1();
             const vfloat32m1_t v_zero = __riscv_vfmv_v_f_f32m1(0.0f, vlmax);
             ptrdiff_t i = 0;
-            for (; i <= (ptrdiff_t)total_sz - (ptrdiff_t)vlmax; i += (ptrdiff_t)vlmax) {
+            for (; i <= (ptrdiff_t)total_sz - (ptrdiff_t)vlmax;
+                    i += (ptrdiff_t)vlmax) {
                 __riscv_vse32_v_f32m1(_col + i, v_zero, vlmax);
             }
             if (i < (ptrdiff_t)total_sz) {
@@ -371,7 +372,7 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_ncsp(
                 __riscv_vse32_v_f32m1(_col + i, v_zero, vl);
             }
         }
-        
+
         auto inner_ker = [&](int spatial, const im_pos_t &curr, im_pos_t &prev,
                                  im_pos_t &step, const im_pos_t &end) {
             const data_t *_src
@@ -396,7 +397,7 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_ncsp(
             const data_t one = 1.0;
 
             const dim_t M = jcp.os * jcp.od;
-            const dim_t m = step.sp ;
+            const dim_t m = step.sp;
             const dim_t LDA = jcp.im2col_sz ? m : M;
             data_t *_dst = dst + curr.n * dst_mb_stride + curr.g * dst_g_stride
                     + curr.oc * M + curr.od * jcp.os + curr.sp;
@@ -442,11 +443,11 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_ncsp(
                                                 v_d, b, vl); // Add bias
 
                                         v_d = __riscv_vfmax_vf_f32m1(
-                                                 v_d, 0.0f, vl);
+                                                v_d, 0.0f, vl);
 
                                         if (eltwise.scale != 1.0f) {
                                             v_d = __riscv_vfmul_vf_f32m1(
-                                                     v_d, eltwise.scale, vl);
+                                                    v_d, eltwise.scale, vl);
                                         }
 
                                         __riscv_vse32_v_f32m1(d_ + oS, v_d, vl);
@@ -463,10 +464,10 @@ status_t riscv_gemm_convolution_fwd_t::execute_forward_ncsp(
                                         v_d = __riscv_vfadd_vf_f32m1(
                                                 v_d, b, vl); // Add bias
                                         vbool32_t mask
-                                                 = __riscv_vmflt_vf_f32m1_b32(
+                                                = __riscv_vmflt_vf_f32m1_b32(
                                                         v_d, 0.0f, vl);
                                         v_d = __riscv_vfmul_vf_f32m1_m(
-                                                 mask, v_d, eltwise.alpha, vl);
+                                                mask, v_d, eltwise.alpha, vl);
                                         v_d = __riscv_vfmul_vf_f32m1(
                                                 v_d, eltwise.scale, vl);
                                         __riscv_vse32_v_f32m1(d_ + oS, v_d, vl);

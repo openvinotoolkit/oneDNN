@@ -68,7 +68,7 @@ struct riscv_gemm_convolution_fwd_t : public primitive_t {
 
             // TODO: make `init_conf` assign initialized object to `jcp_`
             jcp_ = conv_gemm_conf_t();
-                return jit_gemm_convolution_utils::init_conf(jcp_, scratchpad,
+            return jit_gemm_convolution_utils::init_conf(jcp_, scratchpad,
                     *desc(), src_md_, weights_md_, dst_md_, bias_md_, attr_,
                     dnnl_get_max_threads());
         }
