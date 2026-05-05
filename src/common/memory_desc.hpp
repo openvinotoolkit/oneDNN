@@ -281,6 +281,9 @@ status_t memory_desc_permute_axes(memory_desc_t &out_memory_desc,
 } // namespace impl
 } // namespace dnnl
 
+// Preserve compatibility with code that still references the unqualified name.
+using dnnl::impl::dnnl_memory_extra_flag_none;
+
 // Memory descriptor. The description is based on a number of dimensions,
 // dimensions themselves, plus information about elements type and memory
 // format. Additionally, contains format-specific descriptions of the data
