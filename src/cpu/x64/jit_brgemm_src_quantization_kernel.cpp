@@ -33,7 +33,8 @@ using namespace Xbyak;
 using namespace std::placeholders;
 
 template <cpu_isa_t isa>
-void jit_brgemm_src_quantization_kernel_t<isa>::load_src(Vmm vmm_load, const Xbyak::Address& addr) {
+void jit_brgemm_src_quantization_kernel_t<isa>::load_src(
+        Vmm vmm_load, const Xbyak::Address &addr) {
     switch (jcp_.src_dt) {
         case data_type::f32: {
             uni_vmovups(vmm_load, addr);
@@ -50,8 +51,10 @@ void jit_brgemm_src_quantization_kernel_t<isa>::load_src(Vmm vmm_load, const Xby
 }
 
 template <cpu_isa_t isa>
-void jit_brgemm_src_quantization_kernel_t<isa>::horiz_op(Vmm vmm_src, Vmm vmm_aux, op_type type) {
-    auto uni_op = [&](const Xbyak::Ymm &x1, const Xbyak::Ymm &x2, const Xbyak::Operand &op) {
+void jit_brgemm_src_quantization_kernel_t<isa>::horiz_op(
+        Vmm vmm_src, Vmm vmm_aux, op_type type) {
+    auto uni_op = [&](const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
+                          const Xbyak::Operand &op) {
         if (type == op_type::max) {
             uni_vmaxps(x1, x2, op);
         } else if (type == op_type::sum) {
@@ -100,20 +103,15 @@ void jit_brgemm_src_quantization_kernel_t<isa>::generate() {
     size_t src_scales_dt_size = types::data_type_size(data_type::f32);
     size_t src_grouped_sum_dt_size = types::data_type_size(data_type::s32);
 
-    static const float negative_zero[16] = {
-        -0.f, -0.f, -0.f, -0.f, -0.f, -0.f, -0.f, -0.f,
-        -0.f, -0.f, -0.f, -0.f, -0.f, -0.f, -0.f, -0.f
-    };
+    static const float negative_zero[16] = {-0.f, -0.f, -0.f, -0.f, -0.f, -0.f,
+            -0.f, -0.f, -0.f, -0.f, -0.f, -0.f, -0.f, -0.f, -0.f, -0.f};
 
-    static const float positive_one[16] = {
-        1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f,
-        1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f
-    };
+    static const float positive_one[16] = {1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f,
+            1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f, 1.f};
 
-    static const float int8_max[16] = {
-        127.f, 127.f, 127.f, 127.f, 127.f, 127.f, 127.f, 127.f,
-        127.f, 127.f, 127.f, 127.f, 127.f, 127.f, 127.f, 127.f
-    };
+    static const float int8_max[16]
+            = {127.f, 127.f, 127.f, 127.f, 127.f, 127.f, 127.f, 127.f, 127.f,
+                    127.f, 127.f, 127.f, 127.f, 127.f, 127.f, 127.f};
 
     mov(reg_tmp, (size_t)negative_zero);
     uni_vmovups(vmm_sign_bit_mask(), ptr[reg_tmp]);
@@ -151,7 +149,8 @@ void jit_brgemm_src_quantization_kernel_t<isa>::generate() {
 
         uni_vmovss(ptr[reg_src_scales], Xmm(vmm_dscale.getIdx()));
         if (jcp_.with_src_grouped_sum) {
-            uni_vxorps(vmm_src_sum_accum(), vmm_src_sum_accum(), vmm_src_sum_accum());
+            uni_vxorps(vmm_src_sum_accum(), vmm_src_sum_accum(),
+                    vmm_src_sum_accum());
         }
         for (int icb = 0; icb < ic_blocks; icb++) {
             load_src(vmm_src(), ptr[reg_src + icb * vec_size * src_dt_size]);
@@ -163,19 +162,23 @@ void jit_brgemm_src_quantization_kernel_t<isa>::generate() {
 
                 if (((icb + 1) * vec_size) % jcp_.src_sum_group_size == 0) {
                     horiz_op(vmm_src_sum_accum(), vmm_aux(), op_type::sum);
-                    uni_vmovss(ptr[reg_src_grouped_sum], Xmm(vmm_src_sum_accum().getIdx()));
-                    uni_vxorps(vmm_src_sum_accum(), vmm_src_sum_accum(), vmm_src_sum_accum());
+                    uni_vmovss(ptr[reg_src_grouped_sum],
+                            Xmm(vmm_src_sum_accum().getIdx()));
+                    uni_vxorps(vmm_src_sum_accum(), vmm_src_sum_accum(),
+                            vmm_src_sum_accum());
                     add(reg_src_grouped_sum, src_grouped_sum_dt_size);
                 }
             }
 
             if (isa == avx512_core) {
-                vpmovsdb(ptr[reg_qsrc + icb * vec_size * qsrc_dt_size], vmm_src());
+                vpmovsdb(ptr[reg_qsrc + icb * vec_size * qsrc_dt_size],
+                        vmm_src());
             } else {
                 uni_vpackssdw(vmm_src(), vmm_src(), vmm_src());
                 vpermq(Ymm(vmm_src().getIdx()), Ymm(vmm_src().getIdx()), 0x08);
                 uni_vpacksswb(vmm_src(), vmm_src(), vmm_src());
-                vmovq(ptr[reg_qsrc + icb * vec_size * qsrc_dt_size], Xmm(vmm_src().getIdx()));
+                vmovq(ptr[reg_qsrc + icb * vec_size * qsrc_dt_size],
+                        Xmm(vmm_src().getIdx()));
             }
         }
 
