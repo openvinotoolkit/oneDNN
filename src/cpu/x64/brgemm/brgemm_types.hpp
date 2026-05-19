@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2020-2025 Intel Corporation
+* Copyright 2020 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -336,6 +336,7 @@ struct brgemm_desc_t {
     bool is_int8 = false, is_int8_tmm = false;
     bool is_bf16 = false, is_bf16_tmm = false, is_bf16_emu = false;
     bool is_fp8 = false, is_fp8_tmm = false;
+    bool is_xf16_fp8 = false;
     bool is_f16 = false, is_f16_tmm = false;
     bool is_f32 = false;
     bool is_bf32 = false;
@@ -374,12 +375,25 @@ struct brgemm_desc_t {
 
     // return 'true' when FP8 MAC is not natively supported by the CPU ISA
     bool is_fp8_via_convert() const {
-        return is_fp8
-                && utils::one_of(isa_impl, avx10_1_512_amx_fp16, avx10_2_512);
+        return ((is_fp8 || is_bf16_fp8())
+                       && utils::one_of(isa_impl, avx10_1_512_amx,
+                               avx10_1_512_amx_fp16, avx10_2_512))
+                || (is_f16_fp8()
+                        && utils::one_of(
+                                isa_impl, avx10_1_512_amx_fp16, avx10_2_512));
     }
 
     bool is_fp8_via_convert_non_amx() const {
-        return is_fp8_via_convert() && isa_impl == avx10_2_512;
+        return (is_fp8 || is_xf16_fp8) && isa_impl == avx10_2_512;
+    }
+
+    bool is_fp8_weights_converted_to_bf16() const {
+        return is_bf16_fp8() || (is_fp8 && isa_impl == avx10_1_512_amx);
+    }
+
+    bool is_fp8_weights_converted_to_f16() const {
+        return (is_fp8 || is_f16_fp8())
+                && utils::one_of(isa_impl, avx10_1_512_amx_fp16, avx10_2_512);
     }
 
     bool is_input_convert() const { return is_bf32 || is_fp8_via_convert(); }
@@ -459,9 +473,20 @@ struct brgemm_desc_t {
 
     int get_convert_wsp_buffer_size() const noexcept {
         if (!is_input_convert()) return 0;
-        const int n_bdb = bd_block2;
+        if (is_fp8 || (dt_a == data_type::f16 && dt_b == data_type::f8_e5m2)) {
+            // One shared tile for A and B
+            return tilesize;
+        }
+
         const int n_rdb = rdb + (rdb_tail != 0);
         const int n_ldb = ldb + (ldb_tail != 0);
+
+        if (is_xf16_fp8) {
+            const int cvt_B_tiles = brgattr.max_bs * n_rdb * n_ldb;
+            return cvt_B_tiles * tilesize;
+        }
+
+        const int n_bdb = bd_block2;
         const int downcvt_tiles = brgattr.max_bs * n_rdb * (n_bdb + n_ldb);
         return downcvt_tiles * tilesize;
     }
@@ -544,6 +569,13 @@ struct brgemm_desc_t {
 
     bool is_xf16() const noexcept { return is_bf16 || is_f16; }
 
+    bool is_bf16_fp8() const noexcept {
+        return is_xf16_fp8 && dt_a == data_type::bf16;
+    }
+    bool is_f16_fp8() const noexcept {
+        return is_xf16_fp8 && dt_a == data_type::f16;
+    }
+
     bool is_f16_b_non_amx_vnni() const {
         return is_f16_b_non_amx_vnni(dt_b, brgattr.b_is_vnni, isa_impl);
     }
@@ -564,7 +596,9 @@ struct brgemm_desc_t {
         return is_tf32 ? 16 : reduce_by_words() ? 32 : 64;
     }
     int rd_block_step() const {
-        return is_tf32 ? 1 : (reduce_by_words() && !is_fp8) ? 2 : 4;
+        return is_tf32                                            ? 1
+                : (reduce_by_words() && !(is_fp8 || is_xf16_fp8)) ? 2
+                                                                  : 4;
     }
 
     bool amx_may_extend_k() const {

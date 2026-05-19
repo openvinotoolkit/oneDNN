@@ -253,9 +253,14 @@ status_t check_isa_with_datatype(
             && IMPLICATION(bm_conf_utils.is_f32_with_int_wei(),
                     one_of(isa, avx512_core, avx2))
             && IMPLICATION(bm_conf_utils.is_f8(),
-                    is_superset(isa, avx512_core_amx_fp16)
+                    is_superset(isa, avx512_core_amx)
                             || is_superset(isa, avx10_2_512))
-            && IMPLICATION(bm_conf_utils.is_bf8(),
+            && IMPLICATION(bm_conf_utils.is_bf16_fp8(),
+                    one_of(isa, avx512_core_amx, avx512_core_amx_fp16,
+                            avx10_2_512))
+            && IMPLICATION(bm_conf_utils.is_f16_fp8(),
+                    one_of(isa, avx512_core_amx_fp16, avx10_2_512))
+            && IMPLICATION(bm_conf_utils.is_bf8() && !bm_conf_utils.is_f8(),
                     is_superset(isa, avx512_core_amx_fp16));
     return ok ? status::success : status::unimplemented;
 }
@@ -268,6 +273,7 @@ status_t check_datatype_cfg(const brgemm_matmul_conf_utils_t &bm_conf_utils) {
                       bm_conf_utils.is_f8(), bm_conf_utils.is_int8(),
                       bm_conf_utils.is_tf32(),
                       bm_conf_utils.is_bf16_with_int_wei(),
+                      bm_conf_utils.is_bf16_fp8(), bm_conf_utils.is_f16_fp8(),
                       bm_conf_utils.is_f16_with_int_wei(),
                       bm_conf_utils.is_f32_with_int_wei())
             && IMPLICATION(bm_conf_utils.is_bf16_with_int_wei()
@@ -323,6 +329,10 @@ brgemm_matmul_conf_utils_t::brgemm_matmul_conf_utils_t(
               && one_of(bgmmc.dst_dt, f16, f32))
     , f32_with_int_wei_dt(weights_decompression_support
               && everyone_is(f32, bgmmc.src_dt, bgmmc.dst_dt))
+    , bf16_fp8_dt(bgmmc.src_dt == bf16 && one_of(bgmmc.wei_dt, f8_e5m2, f8_e4m3)
+              && one_of(bgmmc.dst_dt, f16, f32, bf16, f8_e5m2, f8_e4m3))
+    , f16_fp8_dt(bgmmc.src_dt == f16 && one_of(bgmmc.wei_dt, f8_e5m2, f8_e4m3)
+              && one_of(bgmmc.dst_dt, f16, f32, bf16, f8_e5m2, f8_e4m3))
     , A_any_layout(A_any_layout)
     , B_any_layout(B_any_layout)
     , C_any_layout(C_any_layout)
@@ -545,7 +555,8 @@ status_t brgemm_matmul_conf_utils_t::set_or_check_tags(memory_desc_t &A_md,
                               || this->is_f32_bf16()
                               || this->is_bf16_with_int_wei()
                               || this->is_f16_with_int_wei() || this->is_tf32()
-                              || this->is_f32_with_int_wei())
+                              || this->is_f32_with_int_wei() || this->is_f8()
+                              || this->is_bf16_fp8() || this->is_f16_fp8())
                     && !xf16_avx2_vnni_2;
             bgmmc.src_tag = is_adbc_allowed
                     ? memory_desc_matches_one_of_tag(A_md,
@@ -645,7 +656,7 @@ format_tag_t brgemm_matmul_conf_utils_t::pick_blocked_B_layout(
 
     if (bgmmc.ndims > 3) return format_tag::undef;
 
-    if (is_int8() || is_f8()) {
+    if (is_int8() || is_f8() || is_bf16_fp8() || is_f16_fp8()) {
         switch (n_blk) {
             case 64: return bgmmc.ndims == 3 ? aCB16b64c4b : BA16a64b4a;
             case 48: return bgmmc.ndims == 3 ? aCB16b48c4b : BA16a48b4a;
@@ -1129,7 +1140,9 @@ status_t compute_blocking_heuristic(brgemm_matmul_conf_t &bgmmc,
                       bm_conf_utils.is_bf16_with_int_wei(),
                       (bgmmc.is_amx
                               && (bm_conf_utils.is_f16()
-                                      || bm_conf_utils.is_f16_with_int_wei())))
+                                      || bm_conf_utils.is_f16_with_int_wei()
+                                      || bm_conf_utils.is_bf16_fp8()
+                                      || bm_conf_utils.is_f16_fp8())))
             && (bgmmc.isa != avx2_vnni_2) // no perf study yet.
             && bgmmc.lda_big_pow2() && bgmmc.M >= 1024;
 
@@ -1337,6 +1350,8 @@ status_t init_brgemm_matmul_conf(cpu_isa_t isa, brgemm_matmul_conf_t &bgmmc,
     bgmmc.is_f32_with_int_wei = bm_conf_utils.is_f32_with_int_wei();
     bgmmc.is_f32_f16 = bm_conf_utils.is_f32_f16();
     bgmmc.is_f32_bf16 = bm_conf_utils.is_f32_bf16();
+    bgmmc.is_xf16_fp8
+            = bm_conf_utils.is_bf16_fp8() || bm_conf_utils.is_f16_fp8();
     bgmmc.with_wei_decompression = bm_conf_utils.with_weights_decompression();
     bgmmc.is_int4_weights = one_of(bgmmc.wei_dt, data_type::s4, data_type::u4);
 
@@ -1852,7 +1867,8 @@ status_t init_brgemm_matmul_conf(cpu_isa_t isa, brgemm_matmul_conf_t &bgmmc,
         const dim_t buffer_a_chunk_sz_limit = 126;
         is_small_shapes = is_small_shapes
                 && bgmmc.buffer_a_gb_stride <= buffer_a_chunk_sz_limit;
-    } else if (bm_conf_utils.is_f8() || bm_conf_utils.is_bf8()) {
+    } else if (bm_conf_utils.is_f8() || bm_conf_utils.is_bf16_fp8()
+            || bm_conf_utils.is_f16_fp8() || bm_conf_utils.is_bf8()) {
         is_small_shapes = false;
     } else {
         is_small_shapes = is_small_shapes && bgmmc.ndims < 3

@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2021-2025 Intel Corporation
+* Copyright 2021 Intel Corporation
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -157,6 +157,9 @@ status_t brgemm_matmul_t<isa>::pd_t::init(engine_t *engine) {
     const bool is_f8 = one_of(src_dt, f8_e5m2, f8_e4m3)
             && one_of(wei_dt, f8_e5m2, f8_e4m3)
             && one_of(dst_dt, f32, f16, bf16, f8_e5m2, f8_e4m3);
+    const bool is_xf16_fp8 = one_of(src_dt, bf16, f16)
+            && one_of(wei_dt, f8_e5m2, f8_e4m3)
+            && one_of(dst_dt, f32, f16, bf16, f8_e5m2, f8_e4m3);
     const bool is_bf16
             = everyone_is(bf16, src_dt, wei_dt) && one_of(dst_dt, bf16, f32);
     const bool is_f16
@@ -179,10 +182,10 @@ status_t brgemm_matmul_t<isa>::pd_t::init(engine_t *engine) {
         const bool is_bia_dt_correct
                 = IMPLICATION(is_int8 == true,
                           one_of(bia_dt, f32, s32, s8, u8, f16, bf16))
-                && IMPLICATION(
-                        is_f8 == true, one_of(bia_dt, f32, f16, bf16, src_dt))
-                && IMPLICATION(
-                        !(is_int8 || is_f8), one_of(bia_dt, f32, src_dt));
+                && IMPLICATION((is_f8 || is_xf16_fp8),
+                        one_of(bia_dt, f32, f16, bf16, src_dt))
+                && IMPLICATION(!(is_int8 || is_f8 || is_xf16_fp8),
+                        one_of(bia_dt, f32, src_dt));
         return IMPLICATION(with_bias(), is_bia_dt_correct && is_bias_1xN());
     };
 
@@ -268,7 +271,7 @@ status_t brgemm_matmul_t<isa>::pd_t::init(engine_t *engine) {
     };
     const bool problem_dt_correct = one_of(true, is_int8, is_f8, is_bf16,
             is_f32, is_f16, is_f32_f16, is_f32_bf16, is_bf16_with_int_wei,
-            is_f16_with_int_wei, is_f32_with_int_wei);
+            is_f16_with_int_wei, is_f32_with_int_wei, is_xf16_fp8);
 
     auto src_d = memory_desc_wrapper(src_md_);
     auto weights_d = memory_desc_wrapper(weights_md_);
@@ -423,6 +426,12 @@ status_t brgemm_matmul_t<isa>::pd_t::init(engine_t *engine) {
                 brgattr.hint_load_nt_B = bgmmc_.is_b_nt ? brgemm_hint_nt_true
                                                         : brgemm_hint_nt_false;
             }
+        }
+
+        if (bgmmc_.isa == avx10_2_512 && bgmmc_.is_xf16_fp8) {
+            // This reduces the number of upconversions of weights in non-AMX kernel;
+            // activations do not require upconversions.
+            brgattr.hint_loop_order = brgemm_lo_bl_1load;
         }
 
         CHECK(brgemm_desc_set_attr(&brg, brgattr));
