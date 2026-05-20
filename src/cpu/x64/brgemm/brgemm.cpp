@@ -300,7 +300,7 @@ status_t brgemm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
         return status::unimplemented;
 
     if (utils::everyone_is(false, brg->is_int8, brg->is_bf16, brg->is_f32,
-                brg->is_f16/*, brg->is_fp8*/))
+                brg->is_f16, brg->is_fp8, brg->is_xf16_fp8))
         return status::unimplemented;
 
     // Only avx512_core_amx kernel supports u8 weights.
