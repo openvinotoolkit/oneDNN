@@ -21,7 +21,6 @@
 #include "cpu/ref_softmax.hpp"
 
 #if DNNL_X64
-#include "cpu/x64/jit_uni_fork_softmax.hpp"
 #include "cpu/x64/jit_uni_softmax.hpp"
 using namespace dnnl::impl::cpu::x64;
 #elif DNNL_AARCH64
@@ -46,9 +45,6 @@ const std::map<pk_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map() {
     static std::map<pk_impl_key_t, std::vector<impl_list_item_t>> the_map =  REG_SOFTMAX_P({
         {{forward}, {
             CPU_INSTANCE_X64(jit_uni_softmax_fwd_t)
-            CPU_INSTANCE_X64(jit_uni_fork_softmax_fwd_t, avx512_core)
-            CPU_INSTANCE_X64(jit_uni_fork_softmax_fwd_t, avx2)
-            CPU_INSTANCE_X64(jit_uni_fork_softmax_fwd_t, sse41)
             CPU_INSTANCE_AARCH64(jit_uni_softmax_fwd_t, sve_512)
             CPU_INSTANCE_AARCH64(jit_uni_softmax_fwd_t, sve_256)
             CPU_INSTANCE_AARCH64(jit_uni_softmax_fwd_t, sve_128)
