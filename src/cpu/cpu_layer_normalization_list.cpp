@@ -1,6 +1,6 @@
 /*******************************************************************************
-* Copyright 2019-2025 Intel Corporation
-* Copyright 2023 Arm Ltd. and affiliates
+* Copyright 2019 Intel Corporation
+* Copyright 2023, 2025-2026 Arm Ltd. and affiliates
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -23,9 +23,14 @@
 #if DNNL_X64
 #include "cpu/x64/jit_uni_layer_normalization.hpp"
 using namespace dnnl::impl::cpu::x64;
-#elif defined(DNNL_AARCH64_USE_ACL)
-#include "cpu/acl/acl_layer_normalization.hpp"
-using namespace dnnl::impl::cpu::acl;
+#elif DNNL_AARCH64
+#include "cpu/aarch64/jit_uni_layer_normalization.hpp"
+using namespace dnnl::impl::cpu::aarch64;
+#elif DNNL_RV64
+#if defined(DNNL_RISCV_USE_RVV_INTRINSICS)
+#include "cpu/rv64/rvv_layer_normalization.hpp"
+using namespace dnnl::impl::cpu::rv64;
+#endif // DNNL_RISCV_USE_RVV_INTRINSICS
 #endif
 
 namespace dnnl {
@@ -41,7 +46,9 @@ const std::map<pk_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map() {
     static const std::map<pk_impl_key_t, std::vector<impl_list_item_t>> the_map = REG_LNORM_P({
         {{forward}, {
             CPU_INSTANCE_X64(jit_uni_layer_normalization_fwd_t)
-            CPU_INSTANCE_ACL(acl_layer_normalization_fwd_t)
+            CPU_INSTANCE_AARCH64(jit_uni_layer_normalization_fwd_t<sve>)
+            CPU_INSTANCE_AARCH64(jit_uni_layer_normalization_fwd_t<asimd>)
+            CPU_INSTANCE_RV64GCV(rvv_layer_normalization_fwd_t)
             CPU_INSTANCE(simple_layer_normalization_fwd_t)
             CPU_INSTANCE(ref_layer_normalization_fwd_t)
             nullptr,

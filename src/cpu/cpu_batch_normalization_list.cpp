@@ -30,11 +30,10 @@ using namespace dnnl::impl::cpu::x64;
 #elif DNNL_AARCH64
 #include "cpu/aarch64/jit_uni_batch_normalization.hpp"
 #include "cpu/aarch64/jit_uni_batch_normalization_s8.hpp"
-using namespace dnnl::impl::cpu::aarch64;
-#endif
 #if defined(DNNL_AARCH64_USE_ACL)
-#include "cpu/acl/acl_batch_normalization.hpp"
-using namespace dnnl::impl::cpu::acl;
+#include "cpu/aarch64/acl_batch_normalization.hpp"
+#endif
+using namespace dnnl::impl::cpu::aarch64;
 #endif
 
 namespace dnnl {
@@ -59,7 +58,7 @@ const std::map<pk_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map() {
             CPU_INSTANCE_AARCH64(jit_uni_batch_normalization_fwd_t, sve_512)
             CPU_INSTANCE_AARCH64(jit_uni_batch_normalization_fwd_t, sve_256)
             CPU_INSTANCE_AARCH64(jit_uni_batch_normalization_fwd_t, asimd)
-            DNNL_AARCH64_ONLY(DNNL_ACL_ONLY(CPU_INSTANCE(acl::acl_batch_normalization_fwd_t)))
+            CPU_INSTANCE_AARCH64_ACL(acl_batch_normalization_fwd_t)
             CPU_INSTANCE(ncsp_batch_normalization_fwd_t, f32)
             CPU_INSTANCE(ncsp_batch_normalization_fwd_t, bf16)
             CPU_INSTANCE(ncsp_batch_normalization_fwd_t, f16)
