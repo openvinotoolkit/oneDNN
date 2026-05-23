@@ -136,13 +136,19 @@ const std::map<pk_dt_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map()
             CPU_INSTANCE(ref_inner_product_fwd_t)
             nullptr,
         }},
+        // VNNI instance handles the BF16 source dynamic-quantization path:
+        // BF16 src is quantized to s8 and dispatched to the VNNI s8 GEMM.
+        // Plain BF16 (no src dyn-quant) is rejected by init_conf and falls
+        // through to avx512_core_bf16.
         {{forward, bf16, u8, f32}, {
             CPU_INSTANCE_AMX(brgemm_inner_product_fwd_t, avx512_core_amx)
+            CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx512_core_vnni)
             CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx512_core_bf16)
             nullptr,
         }},
         {{forward, bf16, u8, bf16}, {
             CPU_INSTANCE_AMX(brgemm_inner_product_fwd_t, avx512_core_amx)
+            CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx512_core_vnni)
             CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx512_core_bf16)
             nullptr,
         }},
@@ -186,13 +192,18 @@ const std::map<pk_dt_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map()
             CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx512_core_bf16)
             nullptr,
         }},
+        // VNNI instance here serves the BF16 source dynamic-quantization path
+        // (BF16 src -> s8 -> VNNI GEMM). See the {bf16, u8, *} entries above
+        // for the dispatch details.
         {{forward, bf16, u4, f32}, {
             CPU_INSTANCE_AMX(brgemm_inner_product_fwd_t, avx512_core_amx)
+            CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx512_core_vnni)
             CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx512_core_bf16)
             nullptr,
         }},
         {{forward, bf16, u4, bf16}, {
             CPU_INSTANCE_AMX(brgemm_inner_product_fwd_t, avx512_core_amx)
+            CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx512_core_vnni)
             CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx512_core_bf16)
             nullptr,
         }},
