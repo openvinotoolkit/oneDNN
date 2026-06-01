@@ -30,7 +30,7 @@
 #include "cpu/platform.hpp"
 
 #if DNNL_AARCH64 && defined(DNNL_AARCH64_USE_ACL)
-#include "cpu/acl/acl_thread.hpp"
+#include "cpu/aarch64/acl_thread.hpp"
 #endif
 
 #define CPU_INSTANCE_IMPL(...) \
@@ -46,8 +46,8 @@
 #define CPU_INSTANCE_AVX512(...) REG_AVX512_ISA(CPU_INSTANCE(__VA_ARGS__))
 #define CPU_INSTANCE_AMX(...) REG_AMX_ISA(CPU_INSTANCE(__VA_ARGS__))
 #define CPU_INSTANCE_AARCH64(...) DNNL_AARCH64_ONLY(CPU_INSTANCE(__VA_ARGS__))
-#define CPU_INSTANCE_ARM(...) DNNL_ARM_ONLY(CPU_INSTANCE(__VA_ARGS__))
-#define CPU_INSTANCE_ACL(...) DNNL_ACL_ONLY(CPU_INSTANCE(__VA_ARGS__))
+#define CPU_INSTANCE_AARCH64_ACL(...) \
+    DNNL_AARCH64_ACL_ONLY(CPU_INSTANCE(__VA_ARGS__))
 #define CPU_INSTANCE_RV64GCV(...) DNNL_RV64GCV_ONLY(CPU_INSTANCE(__VA_ARGS__))
 #define CPU_INSTANCE_RV64GCV_ZVFH(...) \
     DNNL_RV64GCV_ZVFH_ONLY(CPU_INSTANCE(__VA_ARGS__))
@@ -164,7 +164,7 @@ public:
                 engine_kind::cpu, get_cpu_native_runtime(), 0));
 
 #if DNNL_AARCH64 && defined(DNNL_AARCH64_USE_ACL)
-        dnnl::impl::cpu::acl::acl_thread_utils::set_acl_threading();
+        dnnl::impl::cpu::aarch64::acl_thread_utils::set_acl_threading();
 #endif
         return status::success;
     };

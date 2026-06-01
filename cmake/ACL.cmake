@@ -21,11 +21,11 @@ endif()
 set(acl_cmake_included true)
 include("cmake/options.cmake")
 
-if(NOT DNNL_TARGET_ARCH MATCHES "^(AARCH64|ARM)$")
+if(NOT DNNL_TARGET_ARCH STREQUAL "AARCH64")
     return()
 endif()
 
-if(NOT DNNL_USE_ACL)
+if(NOT DNNL_AARCH64_USE_ACL)
     return()
 endif()
 
@@ -38,7 +38,7 @@ set(ACL_MIN_VERSION "${ACL_MIN_MAJOR_VERSION}.${ACL_MIN_MINOR_VERSION}")
 
 # Optional. Maximum known compatible version if any.
 # Set to an empty-string if none.
-set(ACL_MAX_MAJOR_VERSION "")
+set(ACL_MAX_MAJOR_VERSION "53")
 
 if(ACL_FOUND)
     file(GLOB_RECURSE ACL_FOUND_VERSION_FILE ${ACL_INCLUDE_DIR}/*/arm_compute_version.embed)
