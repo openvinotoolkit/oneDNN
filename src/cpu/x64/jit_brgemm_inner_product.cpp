@@ -259,6 +259,18 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
             ? scratchpad.template get<char>(key_brgemm_primitive_decomp_buf)
             : nullptr;
 
+    if (decomp_buf_global) {
+        size_t decomp_buf_size = 0;
+        if (jbgp.weights_compressed) {
+            decomp_buf_size = (size_t)jbgp.nthr * jbgp.ic * 64 * types::data_type_size(jbgp.wei_dt);
+        } else if (jbgp.weights_decompression && jbgp.wei_decomp_algo == weights_decomp_kind_t::prepack) {
+            decomp_buf_size = (size_t)jbgp.nthr * jbgp.ic_block * jbgp.nb_ic_blocking * jbgp.oc_block * types::data_type_size(jbgp.wei_dt);
+        }
+        if (decomp_buf_size > 0) {
+            std::memset(decomp_buf_global, 0, decomp_buf_size);
+        }
+    }
+
     const int ic_chunks = div_up(jbgp.nb_ic, jbgp.nb_ic_blocking);
     const bool are_post_ops_applicable = one_of(true, jbgp.with_sum,
             jbgp.with_bias, jbgp.with_src_scales, jbgp.with_wei_scales,

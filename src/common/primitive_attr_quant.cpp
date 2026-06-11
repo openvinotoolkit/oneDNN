@@ -35,6 +35,22 @@ size_t quant_entry_t::get_hash() const {
         seed = primitive_hashing::get_array_hash(
                 seed, group_dims_, group_ndims_);
     seed = hash_combine(seed, is_host_scalar_);
+    seed = hash_combine(seed, type_);
+    seed = hash_combine(seed, is_set_);
+    seed = hash_combine(seed, is_set_scale);
+    seed = hash_combine(seed, mask_scale);
+    seed = hash_combine(seed, static_cast<size_t>(data_type_scale));
+    seed = hash_combine(seed, ndims_scale);
+    if (ndims_scale > 0)
+        seed = primitive_hashing::get_array_hash(
+                seed, dims_scale, ndims_scale);
+    seed = hash_combine(seed, is_set_wei);
+    seed = hash_combine(seed, mask_wei);
+    seed = hash_combine(seed, static_cast<size_t>(data_type_wei));
+    seed = hash_combine(seed, ndims_wei);
+    if (ndims_wei > 0)
+        seed = primitive_hashing::get_array_hash(
+                seed, dims_wei, ndims_wei);
     return seed;
 }
 
@@ -43,6 +59,16 @@ void quant_entry_t::serialize(serialization_stream_t &sstream) const {
     sstream.append(data_type_);
     sstream.append_array(group_ndims_, group_dims_);
     sstream.append(is_host_scalar_);
+    sstream.append(type_);
+    sstream.append(is_set_);
+    sstream.append(is_set_scale);
+    sstream.append(mask_scale);
+    sstream.append(data_type_scale);
+    sstream.append_array(ndims_scale, dims_scale);
+    sstream.append(is_set_wei);
+    sstream.append(mask_wei);
+    sstream.append(data_type_wei);
+    sstream.append_array(ndims_wei, dims_wei);
 }
 
 quant_entry_t quant_entry_t::deserialize(deserializer_t &d) {
@@ -53,6 +79,20 @@ quant_entry_t quant_entry_t::deserialize(deserializer_t &d) {
     d.pop_array(group_ndims, e.group_dims_);
     e.group_ndims_ = static_cast<int>(group_ndims);
     d.pop(e.is_host_scalar_);
+    d.pop(e.type_);
+    d.pop(e.is_set_);
+    d.pop(e.is_set_scale);
+    d.pop(e.mask_scale);
+    d.pop(e.data_type_scale);
+    size_t ndims_scale;
+    d.pop_array(ndims_scale, e.dims_scale);
+    e.ndims_scale = static_cast<int>(ndims_scale);
+    d.pop(e.is_set_wei);
+    d.pop(e.mask_wei);
+    d.pop(e.data_type_wei);
+    size_t ndims_wei;
+    d.pop_array(ndims_wei, e.dims_wei);
+    e.ndims_wei = static_cast<int>(ndims_wei);
     return e;
 }
 
