@@ -133,15 +133,25 @@ jobs:
   test:
     needs: build
     strategy:
-      fail-fast: true
+      # Keep vlen128/vlen256 (and their partitions) independent so one flaky
+      # QEMU run does not cancel the others.
+      fail-fast: false
       matrix:
         config: [
           { name: riscv-test-vlen128, threading: OMP, testset: SMOKE, vlen: 128, build: RelWithAssert },
           { name: riscv-test-vlen256, threading: OMP, testset: SMOKE, vlen: 256, build: RelWithAssert }
         ]
+        # Split each vlen config across parallel partitions to cut wall-clock
+        # under slow QEMU emulation. Stride partitioning (ctest -I start,,stride)
+        # needs no cost table and covers every test exactly once.
+        part: [1, 2, 3, 4]
+        parts: [4]
 
-    name: ${{ matrix.config.name }}, ${{ matrix.config.threading }}
+    name: ${{ matrix.config.name }} (${{ matrix.part }}/${{ matrix.parts }}), ${{ matrix.config.threading }}
     runs-on: ubuntu-24.04
+    # vlen128 completes in ~17 min; cap well above that so a hung QEMU run is
+    # killed promptly instead of stalling until the 6 h default.
+    timeout-minutes: 40
     steps:
       - name: Checkout oneDNN
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -183,6 +193,8 @@ jobs:
           CTEST_PARALLEL_LEVEL: 4
           ONEDNN_THREADING: ${{ matrix.config.threading }}
           ONEDNN_TEST_SET: ${{ matrix.config.testset }}
+          ONEDNN_TEST_PART: ${{ matrix.part }}
+          ONEDNN_TEST_STRIDE: ${{ matrix.parts }}
           QEMU_CPU: "rv64,v=true,vlen=${{ matrix.config.vlen }},vext_spec=v1.0"
 
   status:

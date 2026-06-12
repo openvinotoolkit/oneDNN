@@ -349,8 +349,16 @@ echo "Using QEMU for test execution"
 export QEMU_LD_PREFIX=/usr/riscv64-linux-gnu
 
 if [[ "$ONEDNN_TEST_SET" == "SMOKE" ]]; then
+    skipped_tests=$("${SCRIPT_DIR}"/skipped-tests.sh)
+    start=${ONEDNN_TEST_PART:-1}
+    stride=${ONEDNN_TEST_STRIDE:-1}
+    # Per-test timeout: SMOKE tests run in seconds under QEMU, so a generous
+    # cap turns a hung test (e.g. an RVV codepath that loops forever) into a
+    # fast, named failure instead of a silent multi-hour job stall.
+    timeout=${ONEDNN_TEST_TIMEOUT:-600}
     set -x
-    ctest --no-tests=error --output-on-failure -E "$("${SCRIPT_DIR}"/skipped-tests.sh)"
+    ctest --no-tests=error --output-on-failure --timeout "${timeout}" \
+            -I "${start},,${stride}" -E "${skipped_tests}"
     set +x
 
 elif [[ "$ONEDNN_TEST_SET" == "CI" ]]; then
