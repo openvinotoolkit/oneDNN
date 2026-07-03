@@ -443,8 +443,19 @@ int &get_threadlocal_max_concurrency() {
     return max_concurrency;
 }
 
+int &get_threadlocal_scratchpad_concurrency() {
+    thread_local int max_concurrency
+            = (int)cpu::platform::get_max_threads_to_use();
+    assert(max_concurrency > 0);
+    return max_concurrency;
+}
+
 int DNNL_API get_max_concurrency() {
     return get_threadlocal_max_concurrency();
+}
+
+int DNNL_API get_scratchpad_concurrency() {
+    return get_threadlocal_scratchpad_concurrency();
 }
 
 } // namespace threadpool_utils
