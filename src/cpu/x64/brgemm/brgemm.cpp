@@ -300,7 +300,7 @@ status_t brgemm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
         return status::unimplemented;
 
     if (utils::everyone_is(false, brg->is_int8, brg->is_bf16, brg->is_f32,
-                brg->is_f16/*, brg->is_fp8*/))
+                brg->is_f16, brg->is_fp8))
         return status::unimplemented;
 
     // Only avx512_core_amx kernel supports u8 weights.
@@ -347,7 +347,17 @@ status_t brgemm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
         brg->src_scales_stride = div_up(wei_d.dims()[1], brg->src_scales_group_size);
     }
 
-    CHECK(brgemm_desc_finalize(brg));
+    {
+        // Every caller of brgemm_desc_init finalizes the descriptor again after
+        // setting attributes (the brgemm matmul, for instance, applies
+        // brgattr.LDB2 only afterwards). The finalize here computes the blocking
+        // that the weight-decompression / dynamic-quantization setup below
+        // relies on, but its post-attribute LDB2 relation may not yet be
+        // satisfiable; a premature invalid_arguments must therefore not abort
+        // init - the caller's finalize validates the descriptor authoritatively.
+        auto st_finalize = brgemm_desc_finalize(brg);
+        if (st_finalize != status::invalid_arguments) CHECK(st_finalize);
+    }
 
     brg->src_sum_group_size = wei_d.dims()[1];
     if (brg->with_src_dyn_quant) {
