@@ -34,6 +34,7 @@ using namespace dnnl::impl::cpu::x64;
 #include "cpu/aarch64/matmul/brgemm_matmul.hpp"
 #include "cpu/aarch64/matmul/jit_bf16_matmul.hpp"
 #include "cpu/aarch64/matmul/jit_int8_matmul.hpp"
+#include "cpu/aarch64/matmul/kai_matmul.hpp"
 using namespace dnnl::impl::cpu::aarch64::matmul;
 using namespace dnnl::impl::cpu::aarch64;
 #elif DNNL_RV64
@@ -63,6 +64,7 @@ using namespace dnnl::impl::cpu::matmul;
 // clang-format off
 const impl_list_item_t impl_list[] = REG_MATMUL_P({
         CPU_INSTANCE_AARCH64(brgemm_matmul_t, sve_512)
+        CPU_INSTANCE_AARCH64(kai_matmul_t)
         CPU_INSTANCE_ACL(acl_lowp_matmul_sq_t)
         CPU_INSTANCE_ACL(acl_lowp_matmul_t)
         CPU_INSTANCE_ACL(acl_matmul_t)

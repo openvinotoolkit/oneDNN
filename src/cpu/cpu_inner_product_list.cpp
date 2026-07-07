@@ -1,6 +1,6 @@
 /*******************************************************************************
 * Copyright 2019-2025 Intel Corporation
-* Copyright 2025 Arm Ltd. and affiliates
+* Copyright 2025-2026 Arm Ltd. and affiliates
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -27,9 +27,13 @@
 #include "cpu/x64/jit_brgemm_inner_product.hpp"
 #include "cpu/x64/matmul_inner_product.hpp"
 using namespace dnnl::impl::cpu::x64;
-#elif defined(DNNL_AARCH64_USE_ACL)
+#elif DNNL_AARCH64
+#if defined(DNNL_AARCH64_USE_ACL)
 #include "cpu/acl/acl_inner_product.hpp"
 using namespace dnnl::impl::cpu::acl;
+#endif
+#include "cpu/aarch64/matmul_inner_product.hpp"
+using namespace dnnl::impl::cpu::aarch64;
 #endif
 
 namespace dnnl {
@@ -53,6 +57,7 @@ using namespace dnnl::impl::prop_kind;
 const std::map<pk_dt_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map() {
     static const std::map<pk_dt_impl_key_t, std::vector<impl_list_item_t>> the_map = REG_IP_P({
         {{forward, f32, f32, f32}, {
+            CPU_INSTANCE_AARCH64(matmul_inner_product_fwd_t)
             // CPU_INSTANCE_X64(matmul_inner_product_fwd_t)
             CPU_INSTANCE_AMX(brgemm_inner_product_fwd_t, avx512_core_amx) // bf32
             CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx512_core)
@@ -116,6 +121,7 @@ const std::map<pk_dt_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map()
             nullptr,
         }},
         {{forward, bf16, bf16, f32}, {
+            CPU_INSTANCE_AARCH64(matmul_inner_product_fwd_t)
             // CPU_INSTANCE_X64(matmul_inner_product_fwd_t)
             CPU_INSTANCE_AMX(brgemm_inner_product_fwd_t, avx512_core_amx)
             CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx512_core_bf16)
@@ -125,6 +131,7 @@ const std::map<pk_dt_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map()
             nullptr,
         }},
         {{forward, bf16, bf16, bf16}, {
+            CPU_INSTANCE_AARCH64(matmul_inner_product_fwd_t)
             // CPU_INSTANCE_X64(matmul_inner_product_fwd_t)
             CPU_INSTANCE_AMX(brgemm_inner_product_fwd_t, avx512_core_amx)
             CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx512_core_bf16)
@@ -216,6 +223,7 @@ const std::map<pk_dt_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map()
             nullptr,
         }},
         {{forward, f16, f16, f32}, {
+            CPU_INSTANCE_AARCH64(matmul_inner_product_fwd_t)
             // CPU_INSTANCE_X64(matmul_inner_product_fwd_t)
             CPU_INSTANCE_AMX(brgemm_inner_product_fwd_t, avx512_core_amx_fp16)
             CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx10_2_512)
@@ -225,6 +233,7 @@ const std::map<pk_dt_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map()
             nullptr,
         }},
         {{forward, f16, f16, f16}, {
+            CPU_INSTANCE_AARCH64(matmul_inner_product_fwd_t)
             // CPU_INSTANCE_X64(matmul_inner_product_fwd_t)
             CPU_INSTANCE_AMX(brgemm_inner_product_fwd_t, avx512_core_amx_fp16)
             CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx10_2_512)
@@ -344,6 +353,7 @@ const std::map<pk_dt_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map()
             nullptr,
         })},
         {{forward, s8, s8, f32}, {
+            CPU_INSTANCE_AARCH64(matmul_inner_product_fwd_t)
             // CPU_INSTANCE_X64(matmul_inner_product_fwd_t)
             CPU_INSTANCE_AMX(brgemm_inner_product_fwd_t, avx10_2_512_amx_2)
             CPU_INSTANCE_AMX(brgemm_inner_product_fwd_t, avx512_core_amx)
@@ -357,6 +367,7 @@ const std::map<pk_dt_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map()
             nullptr,
         }},
         {{forward, s8, s8, s32}, {
+            CPU_INSTANCE_AARCH64(matmul_inner_product_fwd_t)
             // CPU_INSTANCE_X64(matmul_inner_product_fwd_t)
             CPU_INSTANCE_AMX(brgemm_inner_product_fwd_t, avx10_2_512_amx_2)
             CPU_INSTANCE_AMX(brgemm_inner_product_fwd_t, avx512_core_amx)
@@ -396,6 +407,7 @@ const std::map<pk_dt_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map()
             nullptr,
         }},
         {{forward, u8, s8, f32}, {
+            CPU_INSTANCE_AARCH64(matmul_inner_product_fwd_t)
             // CPU_INSTANCE_X64(matmul_inner_product_fwd_t)
             CPU_INSTANCE_AMX(brgemm_inner_product_fwd_t, avx10_2_512_amx_2)
             CPU_INSTANCE_AMX(brgemm_inner_product_fwd_t, avx512_core_amx)
