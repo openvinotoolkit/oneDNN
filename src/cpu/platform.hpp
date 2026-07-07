@@ -1,6 +1,6 @@
 /*******************************************************************************
 * Copyright 2020-2025 Intel Corporation
-* Copyright 2020 Arm Ltd. and affiliates
+* Copyright 2020, 2026 Arm Ltd. and affiliates
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -120,14 +120,6 @@
 
 // Negation of the helper macros above
 #define DNNL_NON_X64_ONLY(...) Z_CONDITIONAL_DO(Z_NOT(DNNL_X64), __VA_ARGS__)
-
-// Using Arm Compute Library kernels is optional for AArch64 builds
-// and can be enabled with the DNNL_USE_ACL CMake option
-#if defined(DNNL_AARCH64) && defined(DNNL_AARCH64_USE_ACL)
-#define DNNL_ACL_ONLY(...) __VA_ARGS__
-#else
-#define DNNL_ACL_ONLY(...)
-#endif
 
 // Primitive ISA section for configuring knobs.
 // Note: MSVC preprocessor by some reason "eats" symbols it's not supposed to

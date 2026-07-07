@@ -36,10 +36,6 @@ using namespace dnnl::impl::cpu::aarch64;
 using namespace dnnl::impl::cpu::rv64;
 #endif // DNNL_RISCV_USE_RVV_INTRINSICS
 #endif
-#if defined(DNNL_AARCH64_USE_ACL)
-#include "cpu/acl/acl_pooling.hpp"
-using namespace dnnl::impl::cpu::acl;
-#endif
 
 namespace dnnl {
 namespace impl {
@@ -66,7 +62,6 @@ const std::map<pk_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map() {
             CPU_INSTANCE_X64(jit_uni_pooling_fwd_t, sse41, f32)
             CPU_INSTANCE_AARCH64(jit_uni_pooling_fwd_t, sve_512, f32)
             CPU_INSTANCE_AARCH64(jit_uni_pooling_fwd_t, sve_256, f32)
-            CPU_INSTANCE_ACL(acl_pooling_fwd_t)
             CPU_INSTANCE_RV64GCV(riscv_nchw_pooling_fwd_t)
             CPU_INSTANCE(nchw_pooling_fwd_t, bf16)
             CPU_INSTANCE(nchw_pooling_fwd_t, f32)

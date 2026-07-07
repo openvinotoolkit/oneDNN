@@ -1,6 +1,6 @@
 /*******************************************************************************
 * Copyright 2016-2025 Intel Corporation
-* Copyright 2020-2023 Arm Ltd. and affiliates
+* Copyright 2020-2023, 2026 Arm Ltd. and affiliates
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -29,10 +29,6 @@
 
 #include "cpu/platform.hpp"
 
-#if DNNL_AARCH64 && defined(DNNL_AARCH64_USE_ACL)
-#include "cpu/acl/acl_thread.hpp"
-#endif
-
 #define CPU_INSTANCE_IMPL(...) \
     impl_list_item_t( \
             impl_list_item_t::type_deduction_helper_t<__VA_ARGS__::pd_t>())
@@ -47,7 +43,6 @@
 #define CPU_INSTANCE_AMX(...) REG_AMX_ISA(CPU_INSTANCE(__VA_ARGS__))
 #define CPU_INSTANCE_AARCH64(...) DNNL_AARCH64_ONLY(CPU_INSTANCE(__VA_ARGS__))
 #define CPU_INSTANCE_ARM(...) DNNL_ARM_ONLY(CPU_INSTANCE(__VA_ARGS__))
-#define CPU_INSTANCE_ACL(...) DNNL_ACL_ONLY(CPU_INSTANCE(__VA_ARGS__))
 #define CPU_INSTANCE_RV64GCV(...) DNNL_RV64GCV_ONLY(CPU_INSTANCE(__VA_ARGS__))
 #define CPU_INSTANCE_RV64GCV_ZVFH(...) \
     DNNL_RV64GCV_ZVFH_ONLY(CPU_INSTANCE(__VA_ARGS__))
@@ -163,9 +158,6 @@ public:
         *engine = new cpu_engine_t(new impl::engine_impl_t(
                 engine_kind::cpu, get_cpu_native_runtime(), 0));
 
-#if DNNL_AARCH64 && defined(DNNL_AARCH64_USE_ACL)
-        dnnl::impl::cpu::acl::acl_thread_utils::set_acl_threading();
-#endif
         return status::success;
     };
 };

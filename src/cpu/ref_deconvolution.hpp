@@ -417,14 +417,6 @@ struct ref_deconvolution_bwd_data_t : public primitive_t {
         return pd()->conv_pd_->create_primitive(conv_p_, engine);
     }
 
-#if defined(DNNL_AARCH64_USE_ACL)
-    status_t create_resource(
-            engine_t *engine, resource_mapper_t &mapper) const override {
-        CHECK(conv_p_->create_resource(engine, mapper));
-        return status::success;
-    }
-#endif
-
     status_t execute(const exec_ctx_t &ctx) const override;
 
 private:

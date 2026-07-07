@@ -393,16 +393,6 @@ struct ref_fused_convolution_fwd_t : public primitive_t {
         return status::success;
     }
 
-#if defined(DNNL_AARCH64_USE_ACL)
-    status_t create_resource(
-            engine_t *engine, resource_mapper_t &mapper) const override {
-        for (auto &p : primitives_) {
-            CHECK(p->create_resource(engine, mapper));
-        }
-        return status::success;
-    }
-#endif
-
     status_t execute(const exec_ctx_t &ctx) const override {
         engine_t *engine = ctx.stream()->engine();
         const auto scratchpad = ctx.get_scratchpad_grantor();

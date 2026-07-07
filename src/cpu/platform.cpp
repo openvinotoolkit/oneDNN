@@ -35,10 +35,6 @@
 #elif DNNL_AARCH64
 #include "cpu/aarch64/cpu_isa_traits.hpp"
 #endif
-#if defined(DNNL_AARCH64_USE_ACL)
-// For setting the number of threads for ACL
-#include "src/common/cpuinfo/CpuInfo.h"
-#endif
 
 // For DNNL_X64 build we compute the timestamp using rdtsc. Use std::chrono for
 // other builds.
@@ -277,8 +273,8 @@ unsigned get_per_core_cache_size(int level) {
 unsigned get_num_cores() {
 #if DNNL_X64
     return x64::cpu().getNumCores(Xbyak::util::CoreLevel);
-#elif defined(DNNL_AARCH64_USE_ACL)
-    return arm_compute::cpuinfo::num_threads_hint();
+#elif DNNL_AARCH64
+    return aarch64::cpu().getNumCores(Xbyak_aarch64::util::CoreLevel);
 #else
     return 1;
 #endif
