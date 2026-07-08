@@ -79,10 +79,14 @@ status_t calculate_plain_transpose_blocks(dim_t &batch, dim_t &M, dim_t &K,
     }
 
     memory_desc_t src_md_reduced, dst_md_reduced;
-    CHECK(memory_desc_reshape(
-            src_md_reduced, src_md, non_unit_dim, non_unit_dims));
-    CHECK(memory_desc_reshape(
-            dst_md_reduced, dst_md, non_unit_dim, non_unit_dims));
+    VDISPATCH_REORDER_IC(memory_desc_reshape(src_md_reduced, src_md,
+                                 non_unit_dim, non_unit_dims)
+                    == status::success,
+            VERBOSE_UNSUPPORTED_TENSOR_LAYOUT, "src");
+    VDISPATCH_REORDER_IC(memory_desc_reshape(dst_md_reduced, dst_md,
+                                 non_unit_dim, non_unit_dims)
+                    == status::success,
+            VERBOSE_UNSUPPORTED_TENSOR_LAYOUT, "dst");
 
     const memory_desc_wrapper id(src_md_reduced), od(dst_md_reduced);
 
@@ -386,7 +390,7 @@ status_t brgemm_matmul_copy_reorder_t::execute_body(
             = dst_d.size() - dst_d.additional_buffer_size();
     const size_t s8s8_comp_size_bytes = kernel_conf.s8s8_compensation_required
             ? dst_d.additional_buffer_size(
-                    memory_extra_flags::compensation_conv_s8s8)
+                      memory_extra_flags::compensation_conv_s8s8)
             : 0;
     const size_t zp_comp_offset_bytes
             = comp_offset_bytes + s8s8_comp_size_bytes;
@@ -469,7 +473,7 @@ status_t brgemm_matmul_copy_reorder_t::execute_body(
                         const auto src_offset = !kernel_conf.blocked_B
                                 ? get_blk_off(src_d, sdt_sz, batch, k, n)
                                 : get_blk_off(src_d, sdt_sz, batch, k_blk_idx,
-                                        n_blk_idx);
+                                          n_blk_idx);
                         ker_exec_ctx.src
                                 = (void *)&src[src_offset / src_typesz_scale];
                         ker_exec_ctx.tr_src = (void *)&dst[get_blk_off(
@@ -483,7 +487,7 @@ status_t brgemm_matmul_copy_reorder_t::execute_body(
                         const auto src_offset = !kernel_conf.blocked_B
                                 ? get_blk_off(src_d, sdt_sz, batch, k, n)
                                 : get_blk_off(src_d, sdt_sz, batch, k_blk_idx,
-                                        n_blk_idx);
+                                          n_blk_idx);
                         ker_exec_ctx.src
                                 = (void *)&src[src_offset / src_typesz_scale];
                         const auto dst_offset = get_blk_off(
