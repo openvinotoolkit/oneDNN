@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2023 Arm Ltd. and affiliates
+* Copyright 2023, 2025 Arm Ltd. and affiliates
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -14,7 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#include "cpu/aarch64/acl_reorder.hpp"
+#include "cpu/aarch64/reorder/acl_reorder.hpp"
+#include "cpu/aarch64/cpu_isa_traits.hpp"
 
 namespace {
 /*
@@ -39,7 +40,7 @@ int find_innermost_dense_idx(const dnnl::impl::memory_desc_t *md) {
 namespace dnnl {
 namespace impl {
 namespace cpu {
-namespace acl {
+namespace aarch64 {
 
 status_t acl_reorder_resource_t::configure(const acl_reorder_conf_t &app) {
     if (!acl_obj_) return status::out_of_memory;
@@ -65,7 +66,7 @@ status_t acl_reorder_fwd_t::pd_t::create(reorder_pd_t **reorder_pd,
         engine_t *engine, const primitive_attr_t *attr, engine_t *src_engine,
         const memory_desc_t *src_md, engine_t *dst_engine,
         const memory_desc_t *dst_md) {
-    using namespace acl_utils;
+    using namespace dnnl::impl;
 
     // ComputeLibrary reorders support f32->f32 and f32->bf16
     bool ok = src_md->data_type == data_type::f32
@@ -91,6 +92,13 @@ status_t acl_reorder_fwd_t::pd_t::create(reorder_pd_t **reorder_pd,
             *src_md, format_tag::ab, format_tag::ba, format_tag::cdba);
     VDISPATCH_REORDER_IC(format_tag::undef != src_tag,
             "Only ab, ba or cdba source formats supported");
+
+    auto dst_tag = memory_desc_matches_one_of_tag(*dst_md, format_tag::BA8b4a,
+            format_tag::BA4b4a, format_tag::Ab4a, format_tag::Ab8a,
+            format_tag::Acdb8a, format_tag::Acdb4a);
+    ACL_CHECK_SUPPORT(format_tag::undef == dst_tag,
+            "Only Ab4a/Ab8a, BA8b4a/BA4b4a and Acdb8a/Acdb4a "
+            "destination formats supported");
 
     auto &transpose = _pd->app_.transpose;
     auto &dst_blocking = dst_md->format_desc.blocking;
@@ -120,6 +128,15 @@ status_t acl_reorder_fwd_t::pd_t::create(reorder_pd_t **reorder_pd,
     // as they are faster in JIT for most cases.
     VDISPATCH_REORDER_IC(
             transpose, "non-transposed reorders are not supported");
+
+    // Optimised f32:bf16 ab->BA8b4a SVE-256 JIT reorder available
+    VDISPATCH_REORDER_IC(
+            !(mayiuse(sve_256) && transpose && src_md->ndims == 2
+                    && src_md->data_type == data_type::f32
+                    && dst_md->data_type == data_type::bf16
+                    && memory_desc_matches_one_of_tag(
+                            *dst_md, format_tag::BA8b4a, format_tag::AB8a4b)),
+            "skipping in favour of optimised JIT implementation");
 
     auto &dst_wf = _pd->app_.dst_wf;
 
@@ -194,12 +211,12 @@ status_t acl_reorder_fwd_t::pd_t::create(reorder_pd_t **reorder_pd,
 
     // Create ACL tensor infos
     const arm_compute::DataType src_acl_data_t
-            = acl_utils::get_acl_data_t(src_md->data_type);
+            = acl::acl_utils::get_acl_data_t(src_md->data_type);
     _pd->app_.src_info = arm_compute::TensorInfo(
             acl_tensor_shape_in, 1, src_acl_data_t, acl_layout);
 
     const arm_compute::DataType dst_acl_data_t
-            = acl_utils::get_acl_data_t(dst_md->data_type);
+            = acl::acl_utils::get_acl_data_t(dst_md->data_type);
     _pd->app_.dst_info = arm_compute::TensorInfo(
             acl_tensor_shape_out, 1, dst_acl_data_t, acl_layout);
 
@@ -255,7 +272,7 @@ status_t acl_reorder_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
     return status::success;
 }
 
-} // namespace acl
+} // namespace aarch64
 } // namespace cpu
 } // namespace impl
 } // namespace dnnl

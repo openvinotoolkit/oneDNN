@@ -28,10 +28,11 @@
 namespace dnnl {
 namespace impl {
 
-template<typename T>
-static status_t fill_blocked_impl(memory_desc_t &md, T&& perm, T&& inner_blks, T&& inner_idxs) {
+template <typename T>
+static status_t fill_blocked_impl(
+        memory_desc_t &md, T &&perm, T &&inner_blks, T &&inner_idxs) {
     const bool ok = true && perm.size() == (size_t)md.ndims
-                    && inner_blks.size() == inner_idxs.size();
+            && inner_blks.size() == inner_idxs.size();
     if (!ok) return status::invalid_arguments;
 
     md.offset0 = 0;
@@ -88,10 +89,17 @@ status_t fill_blocked(memory_desc_t &md, std::initializer_list<int> perm,
     return fill_blocked_impl(md, perm, inner_blks, inner_idxs);
 }
 
-status_t fill_blocked(memory_desc_t &md, std::vector<int>& perm,
-                      std::vector<int>& inner_blks,
-                      std::vector<int>& inner_idxs) {
+status_t fill_blocked(memory_desc_t &md, std::vector<int> &perm,
+        std::vector<int> &inner_blks, std::vector<int> &inner_idxs) {
     return fill_blocked_impl(md, perm, inner_blks, inner_idxs);
+}
+
+status_t fill_blocked(memory_desc_t &md, std::vector<dim_t> &perm,
+        std::vector<dim_t> &inner_blks, std::vector<dim_t> &inner_idxs) {
+    std::vector<int> perm_i(perm.begin(), perm.end());
+    std::vector<int> inner_blks_i(inner_blks.begin(), inner_blks.end());
+    std::vector<int> inner_idxs_i(inner_idxs.begin(), inner_idxs.end());
+    return fill_blocked_impl(md, perm_i, inner_blks_i, inner_idxs_i);
 }
 
 void memory_desc_wrapper::compute_strides_compat(dims_t *strides_compat) const {
@@ -138,8 +146,8 @@ void memory_desc_wrapper::compute_strides_compat(dims_t *strides_compat) const {
     utils::array_copy(strides_compat[1], inner_strides, ndims());
 }
 
-template<typename F, typename... Args>
-status_t process_tag(F f, format_tag_t tag, Args&&... args) {
+template <typename F, typename... Args>
+status_t process_tag(F f, format_tag_t tag, Args &&...args) {
     using namespace format_tag;
 
     // VCHECK_MEMORY((memory_desc.ndims != 0), status::invalid_arguments,
@@ -1047,20 +1055,22 @@ status_t process_tag(F f, format_tag_t tag, Args&&... args) {
     return status::invalid_arguments;
 }
 
-status_t memory_desc_wrapper::compute_blocking(memory_desc_t &memory_desc, format_tag_t tag) {
-    using fill_blocked_t = status_t(memory_desc_t&, std::initializer_list<int>, std::initializer_list<int>, std::initializer_list<int>);
+status_t memory_desc_wrapper::compute_blocking(
+        memory_desc_t &memory_desc, format_tag_t tag) {
+    using fill_blocked_t = status_t(memory_desc_t &, std::initializer_list<int>,
+            std::initializer_list<int>, std::initializer_list<int>);
     if (memory_desc.ndims == 0) return status::invalid_arguments;
     return process_tag<fill_blocked_t>(fill_blocked, tag, memory_desc);
 }
 
 status_t memory_desc_wrapper::compute_blocking(format_tag_t tag,
-                          std::vector<size_t> &perm,
-                          std::vector<size_t> &inner_blks,
-                          std::vector<size_t> &inner_idxs) {
+        std::vector<size_t> &perm, std::vector<size_t> &inner_blks,
+        std::vector<size_t> &inner_idxs) {
 
-    auto extract_data = [&](std::initializer_list<int> _perm,
-                            std::initializer_list<int> _inner_blks,
-                            std::initializer_list<int> _inner_idxs) -> status_t {
+    auto extract_data
+            = [&](std::initializer_list<int> _perm,
+                      std::initializer_list<int> _inner_blks,
+                      std::initializer_list<int> _inner_idxs) -> status_t {
         perm = {_perm.begin(), _perm.end()};
         inner_blks = {_inner_blks.begin(), _inner_blks.end()};
         inner_idxs = {_inner_idxs.begin(), _inner_idxs.end()};
