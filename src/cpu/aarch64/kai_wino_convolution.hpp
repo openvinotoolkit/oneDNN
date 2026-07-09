@@ -42,7 +42,7 @@ struct kai_wino_convolution_fwd_t : public primitive_t {
         using cpu_convolution_fwd_pd_t::cpu_convolution_fwd_pd_t;
 
         DECLARE_COMMON_PD_T(
-                "wino:arm", kai_wino_convolution_fwd_t, USE_GLOBAL_SCRATCHPAD);
+                "wino:kleidiai", kai_wino_convolution_fwd_t, USE_GLOBAL_SCRATCHPAD);
 
         status_t init(engine_t *engine);
         std::unique_ptr<kai::ops::IGemmCommon> create_kai_gemm() const;

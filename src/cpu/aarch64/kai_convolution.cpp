@@ -408,11 +408,11 @@ status_t kai_convolution_fwd_t::pd_t::init(engine_t *engine) {
     for (bool use_indirect : {true, false}) {
         indirect_ = use_indirect;
         if (indirect_) {
-            name_ = "indirect_gemm:kai";
+            name_ = "indirect_gemm:kleidiai";
         } else if(can_use_direct_1x1_src(*this)) {
-            name_ = "direct_1x1:kai";
+            name_ = "direct_1x1:kleidiai";
         } else {
-            name_ = "im2row:kai";
+            name_ = "im2row:kleidiai";
         }
         cfg_ = std::make_shared<kai::ops::GemmConfig>();
         args_.reset();

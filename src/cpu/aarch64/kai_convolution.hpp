@@ -40,7 +40,7 @@ struct kai_convolution_fwd_t : public primitive_t {
                 const typename pd_t::base_class *hint_fwd_pd)
             : cpu_convolution_fwd_pd_t(adesc, attr, hint_fwd_pd)
             , indirect_(true)
-            , name_("indirect_gemm:arm") {}
+            , name_("indirect_gemm:kleidiai") {}
 
         DECLARE_COMMON_PD_T(
                 name_.c_str(), kai_convolution_fwd_t, USE_GLOBAL_SCRATCHPAD);
