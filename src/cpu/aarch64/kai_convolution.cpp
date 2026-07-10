@@ -306,62 +306,6 @@ bool regular_swd_ok(const cpu_convolution_fwd_pd_t &pd) {
                     && utils::one_of(dst_dt, f16, f32));
 }
 
-// Encoding for kai_convolution_fwd_t::pd_t::activation_type_.
-enum kai_activation_kind {
-    KAI_ACT_NONE = 0,
-    KAI_ACT_RELU = 1,
-    KAI_ACT_BRELU = 2
-};
-
-// KleidiAI's GEMM epilogue can fuse a ReLU / bounded-ReLU activation applied
-// after the (optional) bias add (see kai/ops/gemm/bias_adder.hpp). Translate a
-// oneDNN post-op chain into that activation. Only a single eltwise post-op that
-// maps exactly onto one of those activations is accepted; any other post-op
-// (sum, binary, scaled/leaky eltwise, or a longer chain) is rejected so that
-// such convolutions fall back to a reference implementation instead of silently
-// dropping the post-op.
-bool kai_activation_from_post_ops(
-        const primitive_attr_t *attr, int &act_type, float &act_bound) {
-    act_type = KAI_ACT_NONE;
-    act_bound = 0.0f;
-
-    const auto &po = attr->post_ops_;
-    if (po.len() == 0) return true;
-    if (po.len() != 1) return false;
-
-    const auto &e = po.entry_[0];
-    if (e.kind != primitive_kind::eltwise) return false;
-    // A non-unit output scale would need to multiply the epilogue result, which
-    // the kai activator does not do.
-    if (e.eltwise.scale != 1.0f) return false;
-
-    // ReLU: alpha is the negative slope; only the plain (alpha == 0) case maps
-    // to kai's ReLU. Leaky-ReLU (alpha != 0) is not supported.
-    if (e.eltwise.alg == alg_kind::eltwise_relu && e.eltwise.alpha == 0.0f) {
-        act_type = KAI_ACT_RELU;
-        return true;
-    }
-    // clip(0, beta) is a bounded ReLU with upper bound beta.
-    if (e.eltwise.alg == alg_kind::eltwise_clip && e.eltwise.alpha == 0.0f
-            && e.eltwise.beta >= 0.0f) {
-        act_type = KAI_ACT_BRELU;
-        act_bound = e.eltwise.beta;
-        return true;
-    }
-    return false;
-}
-
-kai::ops::Activation make_kai_activation(int act_type, float act_bound) {
-    switch (act_type) {
-        case KAI_ACT_RELU:
-            return kai::ops::Activation(kai::ops::Activation::Type::ReLU);
-        case KAI_ACT_BRELU:
-            return kai::ops::Activation(
-                    kai::ops::Activation::Type::BoundedReLU, act_bound);
-        default: return kai::ops::Activation {};
-    }
-}
-
 } // namespace
 
 bool kai_convolution_fwd_t::pd_t::swd_dt(

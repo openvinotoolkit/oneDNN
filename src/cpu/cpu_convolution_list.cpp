@@ -69,6 +69,7 @@ using namespace dnnl::impl::cpu::x64;
 #include "cpu/aarch64/jit_sve_convolution.hpp"
 #include "cpu/aarch64/jit_uni_dw_convolution.hpp"
 #include "cpu/aarch64/kai_convolution.hpp"
+#include "cpu/aarch64/kai_depthwise_convolution.hpp"
 #include "cpu/aarch64/kai_wino_convolution.hpp"
 using namespace dnnl::impl::cpu::aarch64;
 #endif
@@ -275,6 +276,7 @@ const std::map<pk_dt_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map()
             CPU_INSTANCE_AVX2(brgemm_1x1_convolution_fwd_t, avx2_vnni_2)
             CPU_INSTANCE_AVX2(brgemm_convolution_fwd_t, avx2_vnni_2)
             CPU_INSTANCE_AARCH64(kai_wino_convolution_fwd_t)
+            CPU_INSTANCE_AARCH64(kai_depthwise_convolution_fwd_t)
             CPU_INSTANCE_AARCH64(kai_convolution_fwd_t)
             CPU_INSTANCE(ref_convolution_fwd_t)
             CPU_INSTANCE(ref_fused_convolution_fwd_t)

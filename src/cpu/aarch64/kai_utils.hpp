@@ -42,6 +42,63 @@ inline CPUInfo *get_cpu_info() {
     return &ci;
 }
 
+// Encoding for a fused activation extracted from an attribute post-op chain.
+// Stored as plain data so that primitive pd headers do not need to pull in the
+// KleidiAI headers.
+enum kai_activation_kind {
+    KAI_ACT_NONE = 0,
+    KAI_ACT_RELU = 1,
+    KAI_ACT_BRELU = 2
+};
+
+// KleidiAI's GEMM/depthwise epilogue can fuse a ReLU / bounded-ReLU activation
+// applied after the (optional) bias add. Translate a oneDNN post-op chain into
+// that activation. Only a single eltwise post-op that maps exactly onto one of
+// those activations is accepted; any other post-op (sum, binary, scaled/leaky
+// eltwise, or a longer chain) is rejected so that such primitives fall back to
+// a reference implementation instead of silently dropping the post-op.
+inline bool kai_activation_from_post_ops(
+        const primitive_attr_t *attr, int &act_type, float &act_bound) {
+    act_type = KAI_ACT_NONE;
+    act_bound = 0.0f;
+
+    const auto &po = attr->post_ops_;
+    if (po.len() == 0) return true;
+    if (po.len() != 1) return false;
+
+    const auto &e = po.entry_[0];
+    if (e.kind != primitive_kind::eltwise) return false;
+    // A non-unit output scale would need to multiply the epilogue result, which
+    // the kai activator does not do.
+    if (e.eltwise.scale != 1.0f) return false;
+
+    // ReLU: alpha is the negative slope; only the plain (alpha == 0) case maps
+    // to kai's ReLU. Leaky-ReLU (alpha != 0) is not supported.
+    if (e.eltwise.alg == alg_kind::eltwise_relu && e.eltwise.alpha == 0.0f) {
+        act_type = KAI_ACT_RELU;
+        return true;
+    }
+    // clip(0, beta) is a bounded ReLU with upper bound beta.
+    if (e.eltwise.alg == alg_kind::eltwise_clip && e.eltwise.alpha == 0.0f
+            && e.eltwise.beta >= 0.0f) {
+        act_type = KAI_ACT_BRELU;
+        act_bound = e.eltwise.beta;
+        return true;
+    }
+    return false;
+}
+
+inline kai::ops::Activation make_kai_activation(int act_type, float act_bound) {
+    switch (act_type) {
+        case KAI_ACT_RELU:
+            return kai::ops::Activation(kai::ops::Activation::Type::ReLU);
+        case KAI_ACT_BRELU:
+            return kai::ops::Activation(
+                    kai::ops::Activation::Type::BoundedReLU, act_bound);
+        default: return kai::ops::Activation {};
+    }
+}
+
 inline int interleave_by(const kai::ops::WeightFormat wf) {
     return (static_cast<int>(wf) >> 8) & 0xFFF;
 }
