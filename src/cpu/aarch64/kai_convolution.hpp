@@ -57,6 +57,11 @@ struct kai_convolution_fwd_t : public primitive_t {
         bool src_channels_last_ = true;
         bool dst_channels_last_ = true;
         int wei_k_stride_dim_ = 1;
+        // Fused activation extracted from the attribute post-ops. Stored as
+        // plain data (0 = none, 1 = ReLU, 2 = bounded ReLU) so this header does
+        // not need to pull in the KleidiAI headers.
+        int activation_type_ = 0;
+        float activation_bound_ = 0.0f;
 
         bool swd_dt(data_type_t s, data_type_t w, data_type_t d) const;
 

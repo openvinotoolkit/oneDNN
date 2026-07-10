@@ -306,6 +306,62 @@ bool regular_swd_ok(const cpu_convolution_fwd_pd_t &pd) {
                     && utils::one_of(dst_dt, f16, f32));
 }
 
+// Encoding for kai_convolution_fwd_t::pd_t::activation_type_.
+enum kai_activation_kind {
+    KAI_ACT_NONE = 0,
+    KAI_ACT_RELU = 1,
+    KAI_ACT_BRELU = 2
+};
+
+// KleidiAI's GEMM epilogue can fuse a ReLU / bounded-ReLU activation applied
+// after the (optional) bias add (see kai/ops/gemm/bias_adder.hpp). Translate a
+// oneDNN post-op chain into that activation. Only a single eltwise post-op that
+// maps exactly onto one of those activations is accepted; any other post-op
+// (sum, binary, scaled/leaky eltwise, or a longer chain) is rejected so that
+// such convolutions fall back to a reference implementation instead of silently
+// dropping the post-op.
+bool kai_activation_from_post_ops(
+        const primitive_attr_t *attr, int &act_type, float &act_bound) {
+    act_type = KAI_ACT_NONE;
+    act_bound = 0.0f;
+
+    const auto &po = attr->post_ops_;
+    if (po.len() == 0) return true;
+    if (po.len() != 1) return false;
+
+    const auto &e = po.entry_[0];
+    if (e.kind != primitive_kind::eltwise) return false;
+    // A non-unit output scale would need to multiply the epilogue result, which
+    // the kai activator does not do.
+    if (e.eltwise.scale != 1.0f) return false;
+
+    // ReLU: alpha is the negative slope; only the plain (alpha == 0) case maps
+    // to kai's ReLU. Leaky-ReLU (alpha != 0) is not supported.
+    if (e.eltwise.alg == alg_kind::eltwise_relu && e.eltwise.alpha == 0.0f) {
+        act_type = KAI_ACT_RELU;
+        return true;
+    }
+    // clip(0, beta) is a bounded ReLU with upper bound beta.
+    if (e.eltwise.alg == alg_kind::eltwise_clip && e.eltwise.alpha == 0.0f
+            && e.eltwise.beta >= 0.0f) {
+        act_type = KAI_ACT_BRELU;
+        act_bound = e.eltwise.beta;
+        return true;
+    }
+    return false;
+}
+
+kai::ops::Activation make_kai_activation(int act_type, float act_bound) {
+    switch (act_type) {
+        case KAI_ACT_RELU:
+            return kai::ops::Activation(kai::ops::Activation::Type::ReLU);
+        case KAI_ACT_BRELU:
+            return kai::ops::Activation(
+                    kai::ops::Activation::Type::BoundedReLU, act_bound);
+        default: return kai::ops::Activation {};
+    }
+}
+
 } // namespace
 
 bool kai_convolution_fwd_t::pd_t::swd_dt(
@@ -360,13 +416,20 @@ status_t kai_convolution_fwd_t::pd_t::init(engine_t *engine) {
     const bool requested_fixed_format
             = weights_md_.format_kind == format_kind::any;
 
+    // KleidiAI's GEMM epilogue can fuse a ReLU / bounded-ReLU activation, so
+    // post-ops are allowed in the attribute check; kai_activation_from_post_ops
+    // below rejects any post-op chain that cannot be represented, forcing a
+    // reference fallback for those cases.
     bool ok = true && is_fwd()
             && set_default_alg_kind(alg_kind::convolution_direct)
             && ndims() == 4 && !with_groups() && regular_swd_ok(*this)
             && !has_zero_dim_memory() && !has_runtime_dims_or_strides()
             && attr()->has_default_values(primitive_mask_t::fpmath_mode
-                            | primitive_mask_t::accumulation_mode,
+                            | primitive_mask_t::accumulation_mode
+                            | primitive_mask_t::post_ops,
                     dst_md()->data_type)
+            && kai_activation_from_post_ops(
+                    attr(), activation_type_, activation_bound_)
             && set_default_formats()
             && attr_.set_default_formats(dst_md()) == status::success;
     if (!ok) return status::unimplemented;
@@ -437,8 +500,9 @@ status_t kai_convolution_fwd_t::pd_t::init(engine_t *engine) {
                     = static_cast<unsigned int>(indirect_ ? MB() : 1);
             return std::make_shared<kai::ops::GemmArgs>(get_cpu_info(), m, OC(),
                     k, k_sections, nbatches, 1, indirect_,
-                    kai::ops::Activation {}, dnnl_get_current_num_threads(),
-                    fixed_format, fast_mode_, false, cfg_.get());
+                    make_kai_activation(activation_type_, activation_bound_),
+                    dnnl_get_current_num_threads(), fixed_format, fast_mode_,
+                    false, cfg_.get());
         };
 
         args_ = make_args(try_fixed_format);
