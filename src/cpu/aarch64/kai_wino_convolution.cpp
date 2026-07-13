@@ -19,9 +19,11 @@
 
 #include <algorithm>
 #include <memory>
+#include <mutex>
 
 #include "common/dnnl_thread.hpp"
 #include "common/memory_tracking.hpp"
+#include "common/nstl.hpp"
 #include "common/utils.hpp"
 
 #include "kai/ops/conv/winograd.hpp"
@@ -169,13 +171,12 @@ status_t kai_wino_convolution_fwd_t::pd_t::init(engine_t *engine) {
             wds.input_matrix_size_bytes, 1, 64, 64);
     scratchpad.book(memory_tracking::names::key_gemm_tmp_buffer,
             wds.output_matrix_size_bytes, 1, 64, 64);
-    scratchpad.book(memory_tracking::names::key_conv_permuted_weights,
-            wds.weight_matrix_size_bytes, 1, 64, 64);
 
-    if (run_weight_reorder_) {
-        scratchpad.book(memory_tracking::names::key_matmul_wei_trans,
-                kernel->get_B_pretransposed_array_size(), 1, 64, 64);
-    }
+    // The winograd-domain weights (key_conv_permuted_weights) and the optional
+    // kai-pretransposed weights (key_matmul_wei_trans) only depend on the
+    // constant convolution weights. They are computed once and cached in
+    // primitive-owned buffers (see weight_cache_t) rather than booked in the
+    // transient global scratchpad, so they are not recomputed on every execute.
 
     return status::success;
 }
@@ -185,8 +186,17 @@ status_t kai_wino_convolution_fwd_t::init(engine_t *engine) {
     return status::success;
 }
 
+kai_wino_convolution_fwd_t::weight_cache_t::~weight_cache_t() {
+    if (wino_weights) impl::free(wino_weights);
+    if (pretransposed) impl::free(pretransposed);
+}
+
+kai_wino_convolution_fwd_t::~kai_wino_convolution_fwd_t() = default;
+
 template <typename data_t>
-status_t execute_wino_forward(const kai_wino_convolution_fwd_t::pd_t *pd, const exec_ctx_t &ctx) {
+status_t execute_wino_forward(const kai_wino_convolution_fwd_t::pd_t *pd,
+        kai_wino_convolution_fwd_t::weight_cache_t &wcache,
+        const exec_ctx_t &ctx) {
     std::unique_ptr<kai::ops::IGemmCommon> kernel = pd->create_kai_gemm();
     if (!kernel) return status::runtime_error;
 
@@ -204,11 +214,6 @@ status_t execute_wino_forward(const kai_wino_convolution_fwd_t::pd_t *pd, const 
             = scratchpad.get<data_t>(memory_tracking::names::key_conv_gemm_col);
     auto *wino_output = scratchpad.get<data_t>(
             memory_tracking::names::key_gemm_tmp_buffer);
-    auto *wino_weights = scratchpad.get<data_t>(
-            memory_tracking::names::key_conv_permuted_weights);
-    void *pretransposed_weights = pd->run_weight_reorder_
-            ? scratchpad.get<void>(memory_tracking::names::key_matmul_wei_trans)
-            : nullptr;
     void *working_space = pd->working_size_ != 0
             ? scratchpad.get<void>(
                       memory_tracking::names::key_gemm_asm_tmp_buffer)
@@ -262,24 +267,58 @@ status_t execute_wino_forward(const kai_wino_convolution_fwd_t::pd_t *pd, const 
     const size_t dst_col_stride = static_cast<size_t>(
             pd->dst_md()->format_desc.blocking.strides[w_dim]);
 
-    parallel(num_threads, [&](int ithr, int nthr) {
-        pd->wino_impl_->weight_transform->execute(*pd->conv_args_, raw_wei,
-                wei_row_stride, wei_col_stride, wei_ic_stride, wino_weights,
-                wds, ithr, nthr);
-    });
+    // The winograd weight transform and the optional kai pretranspose only
+    // depend on the convolution weights, which for inference are graph
+    // constants that never change for the lifetime of this primitive (the same
+    // assumption ACL relies on when it packs weights once and caches them).
+    // Compute them once into primitive-owned buffers and reuse them on every
+    // subsequent inference instead of recomputing from the transient scratchpad
+    // each time. A mutex serialises the first-time population so concurrent
+    // executes on multiple streams stay safe; after that it is a cheap
+    // already-populated check.
+    data_t *wino_weights = nullptr;
+    void *pretransposed_weights = nullptr;
+    {
+        std::lock_guard<std::mutex> guard(wcache.mtx);
+        if (wcache.wino_weights == nullptr) {
+            wcache.wino_weights
+                    = impl::malloc(wds.weight_matrix_size_bytes, 64);
+            if (!wcache.wino_weights) return status::out_of_memory;
+            if (pd->run_weight_reorder_) {
+                wcache.pretransposed = impl::malloc(
+                        kernel->get_B_pretransposed_array_size(), 64);
+                if (!wcache.pretransposed) return status::out_of_memory;
+            }
+
+            auto *cached_wino_weights
+                    = static_cast<data_t *>(wcache.wino_weights);
+            parallel(num_threads, [&](int ithr, int nthr) {
+                pd->wino_impl_->weight_transform->execute(*pd->conv_args_,
+                        raw_wei, wei_row_stride, wei_col_stride, wei_ic_stride,
+                        cached_wino_weights, wds, ithr, nthr);
+            });
+
+            if (pd->run_weight_reorder_) {
+                const unsigned int wsize
+                        = kernel->get_B_pretranspose_window_size();
+                parallel(num_threads, [&](int ithr, int nthr) {
+                    const unsigned int start = (ithr * wsize) / nthr;
+                    const unsigned int end = ((ithr + 1) * wsize) / nthr;
+                    if (start < end) {
+                        kernel->pretranspose_B_array_part_generic(
+                                wcache.pretransposed, cached_wino_weights,
+                                static_cast<int>(wds.weight_ld_row),
+                                static_cast<int>(wds.weight_ld_matrix), false,
+                                start, end);
+                    }
+                });
+            }
+        }
+        wino_weights = static_cast<data_t *>(wcache.wino_weights);
+        pretransposed_weights = wcache.pretransposed;
+    }
 
     if (pd->run_weight_reorder_) {
-        const unsigned int wsize = kernel->get_B_pretranspose_window_size();
-        parallel(num_threads, [&](int ithr, int nthr) {
-            const unsigned int start = (ithr * wsize) / nthr;
-            const unsigned int end = ((ithr + 1) * wsize) / nthr;
-            if (start < end) {
-                kernel->pretranspose_B_array_part_generic(pretransposed_weights,
-                        wino_weights, static_cast<int>(wds.weight_ld_row),
-                        static_cast<int>(wds.weight_ld_matrix), false, start,
-                        end);
-            }
-        });
         kernel->set_pretransposed_B_data(pretransposed_weights);
     }
 
@@ -330,9 +369,9 @@ status_t execute_wino_forward(const kai_wino_convolution_fwd_t::pd_t *pd, const 
     });
 
     parallel(num_threads, [&](int ithr, int nthr) {
-        pd->wino_impl_->output_transform->execute(*pd->conv_args_,
-                wino_output, wds, bias_base, dst_base, dst_batch_stride,
-                dst_row_stride, dst_col_stride, working_space, ithr, nthr);
+        pd->wino_impl_->output_transform->execute(*pd->conv_args_, wino_output,
+                wds, bias_base, dst_base, dst_batch_stride, dst_row_stride,
+                dst_col_stride, working_space, ithr, nthr);
     });
 
     return status::success;
@@ -340,9 +379,9 @@ status_t execute_wino_forward(const kai_wino_convolution_fwd_t::pd_t *pd, const 
 
 status_t kai_wino_convolution_fwd_t::execute(const exec_ctx_t &ctx) const {
     if (pd()->src_md()->data_type == data_type::f32)
-        return execute_wino_forward<float>(pd(), ctx);
+        return execute_wino_forward<float>(pd(), wcache_, ctx);
     if (pd()->src_md()->data_type == data_type::f16)
-        return execute_wino_forward<__fp16>(pd(), ctx);
+        return execute_wino_forward<__fp16>(pd(), wcache_, ctx);
     return status::runtime_error;
 }
 

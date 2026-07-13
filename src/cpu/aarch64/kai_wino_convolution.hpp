@@ -17,6 +17,8 @@
 #ifndef CPU_AARCH64_KAI_WINO_CONVOLUTION_HPP
 #define CPU_AARCH64_KAI_WINO_CONVOLUTION_HPP
 
+#include <mutex>
+
 #include "common/c_types_map.hpp"
 #include "common/primitive.hpp"
 #include "common/type_helpers.hpp"
@@ -60,14 +62,27 @@ struct kai_wino_convolution_fwd_t : public primitive_t {
     using data_t = typename prec_traits_t<data_type::f32>::type;
 
     kai_wino_convolution_fwd_t(const pd_t *apd) : primitive_t(apd) {}
+    ~kai_wino_convolution_fwd_t() override;
 
     status_t init(engine_t *engine) override;
     status_t execute(const exec_ctx_t &ctx) const override;
 
+    // The winograd weight transform (and optional kai pretranspose) only depend
+    // on the convolution weights, which are graph constants for inference, so
+    // they are computed once on the first execute and cached in primitive-owned
+    // buffers instead of being redone every execute (the global scratchpad is
+    // transient and would otherwise force recomputation each inference).
+    struct weight_cache_t {
+        std::mutex mtx;
+        void *wino_weights = nullptr; // winograd-domain weights
+        void *pretransposed = nullptr; // kai-packed weights (optional)
+        ~weight_cache_t();
+    };
+    mutable weight_cache_t wcache_;
+
 private:
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 };
-
 
 } // namespace aarch64
 } // namespace cpu
