@@ -41,7 +41,7 @@ struct kai_matmul_t : public primitive_t {
     struct pd_t : public cpu::matmul::cpu_matmul_pd_t {
         using cpu_matmul_pd_t::cpu_matmul_pd_t;
 
-        DECLARE_COMMON_PD_T("kai", kai_matmul_t, USE_GLOBAL_SCRATCHPAD);
+        DECLARE_COMMON_PD_T("kleidiai", kai_matmul_t, USE_GLOBAL_SCRATCHPAD);
 
         status_t init(engine_t *engine);
         std::unique_ptr<kai::ops::IGemmCommon> create_kai_gemm() const;
