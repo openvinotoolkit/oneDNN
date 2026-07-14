@@ -94,7 +94,8 @@ struct quant_entry_t : public c_compatible {
         return status::success;
     }
     status_t set_zero_points(
-            const dims_t dims, int ndims, data_type_t data_type, int mask) {
+            const dims_t dims, int ndims, data_type_t data_type, int mask,
+            quantization_mode_t qmode = quantization_mode::static_sazp) {
         type_ = type_ | DNNL;
         is_set_wei = true;
         ndims_wei = ndims;
@@ -105,6 +106,7 @@ struct quant_entry_t : public c_compatible {
             utils::array_copy(group_dims_, dims, group_ndims_);
         }
         data_type_wei = data_type;
+        qmode_ = qmode;
         return status::success;
     }
     status_t set(const quant_entry_t &other) {
@@ -318,8 +320,7 @@ struct quant_entries_t : public c_compatible {
             quantization_mode_t qmode = quantization_mode::static_sazp) {
         if (!check_arg(arg)) return status::invalid_arguments;
         if (arg == DNNL_ARG_WEIGHTS) {
-            CHECK(entries_[arg].set_zero_points(
-                    group_dims, group_ndims, data_type, mask));
+            CHECK(entries_[arg].set_zero_points(group_dims, group_ndims, data_type, mask, qmode));
         } else {
             CHECK(entries_[arg].set(mask, data_type, group_ndims, group_dims,
                     is_host_scalar, qmode));
