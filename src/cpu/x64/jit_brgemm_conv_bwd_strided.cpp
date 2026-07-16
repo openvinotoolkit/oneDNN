@@ -147,7 +147,7 @@ status_t brgemm_convolution_bwd_strided_t<isa>::pd_t::init(engine_t *engine) {
 
     CHECK(brgemm_convolution_bwd_utils::init_conf(jcp_, isa, desc_,
             diff_dst_md_, weights_md_, diff_src_md_, bias_md_, attr_,
-            dnnl_get_max_threads()));
+            dnnl_get_max_threads_for_scratchpad()));
 
     brgs_sz_ = 2 * 2 * 2 * 2;
     brgs_ = std::make_shared<brgemm_containers::brgemm_desc_container_t>();

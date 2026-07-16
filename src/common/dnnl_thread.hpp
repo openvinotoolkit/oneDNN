@@ -57,6 +57,9 @@
 inline int dnnl_get_max_threads() {
     return 1;
 }
+inline int dnnl_get_max_threads_for_scratchpad() {
+    return dnnl_get_max_threads();
+}
 inline int dnnl_in_parallel() {
     return 0;
 }
@@ -67,6 +70,9 @@ inline void dnnl_thr_barrier() {}
 #define DNNL_THR_SYNC 1
 inline int dnnl_get_max_threads() {
     return omp_get_max_threads();
+}
+inline int dnnl_get_max_threads_for_scratchpad() {
+    return dnnl_get_max_threads();
 }
 inline int dnnl_in_parallel() {
     return omp_in_parallel();
@@ -82,6 +88,9 @@ inline void dnnl_thr_barrier() {
 #define DNNL_THR_SYNC 0
 inline int dnnl_get_max_threads() {
     return tbb::this_task_arena::max_concurrency();
+}
+inline int dnnl_get_max_threads_for_scratchpad() {
+    return dnnl_get_max_threads();
 }
 inline int dnnl_in_parallel() {
     return 0;
@@ -119,8 +128,10 @@ dnnl::threadpool_interop::threadpool_iface *get_active_threadpool();
 
 // returns the maximum concurrency available in the given global context
 int get_max_concurrency();
+int get_scratchpad_concurrency();
 
 int &get_threadlocal_max_concurrency();
+int &get_threadlocal_scratchpad_concurrency();
 
 } // namespace threadpool_utils
 } // namespace impl
@@ -135,6 +146,14 @@ inline int dnnl_get_max_threads() {
 
     // Use the default max_concurrency only when no tp is passed by
     // user (e.g. primitive creation).
+    return tp ? std::max(1, tp->get_num_threads()) : max_concurrency;
+}
+inline int dnnl_get_max_threads_for_scratchpad() {
+    using namespace dnnl::impl::threadpool_utils;
+    dnnl::threadpool_interop::threadpool_iface *tp = get_active_threadpool();
+
+    int max_concurrency = get_scratchpad_concurrency();
+
     return tp ? std::max(1, tp->get_num_threads()) : max_concurrency;
 }
 inline int dnnl_in_parallel() {

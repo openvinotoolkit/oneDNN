@@ -39,4 +39,22 @@ dnnl_status_t dnnl_threadpool_interop_get_max_concurrency(
     return status::success;
 }
 
+dnnl_status_t dnnl_threadpool_interop_set_scratchpad_concurrency(
+        int max_concurrency) {
+    using namespace dnnl::impl;
+    threadpool_utils::get_threadlocal_scratchpad_concurrency()
+            = std::max(1, max_concurrency);
+    return status::success;
+}
+
+dnnl_status_t dnnl_threadpool_interop_get_scratchpad_concurrency(
+        int *max_concurrency) {
+    using namespace dnnl::impl;
+    if (max_concurrency == nullptr) return status::invalid_arguments;
+
+    *max_concurrency
+            = threadpool_utils::get_threadlocal_scratchpad_concurrency();
+    return status::success;
+}
+
 #endif

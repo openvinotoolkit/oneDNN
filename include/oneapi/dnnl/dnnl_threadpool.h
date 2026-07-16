@@ -79,6 +79,26 @@ dnnl_status_t DNNL_API dnnl_threadpool_interop_set_max_concurrency(
 dnnl_status_t DNNL_API dnnl_threadpool_interop_get_max_concurrency(
         int *max_concurrency);
 
+/// Sets the maximum concurrency assumed by oneDNN when computing
+/// scratchpad sizes outside a parallel call.
+///
+/// @param max_concurrency The maximum scratchpad concurrency assumed by oneDNN
+/// when outside a parallel call. This is a threadlocal setting.
+/// @returns #dnnl_success on success and a status describing the
+/// error otherwise.
+dnnl_status_t DNNL_API dnnl_threadpool_interop_set_scratchpad_concurrency(
+        int max_concurrency);
+
+/// Gets the maximum concurrency assumed by oneDNN when computing
+/// scratchpad sizes outside a parallel call.
+///
+/// @param max_concurrency The maximum scratchpad concurrency assumed by oneDNN
+/// when outside a parallel call. This is a threadlocal setting.
+/// @returns #dnnl_success on success and a status describing the
+/// error otherwise.
+dnnl_status_t DNNL_API dnnl_threadpool_interop_get_scratchpad_concurrency(
+        int *max_concurrency);
+
 /// @copydoc dnnl_sgemm()
 /// @param threadpool A pointer to a threadpool interface (only when built with
 ///     the THREADPOOL CPU runtime).
