@@ -152,8 +152,7 @@ inline int dnnl_get_max_threads_for_scratchpad() {
     using namespace dnnl::impl::threadpool_utils;
     dnnl::threadpool_interop::threadpool_iface *tp = get_active_threadpool();
 
-    int max_concurrency
-            = dnnl::impl::threadpool_utils::get_scratchpad_concurrency();
+    int max_concurrency = get_scratchpad_concurrency();
 
     return tp ? std::max(1, tp->get_num_threads()) : max_concurrency;
 }
