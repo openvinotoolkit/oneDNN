@@ -1599,7 +1599,7 @@ struct jit_uni_reorder_kernel_f32_t : public kernel_t, public jit_generator_t {
             Label loop, if_no_tail, if_end;
 
             if (curr_node_has_tail) {
-                const size_t reg_bytes = X_TMP_0.getBit() / 8;
+                const int reg_bytes = static_cast<int>(X_TMP_0.getBit() / 8);
                 if (prb_.nodes[curr_node_id].is_parent_empty()) {
                     mov(reg_loop_cnt, tail_size);
                     // Put info that node is being processed with tail.
