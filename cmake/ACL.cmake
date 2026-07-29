@@ -25,7 +25,7 @@ if(NOT DNNL_TARGET_ARCH MATCHES "^(AARCH64|ARM)$")
     return()
 endif()
 
-if(NOT DNNL_AARCH64_USE_ACL)
+if(NOT DNNL_USE_ACL)
     return()
 endif()
 

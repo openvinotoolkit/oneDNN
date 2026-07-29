@@ -26,10 +26,11 @@
 using namespace dnnl::impl::cpu::x64;
 #elif DNNL_AARCH64
 #include "cpu/aarch64/jit_uni_softmax.hpp"
-#if defined(DNNL_AARCH64_USE_ACL)
-#include "cpu/aarch64/acl_softmax.hpp"
-#endif
 using namespace dnnl::impl::cpu::aarch64;
+#endif
+#if DNNL_USE_ACL
+#include "cpu/acl/acl_softmax.hpp"
+using namespace dnnl::impl::cpu::acl;
 #endif
 
 namespace dnnl {
@@ -48,18 +49,15 @@ const std::map<pk_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map() {
             CPU_INSTANCE_X64(jit_uni_fork_softmax_fwd_t, avx512_core)
             CPU_INSTANCE_X64(jit_uni_fork_softmax_fwd_t, avx2)
             CPU_INSTANCE_X64(jit_uni_fork_softmax_fwd_t, sse41)
-            CPU_INSTANCE_AARCH64(jit_uni_softmax_fwd_t, sve_512)
-            CPU_INSTANCE_AARCH64(jit_uni_softmax_fwd_t, sve_256)
-            CPU_INSTANCE_AARCH64(jit_uni_softmax_fwd_t, sve_128)
-            CPU_INSTANCE_AARCH64_ACL(acl_softmax_fwd_t)
+            CPU_INSTANCE_AARCH64(jit_uni_softmax_fwd_t, sve)
+            CPU_INSTANCE_AARCH64(jit_uni_softmax_fwd_t, asimd)
+            CPU_INSTANCE_ACL(acl_softmax_fwd_t)
             CPU_INSTANCE(ref_softmax_fwd_t)
             nullptr,
         }},
         {{backward}, REG_BWD_PK({
             CPU_INSTANCE_X64(jit_uni_softmax_bwd_t)
-            CPU_INSTANCE_AARCH64(jit_uni_softmax_bwd_t, sve_512)
-            CPU_INSTANCE_AARCH64(jit_uni_softmax_bwd_t, sve_256)
-            CPU_INSTANCE_AARCH64(jit_uni_softmax_bwd_t, sve_128)
+            CPU_INSTANCE_AARCH64(jit_uni_softmax_bwd_t, sve)
             CPU_INSTANCE(ref_softmax_bwd_t)
             nullptr,
         })},
