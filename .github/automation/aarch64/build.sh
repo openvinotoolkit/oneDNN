@@ -61,7 +61,7 @@ if [[ "$ONEDNN_ACTION" == "configure" ]]; then
         cmake \
             "${GENERATOR_ARGS[@]}" \
             -Bbuild -S. \
-            -DDNNL_AARCH64_USE_ACL=ON \
+            -DDNNL_USE_ACL=ON \
             -DONEDNN_BUILD_GRAPH=$ONEDNN_BUILD_GRAPH \
             -DDNNL_CPU_RUNTIME=$ONEDNN_THREADING \
             -DDNNL_WERROR=ON \
