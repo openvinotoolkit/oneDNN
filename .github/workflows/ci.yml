@@ -164,8 +164,8 @@ jobs:
       fail-fast: true
       matrix:
         config: [
-          { name: Ubuntu x64 GCC, cc: gcc, cxx: g++, threading: omp, skip_tests_regex: "test_iface_attr|test_pooling_forward|test_benchdnn_modeC_concat_smoke_cpu|test_benchdnn_modeC_conv_smoke_cpu|test_benchdnn_modeC_deconv_smoke_cpu|test_benchdnn_modeC_pool_smoke_cpu|test_benchdnn_modeC_reorder_smoke_cpu|cpu-tutorials-matmul-sgemm-and-matmul-cpp|cpu-tutorials-matmul-weights-decompression-matmul-cpp|test_iface_sparse" },
-          { name: Ubuntu x64 Clang, cc: clang, cxx: clang++, threading: omp, skip_tests_regex: "test_iface_attr|test_pooling_forward|test_benchdnn_modeC_concat_smoke_cpu|test_benchdnn_modeC_conv_smoke_cpu|test_benchdnn_modeC_deconv_smoke_cpu|test_benchdnn_modeC_pool_smoke_cpu|test_benchdnn_modeC_reorder_smoke_cpu|cpu-tutorials-matmul-sgemm-and-matmul-cpp|cpu-tutorials-matmul-weights-decompression-matmul-cpp|test_iface_sparse" }
+          { name: Ubuntu x64 GCC, cc: gcc, cxx: g++, threading: omp, skip_tests_regex: "test_iface_attr|test_pooling_forward|test_benchdnn_modeC_concat_smoke_cpu|test_benchdnn_modeC_conv_smoke_cpu|test_benchdnn_modeC_deconv_smoke_cpu|test_benchdnn_modeC_pool_smoke_cpu|test_benchdnn_modeC_reorder_smoke_cpu|test_eltwise|test_benchdnn_modeC_eltwise_smoke_cpu|cpu-tutorials-matmul-sgemm-and-matmul-cpp|cpu-tutorials-matmul-weights-decompression-matmul-cpp|test_iface_sparse" },
+          { name: Ubuntu x64 Clang, cc: clang, cxx: clang++, threading: omp, skip_tests_regex: "test_iface_attr|test_pooling_forward|test_benchdnn_modeC_concat_smoke_cpu|test_benchdnn_modeC_conv_smoke_cpu|test_benchdnn_modeC_deconv_smoke_cpu|test_benchdnn_modeC_pool_smoke_cpu|test_benchdnn_modeC_reorder_smoke_cpu|test_eltwise|test_benchdnn_modeC_eltwise_smoke_cpu|cpu-tutorials-matmul-sgemm-and-matmul-cpp|cpu-tutorials-matmul-weights-decompression-matmul-cpp|test_iface_sparse" }
         ]
 
     name: ${{ matrix.config.name }}

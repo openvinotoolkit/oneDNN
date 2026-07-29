@@ -33,8 +33,8 @@ using namespace dnnl::impl::cpu::x64;
 using namespace dnnl::impl::cpu::aarch64;
 #endif
 #if defined(DNNL_AARCH64_USE_ACL)
-#include "cpu/acl/acl_deconvolution.hpp"
-using namespace dnnl::impl::cpu::acl;
+#include "cpu/aarch64/acl_deconvolution.hpp"
+using namespace dnnl::impl::cpu::aarch64;
 #endif
 
 namespace dnnl {
@@ -70,7 +70,7 @@ const std::map<pk_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map() {
             CPU_INSTANCE_AARCH64(brgemm_deconvolution_fwd_t, sve_256)
             CPU_INSTANCE_AARCH64(brgemm_deconvolution_fwd_t, sve_128)
             CPU_INSTANCE_AARCH64(jit_sve_512_core_x8s8s32x_deconvolution_fwd_t)
-            CPU_INSTANCE_ACL(acl_deconvolution_fwd_t)
+            CPU_INSTANCE_AARCH64_ACL(acl_deconvolution_fwd_t)
             CPU_INSTANCE(ref_deconvolution_fwd_t)
             nullptr,
         }},

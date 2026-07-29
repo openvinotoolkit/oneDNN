@@ -27,6 +27,7 @@ SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 source ${SCRIPT_DIR}/common.sh
 
 ACL_BUILD_TYPE=${ACL_BUILD_TYPE:-"Release"}
+ACL_COMPILER_CACHE=${ACL_COMPILER_CACHE:-""}
 ACL_ROOT_DIR=${ACL_ROOT_DIR:-"${PWD}/ComputeLibrary"}
 ACL_REPO="https://github.com/ARM-software/ComputeLibrary.git"
 
@@ -73,7 +74,7 @@ elif [[ "$ACL_ACTION" == "build" ]]; then
     scons $MP Werror=0 asserts=${ACL_ASSERTS} neon=1 opencl=0 embed_kernels=0 \
         os=$ACL_OS arch=armv8.2-a build=native multi_isa=$ACL_MULTI_ISA_SUPPORT \
         fixed_format_kernels=1 cppthreads=0 openmp=$ACL_OPENMP examples=0 \
-        validation_tests=0
+        validation_tests=0 compiler_cache="${ACL_COMPILER_CACHE}"
     set +x
 else
     echo "Unknown action: $ACL_ACTION"

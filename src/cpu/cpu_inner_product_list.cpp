@@ -28,8 +28,8 @@
 #include "cpu/x64/matmul_inner_product.hpp"
 using namespace dnnl::impl::cpu::x64;
 #elif defined(DNNL_AARCH64_USE_ACL)
-#include "cpu/acl/acl_inner_product.hpp"
-using namespace dnnl::impl::cpu::acl;
+#include "cpu/aarch64/acl_inner_product.hpp"
+using namespace dnnl::impl::cpu::aarch64;
 #endif
 
 namespace dnnl {
@@ -57,7 +57,7 @@ const std::map<pk_dt_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map()
             CPU_INSTANCE_AMX(brgemm_inner_product_fwd_t, avx512_core_amx) // bf32
             CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx512_core)
             CPU_INSTANCE_AVX2(brgemm_inner_product_fwd_t, avx2)
-            CPU_INSTANCE_ACL(acl_inner_product_fwd_t)
+            CPU_INSTANCE_AARCH64_ACL(acl_inner_product_fwd_t)
             CPU_INSTANCE(gemm_inner_product_fwd_t, f32)
             CPU_INSTANCE(ref_inner_product_fwd_t)
             nullptr,
@@ -130,7 +130,7 @@ const std::map<pk_dt_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map()
             CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx512_core_bf16)
             CPU_INSTANCE_AVX512(gemm_bf16_inner_product_fwd_t, bf16)
             CPU_INSTANCE_AVX2(brgemm_inner_product_fwd_t, avx2_vnni_2)
-            CPU_INSTANCE_ACL(acl_inner_product_fwd_t)
+            CPU_INSTANCE_AARCH64_ACL(acl_inner_product_fwd_t)
             CPU_INSTANCE(ref_inner_product_fwd_t)
             nullptr,
         }},
@@ -230,7 +230,7 @@ const std::map<pk_dt_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map()
             CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx10_2_512)
             CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx512_core_fp16)
             CPU_INSTANCE_AVX2(brgemm_inner_product_fwd_t, avx2_vnni_2)
-            CPU_INSTANCE_ACL(acl_inner_product_fwd_t)
+            CPU_INSTANCE_AARCH64_ACL(acl_inner_product_fwd_t)
             CPU_INSTANCE(ref_inner_product_fwd_t)
             nullptr,
         }},
@@ -240,7 +240,7 @@ const std::map<pk_dt_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map()
          * in fp32 and weights are in bf16
          */
         {{forward, f32, bf16, f32}, {
-            CPU_INSTANCE_ACL(acl_inner_product_fwd_t)
+            CPU_INSTANCE_AARCH64_ACL(acl_inner_product_fwd_t)
             nullptr,
         }},
 
