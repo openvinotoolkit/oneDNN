@@ -683,7 +683,8 @@ void jit_uni_binary_injector_t<isa, Vmm>::compute_vector_range(
         const bool need_new_addr = is_start_idx || params_differ || load_addr;
         if (need_new_addr) {
             rhs1_arg_addr = prepare_rhs_arg_addr(vmm_idx, rhs_arg_idx, post_op,
-                    rhs_arg_params, rhs_broadcasting_strategy, need_new_addr,
+                    rhs_arg_params, rhs_broadcasting_strategy,
+                    is_start_idx || load_addr,
                     false);
         }
 
