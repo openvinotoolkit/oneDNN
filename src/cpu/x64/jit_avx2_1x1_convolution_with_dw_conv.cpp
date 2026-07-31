@@ -100,7 +100,8 @@ void jit_avx2_1x1_convolution_with_dw_conv_fwd_t::execute_forward(
             auto p = jit_1x1_conv_args_t();
 
             for (int h = 0; h < num_rows; h++) {
-                ih = nstl::max((oh + h) * jcp.stride_h - jcp.t_pad, 0);
+                ih = static_cast<int>(nstl::max<dim_t>(
+                        (oh + h) * jcp.stride_h - jcp.t_pad, 0));
 
                 if ((oh + h) < 0 || (oh + h) >= jcp.ih) {
                     for (int chb = ocb; chb < ocb + load_step; chb++) {
@@ -231,8 +232,10 @@ void jit_avx2_1x1_convolution_with_dw_conv_fwd_t::execute_forward(
             const int oh = os / jcp.ow;
             const int ow = os % jcp.ow;
 
-            const int ih = nstl::max(oh * jcp.stride_h - jcp.t_pad, 0);
-            const int iw = nstl::max(ow * jcp.stride_w - jcp.l_pad, 0);
+            const int ih = static_cast<int>(nstl::max<dim_t>(
+                    oh * jcp.stride_h - jcp.t_pad, 0));
+            const int iw = static_cast<int>(nstl::max<dim_t>(
+                    ow * jcp.stride_w - jcp.l_pad, 0));
 
             int ocb = ocbb * jcp.nb_load_blocking;
 
