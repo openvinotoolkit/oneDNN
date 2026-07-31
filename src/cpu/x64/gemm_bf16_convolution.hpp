@@ -448,7 +448,7 @@ private:
             const conv_gemm_conf_t &jcp, const acc_data_t *weights_reduce_base,
             diff_wei_data_t *weights_base) const;
     void bf16_bwd_weights_reduction_par_nspc(int ithr_mb, int nthr_mb,
-            size_t g_start, size_t g_end, const conv_gemm_conf_t &jcp,
+            dim_t g_start, dim_t g_end, const conv_gemm_conf_t &jcp,
             const acc_data_t *weights_reduce_base,
             diff_wei_data_t *weights_base) const;
 
