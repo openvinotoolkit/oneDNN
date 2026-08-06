@@ -256,8 +256,6 @@ private:
         std::unique_ptr<binary_injector::jit_uni_binary_injector_t<avx512_core>>
                 jit_binary_injector_;
 
-        void apply_postops(const bool apply_mask, const size_t out_offset,
-                const int vmm_idx);
         void generate() override;
         int vreg_dst_idx(int iter) {
             int idx = data_reg_base_idx_ + iter * compute_reg_step_ + 0;
