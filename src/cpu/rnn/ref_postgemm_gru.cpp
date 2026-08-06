@@ -358,7 +358,9 @@ void gru_bwd_part1_postgemm_template(T to_src, const rnn_utils::rnn_conf_t &rnn,
     // dht-1 (part) = dh * G0
     parallel_nd(rnn.mb, [&](dim_t i) {
         acc_data_t diff_attention = 0.0f;
+#if !defined(_MSC_VER)
         PRAGMA_OMP_SIMD(reduction(+ : diff_attention))
+#endif
         for (int j = 0; j < rnn.dhc; j++) {
             const float h = src_iter(i, j);
             const float dHt = diff_dst_iter(i, j) + diff_dst_layer(i, j);
