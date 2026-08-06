@@ -151,7 +151,9 @@ status_t simple_layer_normalization_fwd_t::execute_forward(
             float v_mean = 0, v_variance = 0;
             if (calculate_stats) {
                 if (!skip_mean) {
+#if !defined(_MSC_VER)
                     PRAGMA_OMP_SIMD(reduction(+ : v_mean))
+#endif
                     for (dim_t c = 0; c < C; ++c) {
                         float s = io::load_float_value(
                                 src_dt, src_ptr, c + C * offset);
@@ -160,7 +162,9 @@ status_t simple_layer_normalization_fwd_t::execute_forward(
                     v_mean /= C_f;
                 }
 
+#if !defined(_MSC_VER)
                 PRAGMA_OMP_SIMD(reduction(+ : v_variance))
+#endif
                 for (dim_t c = 0; c < C; ++c) {
                     float s = io::load_float_value(
                             src_dt, src_ptr, c + C * offset);
@@ -423,7 +427,9 @@ status_t simple_layer_normalization_bwd_t::execute_backward(
             mean_val = skip_mean ? 0.f : mean_ptr[offset];
             if (calculate_diff_stats) {
                 if (use_scale) {
+#if !defined(_MSC_VER)
                     PRAGMA_OMP_SIMD(reduction(+ : dd_gamma, dd_gamma_x))
+#endif
                     for (dim_t c = 0; c < C; c++) {
                         const size_t off = c + C * offset;
                         float s = io::load_float_value(src_dt, src_ptr, off);
@@ -433,7 +439,9 @@ status_t simple_layer_normalization_bwd_t::execute_backward(
                         dd_gamma_x += dd * scale[c] * (s - mean_val);
                     }
                 } else {
+#if !defined(_MSC_VER)
                     PRAGMA_OMP_SIMD(reduction(+ : dd_gamma, dd_gamma_x))
+#endif
                     for (dim_t c = 0; c < C; c++) {
                         const size_t off = c + C * offset;
                         float s = io::load_float_value(src_dt, src_ptr, off);

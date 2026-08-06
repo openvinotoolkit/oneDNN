@@ -159,7 +159,9 @@ status_t ref_softmax_fwd_t::execute_forward_dense(const exec_ctx_t &ctx) const {
         // sub + exp + sum
         int tail = channels_ % unroll_factor;
         for (dim_t i = 0; i < channels_ - tail; i += unroll_factor) {
+#if !defined(_MSC_VER)
             PRAGMA_OMP_SIMD(reduction(+ : space_denom))
+#endif
             for (int j = 0; j < unroll_factor; j++) {
                 float s = io::load_float_value(
                         src_d.data_type(), src_data, i + j);

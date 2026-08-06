@@ -784,7 +784,9 @@ status_t gemm_convolution_bwd_weights_t::execute_backward_weights_nspc(
                                 * jcp.ow * jcp.ngroups * jcp.oc;
                 const auto width_stride = static_cast<int>(jcp.ngroups * jcp.oc);
 
+#if !defined(_MSC_VER)
                 PRAGMA_OMP_SIMD(reduction(+ : db))
+#endif
                 for (int ow = 0; ow < jcp.ow; ++ow) {
                     db += diff_dst_arr[ow * width_stride];
                 }
@@ -946,7 +948,9 @@ status_t gemm_convolution_bwd_weights_t::execute_backward_weights_ncsp(
                 dim_t offset = offset_ + mb * jcp.ngroups * dst_step;
                 for_(dim_t od = 0; od < jcp.od; ++od)
                 for (dim_t oh = 0; oh < jcp.oh; ++oh) {
+#if !defined(_MSC_VER)
                     PRAGMA_OMP_SIMD(reduction(+ : db))
+#endif
                     for (dim_t ow = 0; ow < jcp.ow; ++ow) {
                         db += diff_dst[offset + ow];
                     }

@@ -385,7 +385,7 @@ status_t nspc_batch_normalization_bwd_t<d_type>::execute_backward(
                     _src = reinterpret_cast<const acc_data_t *>(src + s_off);
                 }
 
-#if CLANG_WA_02_SAFE_TO_USE_OMP_SIMD
+#if CLANG_WA_02_SAFE_TO_USE_OMP_SIMD && !defined(_MSC_VER)
                 PRAGMA_OMP_SIMD(simdlen(16))
 #endif
                 for (dim_t c = 0; c < nb_c_blk * c_blk; c++) {
