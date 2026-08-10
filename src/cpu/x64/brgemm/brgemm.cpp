@@ -83,7 +83,8 @@ void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
         const brgemm_batch_element_t *batch, void *ptr_C, void *scratch,
         const brgemm_dynamic_values_t *dynamic_values,
         const void *ptr_wei_scales, const void *ptr_wei_zero_points,
-        const void *ptr_src_scales, const void *ptr_src_grouped_sum, size_t ic) {
+        const void *ptr_src_scales, const void *ptr_src_grouped_sum,
+        size_t ic) {
     brgemm_kernel_params_t brgemm_p;
 
     brgemm_p.batch = batch;
@@ -119,7 +120,8 @@ void brgemm_kernel_execute(const brgemm_kernel_t *brg_kernel, int bs,
         const brgemm_batch_element_t *batch, void *ptr_C, void *scratch,
         const brgemm_dynamic_values_t *dynamic_values,
         const void *ptr_wei_scales, const void *ptr_wei_zero_points,
-        const void *ptr_src_scales, const void *ptr_src_grouped_sum, size_t ic) {
+        const void *ptr_src_scales, const void *ptr_src_grouped_sum,
+        size_t ic) {
     brgemm_kernel_params_t brgemm_p;
 
     brgemm_p.batch = batch;
@@ -153,7 +155,8 @@ void brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel, int bs,
         const brgemm_post_ops_data_t &post_ops_data, void *scratch,
         const brgemm_dynamic_values_t *dynamic_values,
         const void *ptr_wei_scales, const void *ptr_wei_zero_points,
-        const void *ptr_src_scales, const void *ptr_src_grouped_sum, size_t ic) {
+        const void *ptr_src_scales, const void *ptr_src_grouped_sum,
+        size_t ic) {
     brgemm_kernel_params_t brgemm_p;
 
     brgemm_p.batch = batch;
@@ -204,7 +207,8 @@ void brgemm_kernel_execute_postops(const brgemm_kernel_t *brg_kernel, int bs,
         const brgemm_post_ops_data_t &post_ops_data, void *scratch,
         const brgemm_dynamic_values_t *dynamic_values,
         const void *ptr_wei_scales, const void *ptr_wei_zero_points,
-        const void *ptr_src_scales, const void *ptr_src_grouped_sum, size_t ic) {
+        const void *ptr_src_scales, const void *ptr_src_grouped_sum,
+        size_t ic) {
     brgemm_kernel_params_t brgemm_p;
 
     brgemm_p.batch = batch;
@@ -257,8 +261,9 @@ status_t brgemm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
         impl::data_type_t dt_b, bool transA, bool transB,
         brgemm_layout_t layout, float alpha, float beta, dim_t LDA, dim_t LDB,
         dim_t LDC, dim_t M, dim_t N, dim_t K, const brgemm_strides_t *strides,
-        bool is_tf32,
-        bool is_weights_decompression, bool is_src_dynamic_quantization, const memory_desc_t *wei_md, const primitive_attr_t *attr) {
+        bool is_tf32, bool is_weights_decompression,
+        bool is_src_dynamic_quantization, const memory_desc_t *wei_md,
+        const primitive_attr_t *attr) {
     /*
     m - number of rows of the matrix op(A) and number of rows of the matrix C
     n - number of columns of the matrix op(B) and number of columns of the matrix C
@@ -274,7 +279,7 @@ status_t brgemm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
         B: ldb * n, LDB - ldb must be at least max(1, k)
         C: ldc * n, LDC - ldc must be at least max(1, m)
     */
-                    if (brg == nullptr) return status::invalid_arguments;
+    if (brg == nullptr) return status::invalid_arguments;
     if (transA || transB) return status::unimplemented;
 
     brg->with_wei_decomp = is_weights_decompression;
@@ -302,12 +307,13 @@ status_t brgemm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
         return status::unimplemented;
 
     if (utils::everyone_is(false, brg->is_int8, brg->is_bf16, brg->is_f32,
-                brg->is_f16/*, brg->is_fp8*/))
+                brg->is_f16 /*, brg->is_fp8*/))
         return status::unimplemented;
 
     // Only avx512_core_amx kernel supports u8 weights.
     if (!IMPLICATION(
-            brg->dt_b == u8, is_superset(brg->isa_impl, avx512_core_amx)) && !brg->with_wei_decomp)
+                brg->dt_b == u8, is_superset(brg->isa_impl, avx512_core_amx))
+            && !brg->with_wei_decomp)
         return status::unimplemented;
 
     const memory_desc_wrapper wei_d(wei_md);
@@ -324,21 +330,26 @@ status_t brgemm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
 
             auto ld_dim = wei_scales.get_dims()[0];
             brg->wei_decomp_scales_stride = ld_dim > 1 ? ld_dim : 0;
-            brg->wei_decomp_scales_group_size = wei_d.dims()[1] / wei_scales.get_dims()[1];
+            brg->wei_decomp_scales_group_size
+                    = wei_d.dims()[1] / wei_scales.get_dims()[1];
             brg->with_grouped_wei_decomp |= wei_scales.get_dims()[1] != 1;
         }
 
-        brg->with_wei_decomp_zero_points = !attr->zero_points_.has_default_values(DNNL_ARG_WEIGHTS);
+        brg->with_wei_decomp_zero_points
+                = !attr->zero_points_.has_default_values(DNNL_ARG_WEIGHTS);
         brg->wei_decomp_zero_points_group_size = wei_d.dims()[1];
         if (brg->with_wei_decomp_zero_points) {
-            brg->wei_decomp_zero_points_dt = attr->zero_points_.get_data_type(DNNL_ARG_WEIGHTS);
+            brg->wei_decomp_zero_points_dt
+                    = attr->zero_points_.get_data_type(DNNL_ARG_WEIGHTS);
             if (!one_of(brg->wei_decomp_zero_points_dt, f32, u8, u2))
                 return status::unimplemented;
 
             auto ld_dim = attr->zero_points_.get_dims(DNNL_ARG_WEIGHTS)[0];
             brg->wei_decomp_zero_points_stride = ld_dim > 1 ? ld_dim : 0;
-            brg->wei_decomp_zero_points_group_size = wei_d.dims()[1] / attr->zero_points_.get_dims(DNNL_ARG_WEIGHTS)[1];
-            brg->with_grouped_wei_decomp |= attr->zero_points_.get_dims(DNNL_ARG_WEIGHTS)[1] != 1;
+            brg->wei_decomp_zero_points_group_size = wei_d.dims()[1]
+                    / attr->zero_points_.get_dims(DNNL_ARG_WEIGHTS)[1];
+            brg->with_grouped_wei_decomp
+                    |= attr->zero_points_.get_dims(DNNL_ARG_WEIGHTS)[1] != 1;
         }
     }
 
@@ -346,7 +357,8 @@ status_t brgemm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
     if (brg->with_src_dyn_quant) {
         brg->src_scales_group_size = attr->src_dyn_quant_params_.get();
         brg->with_grouped_wei_decomp = true;
-        brg->src_scales_stride = div_up(wei_d.dims()[1], brg->src_scales_group_size);
+        brg->src_scales_stride
+                = div_up(wei_d.dims()[1], brg->src_scales_group_size);
     }
 
     CHECK(brgemm_desc_finalize(brg));
@@ -354,7 +366,8 @@ status_t brgemm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
     brg->src_sum_group_size = wei_d.dims()[1];
     if (brg->with_src_dyn_quant) {
         brg->src_sum_group_size = brg->rd_block;
-        brg->src_grouped_sum_stride = div_up(wei_d.dims()[1], brg->src_sum_group_size);
+        brg->src_grouped_sum_stride
+                = div_up(wei_d.dims()[1], brg->src_sum_group_size);
     }
 
     // avx2_vnni_2 kernel with xf16 data type requires blocked weights.
@@ -422,8 +435,7 @@ status_t brdgmm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
 
 status_t brgemm_desc_set_postops(brgemm_desc_t *brg,
         const primitive_attr_t *attr, const memory_desc_t *dst_md, dim_t LDD,
-        impl::data_type_t dt_bias,
-        bool is_weights_decompression) {
+        impl::data_type_t dt_bias, bool is_weights_decompression) {
     if (!brg || !dst_md) return status::invalid_arguments;
 
     brg->set_attr(attr);
@@ -576,8 +588,8 @@ status_t brgemm_desc_set_postops(brgemm_desc_t *brg,
     const auto &wei_scales = attr->scales_.get(DNNL_ARG_WEIGHTS);
     brg->with_src_scales = !src_scales.has_default_values();
     if (brg->with_src_scales) brg->dt_src_scales = src_scales.get_data_type();
-    brg->with_wei_scales
-            = !brg->skip_wei_scales && (!wei_scales.has_default_values() && !is_weights_decompression);
+    brg->with_wei_scales = !brg->skip_wei_scales
+            && (!wei_scales.has_default_values() && !is_weights_decompression);
 
     bool wei_scales_are_set = brg->is_single_wei_scale
             || brg->is_per_n_wei_scales || brg->is_per_k_wei_scales;
@@ -628,7 +640,7 @@ status_t brgemm_desc_set_postops(brgemm_desc_t *brg,
                 zp_type = brgemm_broadcast_t::per_tensor;
             } else if (mask == (1 << 1)) {
                 zp_type = brgemm_broadcast_t::per_n;
-            } else if (mask == 1 && mem_arg == DNNL_ARG_WEIGHTS ) {
+            } else if (mask == 1 && mem_arg == DNNL_ARG_WEIGHTS) {
                 zp_type = brgemm_broadcast_t::none;
             } else {
                 return status::unimplemented;

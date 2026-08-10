@@ -205,8 +205,7 @@ status_t conv_attr_check(const convolution_desc_t &desc, const engine_t *engine,
         const bool enable_quantization = is_int8 || is_fp8;
         if (enable_quantization)
             fwd_attr_mask |= smask_t::zero_points_data_type
-                    | smask_t::scales_data_type
-                    | smask_t::input_zero_points
+                    | smask_t::scales_data_type | smask_t::input_zero_points
                     | smask_t::output_compensations
                     | smask_t::weights_zero_points;
 
@@ -254,8 +253,9 @@ status_t conv_attr_check(const convolution_desc_t &desc, const engine_t *engine,
         if (!attr->post_ops_.has_default_values()) {
             const auto &po = attr->post_ops_;
             using namespace primitive_kind;
-            VCHECK_CONV_UNIMPL(po.has_default_values({binary, eltwise, prelu,
-                                       sum, convolution, depthwise, quantization}),
+            VCHECK_CONV_UNIMPL(
+                    po.has_default_values({binary, eltwise, prelu, sum,
+                            convolution, depthwise, quantization}),
                     VERBOSE_UNSUPPORTED_POSTOP);
 
             // Check sum
@@ -265,10 +265,10 @@ status_t conv_attr_check(const convolution_desc_t &desc, const engine_t *engine,
             // Note: verbose support is inside the call.
             CHECK(po.validate_binary(engine->kind(), &desc.dst_desc));
         }
-    // } else {
-    //     auto bwd_attr_mask = smask_t::fpmath_mode | smask_t::accumulation_mode;
-    //     VCHECK_CONV_UNIMPL(attr->has_default_values(bwd_attr_mask),
-    //             VERBOSE_UNSUPPORTED_ATTR);
+        // } else {
+        //     auto bwd_attr_mask = smask_t::fpmath_mode | smask_t::accumulation_mode;
+        //     VCHECK_CONV_UNIMPL(attr->has_default_values(bwd_attr_mask),
+        //             VERBOSE_UNSUPPORTED_ATTR);
     }
 
     return status::success;

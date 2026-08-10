@@ -307,7 +307,8 @@ private:
     int base_post_ops_data_offset = 0;
     constexpr static int reg64_size = 8;
 
-    nstl::vector<jit_uni_depthwise_injector_f32<avx512_core>*> depthwise_injectors;
+    nstl::vector<jit_uni_depthwise_injector_f32<avx512_core> *>
+            depthwise_injectors;
 
     inline void prepare_output(int ur_w);
     inline void store_output(int ur_w);

@@ -358,7 +358,8 @@ rhs_arg_static_params_t::rhs_arg_static_params_t(
         bool preserve_vmm_helper, std::size_t abi_param_offset,
         std::size_t dst_orig_offset, const memory_desc_wrapper &dst_d,
         std::size_t tail_size, const Xbyak::Opmask &tail_opmask,
-        const Xbyak::Reg64 &reg_tail_size, bool use_exact_tail_scalar_bcast, std::size_t rhs_prelu_helper_vmm_idx)
+        const Xbyak::Reg64 &reg_tail_size, bool use_exact_tail_scalar_bcast,
+        std::size_t rhs_prelu_helper_vmm_idx)
     : rhs_arg_static_params_t(rhs_dt_helper_vmm_idx, rhs_addr_reg,
               rhs_helper_reg, rhs_addr_cache_reg, preserve_gpr_helpers,
               preserve_vmm_helper, abi_param_offset, dst_orig_offset, dst_d,
@@ -690,8 +691,7 @@ void jit_uni_binary_injector_t<isa, Vmm>::compute_vector_range(
         if (need_new_addr) {
             rhs1_arg_addr = prepare_rhs_arg_addr(vmm_idx, rhs_arg_idx, post_op,
                     rhs_arg_params, rhs_broadcasting_strategy,
-                    is_start_idx || load_addr,
-                    false);
+                    is_start_idx || load_addr, false);
         }
 
         if (vmm_preservation_needed) {
@@ -2915,7 +2915,8 @@ void jit_uni_binary_injector_t<isa, Vmm>::inject_binary(
             = rhs_arg_data_type != data_type::f32 || (scalar_f32 && !is_avx512_)
             || with_tail_not_fusable_to_binary_op
             || !binary_op_with_unaligned_mem_operand_allowed_
-            || ((cmp_op || alg == alg_kind::binary_prelu) && !is_avx512_) || cmp_op_with_tail_vector_mem_operand;
+            || ((cmp_op || alg == alg_kind::binary_prelu) && !is_avx512_)
+            || cmp_op_with_tail_vector_mem_operand;
 
     if (process_rhs_arg_using_tmp_vmm) {
 
@@ -3932,12 +3933,13 @@ template <cpu_isa_t isa, typename Vmm>
 template <typename T>
 typename std::enable_if<std::is_same<T, Xbyak::Zmm>::value
         || std::is_same<T, Xbyak::Address>::value>::type
-jit_uni_binary_injector_t<isa, Vmm>::execute_prelu_binary(const Vmm &dst, const Vmm &lhs, const T &rhs) const {
+jit_uni_binary_injector_t<isa, Vmm>::execute_prelu_binary(
+        const Vmm &dst, const Vmm &lhs, const T &rhs) const {
     Vmm dst_vmm = Vmm(dst.getIdx());
     Xbyak::Opmask maybe_tail_kmask = Xbyak::Opmask(dst.getOpmaskIdx());
 
     auto aux0_idx = rhs_arg_static_params_.rhs_prelu_helper_vmm_idx;
-    if (static_cast<int>(aux0_idx) == lhs.getIdx()) { 
+    if (static_cast<int>(aux0_idx) == lhs.getIdx()) {
         aux0_idx = (aux0_idx + 1) % 16;
     }
     const Xbyak::Zmm zmm_aux0 = Xbyak::Zmm(aux0_idx);
@@ -3947,12 +3949,12 @@ jit_uni_binary_injector_t<isa, Vmm>::execute_prelu_binary(const Vmm &dst, const 
     push_vmm(host_, zmm_aux0);
 
     host_->uni_vpxor(zmm_aux0, zmm_aux0, zmm_aux0);
-    host_->vcmpps(aux_kmask | maybe_tail_kmask, lhs, zmm_aux0, jit_generator_t::_cmp_lt_os);
+    host_->vcmpps(aux_kmask | maybe_tail_kmask, lhs, zmm_aux0,
+            jit_generator_t::_cmp_lt_os);
     pop_vmm(host_, zmm_aux0);
     host_->uni_vmulps(dst_vmm | aux_kmask, lhs, rhs);
     pop_opmask(host_, aux_kmask);
 }
-
 
 // SSE4.1., AVX and AVX2 implementation
 template <cpu_isa_t isa, typename Vmm>
@@ -3977,9 +3979,9 @@ jit_uni_binary_injector_t<isa, Vmm>::execute_cmp_binary(const Vmm &dst,
 template <cpu_isa_t isa, typename Vmm>
 template <typename T>
 typename std::enable_if<!(std::is_same<T, Xbyak::Zmm>::value
-                          || std::is_same<T, Xbyak::Address>::value)>::type
-jit_uni_binary_injector_t<isa, Vmm>::execute_prelu_binary(const Vmm &dst,
-    const Vmm &lhs, const T &rhs) const {
+        || std::is_same<T, Xbyak::Address>::value)>::type
+jit_uni_binary_injector_t<isa, Vmm>::execute_prelu_binary(
+        const Vmm &dst, const Vmm &lhs, const T &rhs) const {
     if (is_superset(isa, avx)) {
         host_->uni_vmulps(rhs, rhs, lhs);
         host_->uni_vblendvps(dst, lhs, rhs, lhs);
@@ -3993,8 +3995,10 @@ jit_uni_binary_injector_t<isa, Vmm>::execute_prelu_binary(const Vmm &dst,
             int occupied_idices[] = {dst.getIdx(), lhs.getIdx(), rhs.getIdx()};
 
             int fixup_reg_indx = 14;
-            while (std::any_of(std::begin(occupied_idices), std::end(occupied_idices),
-                [&](const int x) {return x == fixup_reg_indx;}) && --fixup_reg_indx > 0) {}
+            while (std::any_of(std::begin(occupied_idices),
+                           std::end(occupied_idices), [&](const int x) {
+                return x == fixup_reg_indx;
+            }) && --fixup_reg_indx > 0) {}
             if (fixup_reg_indx < 0) assert(!"couldn't find a vacant XMM reg");
 
             vmm_aux0 = Vmm(fixup_reg_indx);
@@ -4011,9 +4015,9 @@ jit_uni_binary_injector_t<isa, Vmm>::execute_prelu_binary(const Vmm &dst,
 
         const auto aux_orig_indx = vmm_aux0.getIdx();
         // if XMM0 is occupied, we swap XMM0 with vmm_aux0 to use XMM0 as the mask register
-        const auto& dst_ = 0 == dst.getIdx() ? swap_aux0(dst) : dst;
-        const auto& lhs_ = 0 == lhs.getIdx() ? swap_aux0(lhs) : lhs;
-        const auto& rhs_ = 0 == rhs.getIdx() ? swap_aux0(rhs) : rhs;
+        const auto &dst_ = 0 == dst.getIdx() ? swap_aux0(dst) : dst;
+        const auto &lhs_ = 0 == lhs.getIdx() ? swap_aux0(lhs) : lhs;
+        const auto &rhs_ = 0 == rhs.getIdx() ? swap_aux0(rhs) : rhs;
 
         host_->uni_vmulps(rhs_, rhs_, lhs_);
         host_->vpxor(vmm_aux0, vmm_aux0, vmm_aux0);
@@ -4022,7 +4026,8 @@ jit_uni_binary_injector_t<isa, Vmm>::execute_prelu_binary(const Vmm &dst,
 
         if (aux_orig_indx != 0) {
             auto vmm_aux_orig = Vmm(aux_orig_indx);
-            host_->vmovups(vmm_aux0, vmm_aux_orig); // restore original Xmm0 value
+            host_->vmovups(
+                    vmm_aux0, vmm_aux_orig); // restore original Xmm0 value
             std::swap(vmm_aux0, vmm_aux_orig);
         }
 
@@ -4059,9 +4064,7 @@ void jit_uni_binary_injector_t<isa, Vmm>::execute_binary(alg_kind_t binary_alg,
         case alg_kind::binary_ne:
             execute_cmp_binary(dst, lhs, rhs, jit_generator_t::_cmp_neq_uq);
             break;
-        case alg_kind::binary_prelu:
-            execute_prelu_binary(dst, lhs, rhs);
-            break;
+        case alg_kind::binary_prelu: execute_prelu_binary(dst, lhs, rhs); break;
         default: assert(!"unsupported algorithm");
     }
 }

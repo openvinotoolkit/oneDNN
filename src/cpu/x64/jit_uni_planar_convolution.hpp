@@ -32,30 +32,32 @@ namespace cpu {
 namespace x64 {
 
 template <cpu_isa_t isa>
-struct _jit_uni_planar_convolution_fwd_t: public primitive_t {
+struct _jit_uni_planar_convolution_fwd_t : public primitive_t {
     struct pd_t : public cpu_convolution_fwd_pd_t {
         pd_t(const op_desc_t *adesc, const primitive_attr_t *attr,
-             const typename pd_t::base_class *hint_fwd_pd)
-                : cpu_convolution_fwd_pd_t(adesc, attr, hint_fwd_pd), jcp_() {}
+                const typename pd_t::base_class *hint_fwd_pd)
+            : cpu_convolution_fwd_pd_t(adesc, attr, hint_fwd_pd), jcp_() {}
 
-        DECLARE_COMMON_PD_T(
-                JIT_IMPL_NAME_HELPER("jit_planar:", isa, ""),
+        DECLARE_COMMON_PD_T(JIT_IMPL_NAME_HELPER("jit_planar:", isa, ""),
                 _jit_uni_planar_convolution_fwd_t<isa>);
 
         status_t init(engine_t *engine) {
-            bool ok = true
-                && is_fwd()
-                && set_default_alg_kind(alg_kind::convolution_direct)
-                && !this->has_zero_dim_memory()
-                && utils::everyone_is(data_type::f32,
-                        this->desc()->src_desc.data_type,
-                        this->desc()->weights_desc.data_type,
-                        this->desc()->dst_desc.data_type)
-                && IMPLICATION(this->with_bias(), data_type::f32 == this->desc()->bias_desc.data_type)
-                && attr()->has_default_values(primitive_attr_t::skip_mask_t::post_ops);
+            bool ok = true && is_fwd()
+                    && set_default_alg_kind(alg_kind::convolution_direct)
+                    && !this->has_zero_dim_memory()
+                    && utils::everyone_is(data_type::f32,
+                            this->desc()->src_desc.data_type,
+                            this->desc()->weights_desc.data_type,
+                            this->desc()->dst_desc.data_type)
+                    && IMPLICATION(this->with_bias(),
+                            data_type::f32 == this->desc()->bias_desc.data_type)
+                    && attr()->has_default_values(
+                            primitive_attr_t::skip_mask_t::post_ops);
             if (!ok) return status::unimplemented;
 
-            status_t sts = jit_uni_planar_conv_fwd_kernel_f32<isa>::init_conf(jcp_, *desc(), src_md_, weights_md_, dst_md_, bias_md_, *attr());
+            status_t sts = jit_uni_planar_conv_fwd_kernel_f32<isa>::init_conf(
+                    jcp_, *desc(), src_md_, weights_md_, dst_md_, bias_md_,
+                    *attr());
 
             return sts;
         }
@@ -68,7 +70,9 @@ struct _jit_uni_planar_convolution_fwd_t: public primitive_t {
     typedef typename prec_traits_t<data_type::f32>::type data_t;
 
     status_t init(engine_t *engine) override {
-        CHECK(safe_ptr_assign(kernel_, new jit_uni_planar_conv_fwd_kernel_f32<isa>(pd()->jcp_, *pd()->attr())));
+        CHECK(safe_ptr_assign(kernel_,
+                new jit_uni_planar_conv_fwd_kernel_f32<isa>(
+                        pd()->jcp_, *pd()->attr())));
         return kernel_->create_kernel();
     }
 
@@ -85,12 +89,14 @@ private:
     std::unique_ptr<jit_uni_planar_conv_fwd_kernel_f32<isa>> kernel_;
 };
 
-using jit_avx512_common_planar_convolution_fwd_t = _jit_uni_planar_convolution_fwd_t<avx512_core>;
-using jit_avx2_planar_convolution_fwd_t = _jit_uni_planar_convolution_fwd_t<avx2>;
+using jit_avx512_common_planar_convolution_fwd_t
+        = _jit_uni_planar_convolution_fwd_t<avx512_core>;
+using jit_avx2_planar_convolution_fwd_t
+        = _jit_uni_planar_convolution_fwd_t<avx2>;
 
-}
-}
-}
-}
+} // namespace x64
+} // namespace cpu
+} // namespace impl
+} // namespace dnnl
 
 #endif

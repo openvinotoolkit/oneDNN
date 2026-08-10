@@ -89,7 +89,8 @@ struct ref_post_ops_t {
 
     status_t init(const memory_desc_t *dst_md);
 
-    void execute(float &res, const args_t &args = args_t(), const size_t oc = 0) const;
+    void execute(float &res, const args_t &args = args_t(),
+            const size_t oc = 0) const;
 
     static bool primitive_kind_ok(const post_ops_t &po) {
         using namespace primitive_kind;

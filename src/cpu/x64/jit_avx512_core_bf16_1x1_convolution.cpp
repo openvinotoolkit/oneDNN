@@ -274,7 +274,8 @@ void jit_avx512_core_bf16_1x1_convolution_fwd_t<dst_type>::execute_forward_thr(
         p.post_ops_binary_rhs_arg_vec = post_ops_binary_rhs_arg_vec;
         p.dst_orig = static_cast<const char *>(p.output_data)
                 - dst_off * dst_d.data_type_size();
-        p.oc_off = oc_off_idx * (is_dst_layout_nxc ? 1 : jcp.oc_block) * sizeof(float);
+        p.oc_off = oc_off_idx * (is_dst_layout_nxc ? 1 : jcp.oc_block)
+                * sizeof(float);
 
         (*kernel_)(&p);
     };
@@ -475,8 +476,8 @@ void jit_avx512_core_bf16_1x1_convolution_bwd_data_t<
     const auto &jcp = kernel_->jcp;
     parallel(jcp.nthr, [= COMPAT_THIS_CAPTURE](const int ithr, const int nthr) {
         assert(nthr == jcp.nthr);
-        execute_backward_data_thr(
-                ithr, nthr, diff_dst, weights, diff_src, scratchpad, post_ops_binary_rhs_arg_vec.data());
+        execute_backward_data_thr(ithr, nthr, diff_dst, weights, diff_src,
+                scratchpad, post_ops_binary_rhs_arg_vec.data());
     });
 }
 
@@ -600,7 +601,8 @@ void jit_avx512_core_bf16_1x1_convolution_bwd_data_t<
         p.store_buffer = store_buffer + ithr * str_size
                 + data_blk_off(diff_src_d, 0, 0, id, ih, iw);
 
-        p.oc_off = ic_off_idx * (is_dsrc_layout_nxc ? 1 : jcp.ic_block) * sizeof(float);
+        p.oc_off = ic_off_idx * (is_dsrc_layout_nxc ? 1 : jcp.ic_block)
+                * sizeof(float);
         p.post_ops_binary_rhs_arg_vec = post_ops_binary_rhs_arg_vec;
 
         (*kernel_)(&p);

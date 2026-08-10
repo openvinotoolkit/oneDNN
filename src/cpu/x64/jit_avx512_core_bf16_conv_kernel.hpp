@@ -368,7 +368,8 @@ private:
     reg64_t reg_d_weights = r15;
     reg64_t reg_d_bias = reg_kj;
 
-    nstl::vector<jit_uni_depthwise_injector_f32<avx512_core>*> depthwise_injectors;
+    nstl::vector<jit_uni_depthwise_injector_f32<avx512_core> *>
+            depthwise_injectors;
 
     inline void prepare_output(int ur_w);
     inline void store_output(int ur_w);
@@ -478,7 +479,7 @@ struct jit_avx512_core_bf16_bwd_data_kernel_t {
 
     ~jit_avx512_core_bf16_bwd_data_kernel_t() = default;
 
-    static bool post_ops_ok(jit_conv_conf_t& jcp);
+    static bool post_ops_ok(jit_conv_conf_t &jcp);
 
     static status_t init_conf(jit_conv_conf_t &jcp,
             const convolution_desc_t &cd, memory_desc_t &diff_src_md,

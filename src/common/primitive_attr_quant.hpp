@@ -71,7 +71,8 @@ struct quant_entry_t : public c_compatible {
         qmode_ = qmode;
         return status::success;
     }
-    status_t set_scales(const dims_t dims, int ndims, data_type_t data_type = data_type::f32, int mask = 1) {
+    status_t set_scales(const dims_t dims, int ndims,
+            data_type_t data_type = data_type::f32, int mask = 1) {
         type_ = type_ | OV_SCALES;
         is_set_scale = true;
         ndims_scale = ndims;
@@ -82,18 +83,18 @@ struct quant_entry_t : public c_compatible {
         }
         return status::success;
     }
-    status_t set_zero_points(const dims_t dims, int ndims, data_type_t data_type) {
+    status_t set_zero_points(
+            const dims_t dims, int ndims, data_type_t data_type) {
         type_ = type_ | OV_ZERO_POINTS;
         is_set_wei = true;
         ndims_wei = ndims;
         mask_wei = 1;
-        if (ndims_wei > 0) {
-            utils::array_copy(dims_wei, dims, ndims_wei);
-        }
+        if (ndims_wei > 0) { utils::array_copy(dims_wei, dims, ndims_wei); }
         data_type_wei = data_type;
         return status::success;
     }
-    status_t set_zero_points(const dims_t dims, int ndims, data_type_t data_type, int mask,
+    status_t set_zero_points(const dims_t dims, int ndims,
+            data_type_t data_type, int mask,
             quantization_mode_t qmode = quantization_mode::static_sazp) {
         type_ = type_ | DNNL;
         is_set_wei = true;
@@ -116,7 +117,7 @@ struct quant_entry_t : public c_compatible {
         group_ndims_ = other.group_ndims_;
         is_host_scalar_ = other.is_host_scalar();
         qmode_ = other.qmode_;
-        if(group_ndims_ > 0)
+        if (group_ndims_ > 0)
             utils::array_copy(group_dims_, other.group_dims_, group_ndims_);
         is_set_scale = other.is_set_scale;
         mask_scale = other.mask_scale;
@@ -128,7 +129,7 @@ struct quant_entry_t : public c_compatible {
         mask_wei = other.mask_wei;
         data_type_wei = other.data_type_wei;
         ndims_wei = other.ndims_wei;
-        if(ndims_wei > 0)
+        if (ndims_wei > 0)
             utils::array_cmp(dims_wei, other.dims_wei, ndims_wei);
         return status::success;
     }
@@ -157,7 +158,7 @@ struct quant_entry_t : public c_compatible {
         if (is_set_scale) return data_type_scale;
         return data_type::undef;
     }
-    const dims_t& get_dims() const {
+    const dims_t &get_dims() const {
         if (is_set_wei) return dims_wei;
         if (is_set_) return group_dims_;
         if (is_set_scale) return dims_scale;
@@ -232,8 +233,7 @@ struct quant_entry_t : public c_compatible {
     // mandates bodies to be in the header file.
     bool operator==(const quant_entry_t &rhs) const {
         bool result = (type_ == rhs.type_ && is_set_ == rhs.is_set_
-                && mask_ == rhs.mask_
-                && data_type_ == rhs.data_type_
+                && mask_ == rhs.mask_ && data_type_ == rhs.data_type_
                 && group_ndims_ == rhs.group_ndims_
                 && IMPLICATION(group_ndims_ > 0,
                         utils::array_cmp(
@@ -247,17 +247,15 @@ struct quant_entry_t : public c_compatible {
                 && data_type_scale == rhs.data_type_scale
                 && ndims_scale == rhs.ndims_scale
                 && IMPLICATION(ndims_scale > 0,
-                    utils::array_cmp(
-                        dims_scale, rhs.dims_scale, ndims_scale)));
+                        utils::array_cmp(
+                                dims_scale, rhs.dims_scale, ndims_scale)));
 
         if (!result) return false;
-        result = (is_set_wei == rhs.is_set_wei
-                && mask_wei == rhs.mask_wei
+        result = (is_set_wei == rhs.is_set_wei && mask_wei == rhs.mask_wei
                 && data_type_wei == rhs.data_type_wei
                 && ndims_wei == rhs.ndims_wei
                 && IMPLICATION(ndims_wei > 0,
-                    utils::array_cmp(
-                        dims_wei, rhs.dims_wei, ndims_wei)));
+                        utils::array_cmp(dims_wei, rhs.dims_wei, ndims_wei)));
         return result;
     }
 
@@ -275,6 +273,7 @@ private:
     dims_t group_dims_ {};
     bool is_host_scalar_ = false;
     quantization_mode_t qmode_ = quantization_mode::undef;
+
 public:
     // Note: INT_MIN is used on purpose to avoid potential issues when
     // `(mask & bit)` expression will return `true`. `INT_MIN` is represented
@@ -283,12 +282,7 @@ public:
     bool is_set_ = false;
     // scale
     // openvino extension
-    enum entry_type {
-        NONE = 0,
-        DNNL = 1,
-        OV_SCALES = 2,
-        OV_ZERO_POINTS = 4
-    };
+    enum entry_type { NONE = 0, DNNL = 1, OV_SCALES = 2, OV_ZERO_POINTS = 4 };
     int type_ = NONE;
     // scale
     bool is_set_scale = false;
@@ -326,30 +320,29 @@ struct quant_entries_t : public c_compatible {
             quantization_mode_t qmode = quantization_mode::static_sazp) {
         if (!check_arg(arg)) return status::invalid_arguments;
         if (arg == DNNL_ARG_WEIGHTS) {
-            CHECK(entries_[arg].set_zero_points(group_dims, group_ndims, data_type, mask, qmode));
+            CHECK(entries_[arg].set_zero_points(
+                    group_dims, group_ndims, data_type, mask, qmode));
         } else {
             CHECK(entries_[arg].set(mask, data_type, group_ndims, group_dims,
                     is_host_scalar, qmode));
         }
         return status::success;
     }
-    const dims_t & get_dims(int arg) const {
-        return get(arg).get_dims();
-    }
-    int get_ndims(int arg) const {
-        return get(arg).get_ndims();
-    }
+    const dims_t &get_dims(int arg) const { return get(arg).get_dims(); }
+    int get_ndims(int arg) const { return get(arg).get_ndims(); }
     // Use this interface with `default_quant_entry` when need to remove a
     // specific entry.
     virtual status_t set(int arg, const quant_entry_t &other) {
         return entries_[arg].set(other);
     }
-    status_t set_scales(int arg, const dims_t dims, int ndims, data_type_t data_type = data_type::f32) {
+    status_t set_scales(int arg, const dims_t dims, int ndims,
+            data_type_t data_type = data_type::f32) {
         if (!check_arg(arg)) return status::invalid_arguments;
         CHECK(entries_[arg].set_scales(dims, ndims, data_type));
         return status::success;
     }
-    status_t set_zero_points(int arg, const dims_t dims, int ndims, data_type_t data_type) {
+    status_t set_zero_points(
+            int arg, const dims_t dims, int ndims, data_type_t data_type) {
         if (arg != DNNL_ARG_WEIGHTS) return status::unimplemented;
         CHECK(entries_[arg].set_zero_points(dims, ndims, data_type));
         return status::success;
@@ -533,7 +526,8 @@ struct zero_points_t : public quant_entries_t {
     }
     status_t set(int arg, int mask, data_type_t data_type, int group_ndims,
             const dims_t group_dims, bool is_host_scalar = false) {
-        return std::forward<status_t>(quant_entries_t::set(arg, mask, data_type, group_ndims, group_dims, is_host_scalar));
+        return std::forward<status_t>(quant_entries_t::set(
+                arg, mask, data_type, group_ndims, group_dims, is_host_scalar));
     }
 
     status_t set(int arg, const quant_entry_t &other) override {
@@ -598,26 +592,21 @@ private:
 
 struct src_dyn_quant_params_t : public c_compatible {
     src_dyn_quant_params_t() : group_size_(0) {}
-    bool has_default_values() const {
-        return (group_size_ == 0);
-    }
-    bool defined() const {
-        return true;
-    }
+    bool has_default_values() const { return (group_size_ == 0); }
+    bool defined() const { return true; }
 
     status_t set(uint64_t group_size) {
         group_size_ = group_size;
         return status::success;
     }
 
-    uint64_t get() const {
-        return group_size_;
-    }
+    uint64_t get() const { return group_size_; }
 
     bool operator==(const src_dyn_quant_params_t &rhs) const {
         using namespace utils;
         return group_size_ == rhs.group_size_;
     }
+
 private:
     uint64_t group_size_;
 };

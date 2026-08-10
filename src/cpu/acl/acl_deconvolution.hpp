@@ -17,8 +17,8 @@
 #ifndef CPU_ACL_DECONVOLUTION_HPP
 #define CPU_ACL_DECONVOLUTION_HPP
 
-#include "cpu/acl/acl_post_ops.hpp"
 #include "cpu/aarch64/cpu_isa_traits.hpp"
+#include "cpu/acl/acl_post_ops.hpp"
 #include "cpu/cpu_deconvolution_pd.hpp"
 
 namespace dnnl {
@@ -155,7 +155,8 @@ struct acl_deconvolution_fwd_t : public primitive_t {
             // The heuristic is conservative because some sw == 2 cases
             // are still slightly faster with ACL at 1 thread.
             const bool is_sve_128 = aarch64::mayiuse(aarch64::sve_128)
-                    && aarch64::get_sve_length() == aarch64::cpu_isa_traits<aarch64::sve_128>::vlen;
+                    && aarch64::get_sve_length()
+                            == aarch64::cpu_isa_traits<aarch64::sve_128>::vlen;
             const bool is_f32 = utils::everyone_is(
                     f32, src_data_t, wei_data_t, dst_data_t);
             const bool all_formats_any

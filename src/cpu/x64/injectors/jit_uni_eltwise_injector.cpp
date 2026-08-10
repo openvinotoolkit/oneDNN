@@ -43,8 +43,8 @@ bool is_alg_supported(alg_kind_t alg) {
             eltwise_soft_relu, eltwise_logistic, eltwise_mish, eltwise_exp,
             eltwise_gelu_tanh, eltwise_hardsigmoid, eltwise_hardswish,
             eltwise_swish, eltwise_log, eltwise_clip, eltwise_clip_v2,
-            eltwise_pow, eltwise_gelu_erf, eltwise_round,
-            eltwise_hsigmoid, eltwise_round_half_away_from_zero, eltwise_round_half_to_even,
+            eltwise_pow, eltwise_gelu_erf, eltwise_round, eltwise_hsigmoid,
+            eltwise_round_half_away_from_zero, eltwise_round_half_to_even,
             eltwise_relu_use_dst_for_bwd, eltwise_tanh_use_dst_for_bwd,
             eltwise_elu_use_dst_for_bwd, eltwise_sqrt_use_dst_for_bwd,
             eltwise_logistic_use_dst_for_bwd, eltwise_exp_use_dst_for_bwd,
@@ -1856,14 +1856,14 @@ void jit_uni_eltwise_injector_t<isa, Wmm>::hsigmoid_compute_vector_fwd(
 }
 
 template <cpu_isa_t isa, typename Wmm>
-void jit_uni_eltwise_injector_t<isa, Wmm>::round_half_to_even_compute_vector_fwd(
-        const Vmm &vmm_src) {
+void jit_uni_eltwise_injector_t<isa,
+        Wmm>::round_half_to_even_compute_vector_fwd(const Vmm &vmm_src) {
     h->uni_vroundps(vmm_src, vmm_src, _op_near);
 }
 
 template <cpu_isa_t isa, typename Wmm>
-void jit_uni_eltwise_injector_t<isa, Wmm>::round_half_away_from_zero_compute_vector_fwd(
-        const Vmm &vmm_src) {
+void jit_uni_eltwise_injector_t<isa,
+        Wmm>::round_half_away_from_zero_compute_vector_fwd(const Vmm &vmm_src) {
     // create a mask of negative numbers for later returning sign
     compute_cmp_mask(vmm_src, table_val(zero), _cmp_lt_os);
 
@@ -2101,9 +2101,15 @@ void jit_uni_eltwise_injector_t<isa, Wmm>::compute_body(
                 case eltwise_hardsigmoid:
                     hardsigmoid_compute_vector_fwd(Vmm(idx));
                     break;
-                case eltwise_hsigmoid: hsigmoid_compute_vector_fwd(Vmm(idx)); break;
-                case eltwise_round_half_to_even: round_half_to_even_compute_vector_fwd(Vmm(idx)); break;
-                case eltwise_round_half_away_from_zero: round_half_away_from_zero_compute_vector_fwd(Vmm(idx)); break;
+                case eltwise_hsigmoid:
+                    hsigmoid_compute_vector_fwd(Vmm(idx));
+                    break;
+                case eltwise_round_half_to_even:
+                    round_half_to_even_compute_vector_fwd(Vmm(idx));
+                    break;
+                case eltwise_round_half_away_from_zero:
+                    round_half_away_from_zero_compute_vector_fwd(Vmm(idx));
+                    break;
                 default: assert(!"unsupported eltwise algorithm");
             }
         } else {

@@ -75,7 +75,8 @@ inline void dnnl_thr_barrier() {
 #pragma omp barrier
 }
 
-#elif (DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB || DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB_AUTO)
+#elif (DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB \
+        || DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB_AUTO)
 
 #include "common/dnnl_thread_tbb_proxy.hpp"
 
@@ -596,32 +597,33 @@ void parallel_legacy(int nthr, F f) {
         int ithr_ = omp_get_thread_num();
         assert(nthr_ == nthr);
 #if defined(DNNL_ENABLE_ITT_TASKS)
-        if (ithr_ && itt_enable) itt::primitive_task_start(task_primitive_kind, task_primitive_log_kind);
+        if (ithr_ && itt_enable)
+            itt::primitive_task_start(
+                    task_primitive_kind, task_primitive_log_kind);
 #endif
         f(ithr_, nthr_);
 #if defined(DNNL_ENABLE_ITT_TASKS)
-        if (ithr_ && itt_enable) itt::primitive_task_end(task_primitive_log_kind);
+        if (ithr_ && itt_enable)
+            itt::primitive_task_end(task_primitive_log_kind);
 #endif
     }
 #elif DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB
-    tbb::parallel_for(
-        0, nthr,
-        [&](int ithr) {
+    tbb::parallel_for(0, nthr, [&](int ithr) {
 #if defined(DNNL_ENABLE_ITT_TASKS)
-            bool mark_task = itt::primitive_task_get_current_kind()
+        bool mark_task = itt::primitive_task_get_current_kind()
                 == primitive_kind::undefined;
-            if (mark_task && itt_enable)
-                itt::primitive_task_start(task_primitive_kind, task_primitive_log_kind);
+        if (mark_task && itt_enable)
+            itt::primitive_task_start(
+                    task_primitive_kind, task_primitive_log_kind);
 #endif
-            f(ithr, nthr);
+        f(ithr, nthr);
 #if defined(DNNL_ENABLE_ITT_TASKS)
-            if (mark_task && itt_enable) itt::primitive_task_end(task_primitive_log_kind);
+        if (mark_task && itt_enable)
+            itt::primitive_task_end(task_primitive_log_kind);
 #endif
-        },
-        tbb::static_partitioner());
+    }, tbb::static_partitioner());
 #elif DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_TBB_AUTO
-    tbb::parallel_for(
-        0, nthr, [&](int ithr) { f(ithr, nthr); });
+    tbb::parallel_for(0, nthr, [&](int ithr) { f(ithr, nthr); });
 #elif DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_THREADPOOL
     using namespace dnnl::impl::threadpool_utils;
     dnnl::threadpool_interop::threadpool_iface *tp = get_active_threadpool();
@@ -633,7 +635,7 @@ void parallel_legacy(int nthr, F f) {
         threadpool_utils::activate_threadpool(tp);
     } else {
         bool async = tp->get_flags()
-            & dnnl::threadpool_interop::threadpool_iface::ASYNCHRONOUS;
+                & dnnl::threadpool_interop::threadpool_iface::ASYNCHRONOUS;
         counting_barrier_t b;
         if (async) b.init(nthr);
         tp->parallel_for(nthr, [&, tp](int ithr, int nthr) {
@@ -641,13 +643,16 @@ void parallel_legacy(int nthr, F f) {
             if (!is_master) {
                 threadpool_utils::activate_threadpool(tp);
 #if defined(DNNL_ENABLE_ITT_TASKS)
-                if (itt_enable) itt::primitive_task_start(task_primitive_kind, task_primitive_log_kind);
+                if (itt_enable)
+                    itt::primitive_task_start(
+                            task_primitive_kind, task_primitive_log_kind);
 #endif
             }
             f(ithr, nthr);
             if (!is_master) {
 #if defined(DNNL_ENABLE_ITT_TASKS)
-                if (itt_enable) itt::primitive_task_end(task_primitive_log_kind);
+                if (itt_enable)
+                    itt::primitive_task_end(task_primitive_log_kind);
 #endif
                 threadpool_utils::deactivate_threadpool();
             }
@@ -669,7 +674,7 @@ void for_nd_legacy(const int ithr, const int nthr, const T0 &D0, F f) {
 
 template <typename T0, typename T1, typename T2, typename T3, typename F>
 void for_nd_legacy(const int ithr, const int nthr, const T0 &D0, const T1 &D1,
-                       const T2 &D2, const T3 &D3, F f) {
+        const T2 &D2, const T3 &D3, F f) {
     const size_t work_amount = (size_t)D0 * D1 * D2 * D3;
     if (work_amount == 0) return;
     size_t start {0}, end {0};
@@ -689,7 +694,7 @@ void for_nd_legacy(const int ithr, const int nthr, const T0 &D0, const T1 &D1,
 template <typename T0, typename T1, typename T2, typename T3, typename T4,
         typename T5, typename F>
 void for_nd_legacy(const int ithr, const int nthr, const T0 &D0, const T1 &D1,
-            const T2 &D2, const T3 &D3, const T4 &D4, const T5 &D5, F f) {
+        const T2 &D2, const T3 &D3, const T4 &D4, const T5 &D5, F f) {
     const size_t work_amount = (size_t)D0 * D1 * D2 * D3 * D4 * D5;
     if (work_amount == 0) return;
     size_t start {0}, end {0};
@@ -714,11 +719,13 @@ void parallel_nd_legacy(const T0 &D0, F f) {
     const size_t work_amount = (size_t)D0;
     int nthr = adjust_num_threads(dnnl_get_current_num_threads(), work_amount);
     if (nthr)
-        parallel_legacy(nthr, [&](int ithr, int nthr) { for_nd_legacy(ithr, nthr, D0, f); });
+        parallel_legacy(nthr,
+                [&](int ithr, int nthr) { for_nd_legacy(ithr, nthr, D0, f); });
 }
 
 template <typename T0, typename T1, typename T2, typename T3, typename F>
-void parallel_nd_legacy(const T0 &D0, const T1 &D1, const T2 &D2, const T3 &D3, F f) {
+void parallel_nd_legacy(
+        const T0 &D0, const T1 &D1, const T2 &D2, const T3 &D3, F f) {
     const size_t work_amount = (size_t)D0 * D1 * D2 * D3;
     int nthr = adjust_num_threads(dnnl_get_current_num_threads(), work_amount);
     if (nthr)
@@ -730,7 +737,7 @@ void parallel_nd_legacy(const T0 &D0, const T1 &D1, const T2 &D2, const T3 &D3, 
 template <typename T0, typename T1, typename T2, typename T3, typename T4,
         typename T5, typename F>
 void parallel_nd_legacy(const T0 &D0, const T1 &D1, const T2 &D2, const T3 &D3,
-                 const T4 &D4, const T5 &D5, F f) {
+        const T4 &D4, const T5 &D5, F f) {
     const size_t work_amount = (size_t)D0 * D1 * D2 * D3 * D4 * D5;
     int nthr = adjust_num_threads(dnnl_get_current_num_threads(), work_amount);
     if (nthr)

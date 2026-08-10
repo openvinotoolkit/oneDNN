@@ -185,24 +185,23 @@ private:
 };
 
 template <typename T>
-struct shifts_t: public c_compatible {
-    shifts_t(): count_(1), mask_(0), shifts_(shifts_buf_)
-    { set(0); }
+struct shifts_t : public c_compatible {
+    shifts_t() : count_(1), mask_(0), shifts_(shifts_buf_) { set(0); }
 
     ~shifts_t() { cleanup(); }
 
     bool operator==(const shifts_t<T> &rhs) const {
         bool ret = count_ == rhs.count_ && mask_ == rhs.mask_
-                   && !utils::any_null(shifts_, rhs.shifts_)
-                   && defined() == rhs.defined()
-                   && IMPLICATION(defined(),
-                                  utils::array_cmp(shifts_, rhs.shifts_, count_));
+                && !utils::any_null(shifts_, rhs.shifts_)
+                && defined() == rhs.defined()
+                && IMPLICATION(defined(),
+                        utils::array_cmp(shifts_, rhs.shifts_, count_));
         return ret;
     }
 
     bool has_default_values() const {
         for (int c = 0; c < count_; ++c) {
-            if(shifts_[c] != 0) return false;
+            if (shifts_[c] != 0) return false;
         }
         return true;
     }
@@ -210,7 +209,9 @@ struct shifts_t: public c_compatible {
     bool defined() const { return !is_runtime_value(shifts_[0]); }
 
     status_t set(int count, int mask, const T *zero_points);
-    status_t set(T single_zero_point) { return this->set(1, 0, &single_zero_point); }
+    status_t set(T single_zero_point) {
+        return this->set(1, 0, &single_zero_point);
+    }
 
     status_t copy_from(const shifts_t &other) {
         return set(static_cast<int>(other.count_), other.mask_, other.shifts_);
@@ -225,8 +226,7 @@ private:
     T shifts_buf_[shifts_buf_size];
 
     void cleanup() {
-        if (shifts_ != shifts_buf_ && shifts_ != nullptr)
-            impl::free(shifts_);
+        if (shifts_ != shifts_buf_ && shifts_ != nullptr) impl::free(shifts_);
 
         count_ = 1;
         mask_ = 0;
@@ -344,9 +344,7 @@ struct legacy_zero_points_t : public c_compatible {
         return count_ == rhs.count_ && mask_ == rhs.mask_;
     }
 
-    bool has_default_values() const {
-        return count_ == 0 && mask_ == 0;
-    }
+    bool has_default_values() const { return count_ == 0 && mask_ == 0; }
 
     status_t set(dim_t count, int mask) {
         count_ = count;
@@ -443,8 +441,8 @@ struct dnnl_post_ops : public dnnl::impl::c_compatible {
 
         struct binarization_t {
             dnnl::impl::alg_kind_t alg;
-            const float* weights_data;
-            const float* output_mask_data;
+            const float *weights_data;
+            const float *output_mask_data;
         };
 
         struct depthwise_conv_old_t {
@@ -563,12 +561,18 @@ struct dnnl_post_ops : public dnnl::impl::c_compatible {
                     //         && depthwise_conv.dst_dt
                     //                 == rhs.depthwise_conv.dst_dt;
                     ret = depthwise_conv_old.in_h == rhs.depthwise_conv_old.in_h
-                        && depthwise_conv_old.in_w == rhs.depthwise_conv_old.in_w
-                        && depthwise_conv_old.ker_h == rhs.depthwise_conv_old.ker_h
-                        && depthwise_conv_old.ker_w == rhs.depthwise_conv_old.ker_w
-                        && depthwise_conv_old.str_h == rhs.depthwise_conv_old.str_h
-                        && depthwise_conv_old.str_w == rhs.depthwise_conv_old.str_w
-                        && depthwise_conv_old.in_dt == rhs.depthwise_conv_old.in_dt;
+                            && depthwise_conv_old.in_w
+                                    == rhs.depthwise_conv_old.in_w
+                            && depthwise_conv_old.ker_h
+                                    == rhs.depthwise_conv_old.ker_h
+                            && depthwise_conv_old.ker_w
+                                    == rhs.depthwise_conv_old.ker_w
+                            && depthwise_conv_old.str_h
+                                    == rhs.depthwise_conv_old.str_h
+                            && depthwise_conv_old.str_w
+                                    == rhs.depthwise_conv_old.str_w
+                            && depthwise_conv_old.in_dt
+                                    == rhs.depthwise_conv_old.in_dt;
                     break;
                 case primitive_kind::binary:
                     ret = binary.alg == rhs.binary.alg
@@ -580,18 +584,27 @@ struct dnnl_post_ops : public dnnl::impl::c_compatible {
                     break;
                 case primitive_kind::depthwise:
                     ret = depthwise.alg == rhs.depthwise.alg
-                          && array_cmp(depthwise.offset, rhs.depthwise.offset, depthwise.fields_count);
+                            && array_cmp(depthwise.offset, rhs.depthwise.offset,
+                                    depthwise.fields_count);
                     break;
                 case primitive_kind::quantization:
                     ret = quantization.alg == rhs.quantization.alg
-                          && array_cmp(quantization.per_channel, rhs.quantization.per_channel, quantization.fields_count)
-                          && array_cmp(quantization.all_default, rhs.quantization.all_default, quantization.fields_count)
-                          && array_cmp(quantization.offset, rhs.quantization.offset, quantization.fields_count);
+                            && array_cmp(quantization.per_channel,
+                                    rhs.quantization.per_channel,
+                                    quantization.fields_count)
+                            && array_cmp(quantization.all_default,
+                                    rhs.quantization.all_default,
+                                    quantization.fields_count)
+                            && array_cmp(quantization.offset,
+                                    rhs.quantization.offset,
+                                    quantization.fields_count);
                     break;
                 case primitive_kind::binarization:
                     ret = depthwise.alg == rhs.depthwise.alg
-                          && binarization.weights_data == rhs.binarization.weights_data
-                          && binarization.output_mask_data == rhs.binarization.output_mask_data;
+                            && binarization.weights_data
+                                    == rhs.binarization.weights_data
+                            && binarization.output_mask_data
+                                    == rhs.binarization.output_mask_data;
                     break;
                 default: assert(!"unsupported post_op");
             }
@@ -618,15 +631,16 @@ struct dnnl_post_ops : public dnnl::impl::c_compatible {
             const dnnl::impl::memory_desc_t *user_src1_desc,
             const dnnl::impl::memory_desc_t *user_src2_desc = nullptr);
     dnnl::impl::status_t append_prelu(int mask);
-    dnnl::impl::status_t append_depthwise(dnnl::impl::alg_kind_t alg, size_t offset_size, const size_t* offset);
+    dnnl::impl::status_t append_depthwise(dnnl::impl::alg_kind_t alg,
+            size_t offset_size, const size_t *offset);
     dnnl::impl::status_t append_quantization(dnnl::impl::alg_kind_t alg,
-            size_t per_channel_size, const bool* per_channel,
-            size_t all_default_size, const bool* all_default,
-            size_t offset_size, const size_t* offset);
-    dnnl::impl::status_t append_binarization(dnnl::impl::alg_kind_t alg, const float* weights_data,
-            const float* output_mask_data);
-    dnnl::impl::status_t append_dw_conv(int in_h, int in_w, int ker_h, int ker_w, int str_h, int str_w,
-            dnnl::impl::data_type_t in_dt);
+            size_t per_channel_size, const bool *per_channel,
+            size_t all_default_size, const bool *all_default,
+            size_t offset_size, const size_t *offset);
+    dnnl::impl::status_t append_binarization(dnnl::impl::alg_kind_t alg,
+            const float *weights_data, const float *output_mask_data);
+    dnnl::impl::status_t append_dw_conv(int in_h, int in_w, int ker_h,
+            int ker_w, int str_h, int str_w, dnnl::impl::data_type_t in_dt);
 
     dnnl::impl::status_t prepend_binary(dnnl::impl::alg_kind_t alg,
             const dnnl::impl::memory_desc_t *user_src1_desc,
@@ -651,7 +665,7 @@ struct dnnl_post_ops : public dnnl::impl::c_compatible {
     }
 
     int count(dnnl::impl::primitive_kind_t kind, int start = 0,
-              int stop = -1) const {
+            int stop = -1) const {
         if (stop == -1) stop = len();
         stop = dnnl::impl::nstl::min(stop, len());
         int cnt = 0;

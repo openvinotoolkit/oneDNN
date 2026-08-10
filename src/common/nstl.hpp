@@ -375,8 +375,8 @@ public:
     }
     void clear() { _impl.clear(); }
     void push_back(const T &t) { _impl.push_back(t); }
-    template<typename... Args>
-	void emplace_back(Args&&... args) {
+    template <typename... Args>
+    void emplace_back(Args &&...args) {
         _impl.emplace_back(std::forward<Args>(args)...);
     }
     void resize(size_type count) { _impl.resize(count); }

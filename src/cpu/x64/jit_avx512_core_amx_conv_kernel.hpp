@@ -491,7 +491,8 @@ struct jit_avx512_core_amx_bwd_data_kernel_t : public jit_generator_t {
                 const auto post_op = jcp.post_ops.entry_[i];
                 if (post_op.is_eltwise())
                     idx_to_eltwise_injector_.emplace(i,
-                                            jit_uni_eltwise_injector_t<avx512_core>(this, post_op.eltwise));
+                            jit_uni_eltwise_injector_t<avx512_core>(
+                                    this, post_op.eltwise));
             }
         }
         bwd_data_copy_kernel_ = utils::make_unique<

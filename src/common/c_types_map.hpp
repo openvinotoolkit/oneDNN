@@ -94,7 +94,8 @@ const alg_kind_t eltwise_hardswish = dnnl_eltwise_hardswish;
 const alg_kind_t eltwise_hardsigmoid = dnnl_eltwise_hardsigmoid;
 const alg_kind_t eltwise_hsigmoid = dnnl_eltwise_hsigmoid;
 const alg_kind_t eltwise_round_half_to_even = dnnl_eltwise_round_half_to_even;
-const alg_kind_t eltwise_round_half_away_from_zero = dnnl_eltwise_round_half_away_from_zero;
+const alg_kind_t eltwise_round_half_away_from_zero
+        = dnnl_eltwise_round_half_away_from_zero;
 const alg_kind_t eltwise_relu_use_dst_for_bwd
         = dnnl_eltwise_relu_use_dst_for_bwd;
 const alg_kind_t eltwise_tanh_use_dst_for_bwd
@@ -150,7 +151,8 @@ const alg_kind_t softmax_accurate = dnnl_softmax_accurate;
 const alg_kind_t softmax_log = dnnl_softmax_log;
 const alg_kind_t depthwise_scale_shift = dnnl_depthwise_scale_shift;
 const alg_kind_t depthwise_prelu = dnnl_depthwise_prelu;
-const alg_kind_t quantization_quantize_dequantize = dnnl_quantization_quantize_dequantize;
+const alg_kind_t quantization_quantize_dequantize
+        = dnnl_quantization_quantize_dequantize;
 const alg_kind_t quantization_quantize = dnnl_quantization_quantize;
 const alg_kind_t binarization_depthwise = dnnl_binarization_depthwise;
 // Internal only alg kinds.

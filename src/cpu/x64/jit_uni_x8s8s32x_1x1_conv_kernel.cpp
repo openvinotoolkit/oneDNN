@@ -50,7 +50,8 @@ jit_uni_x8s8s32x_1x1_conv_kernel_vmm_t<isa,
                                                              &ajcp,
         const primitive_attr_t &attr, const memory_desc_t &dst_md)
     : jit_generator_t(jit_name(), isa), jcp(ajcp), attr_(attr) {
-    if (jcp.with_eltwise || jcp.with_binary || jcp.with_sum || jcp.with_depthwise || jcp.with_quantization) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_sum
+            || jcp.with_depthwise || jcp.with_quantization) {
         using namespace binary_injector;
         static constexpr bool preserve_gpr = true;
         static constexpr bool preserve_vmm = true;
@@ -62,12 +63,14 @@ jit_uni_x8s8s32x_1x1_conv_kernel_vmm_t<isa,
                 memory_desc_wrapper(dst_md), tail_size,
                 use_exact_tail_scalar_bcast};
         static_params_t static_params {this->param1, rhs_arg_static_params};
-        quantization_injector::static_params_t quantization_static_params
-                {vmm_d_weights.getIdx(), vmm_d_bias.getIdx(), reg_d_weights, reg_d_bias};
+        quantization_injector::static_params_t quantization_static_params {
+                vmm_d_weights.getIdx(), vmm_d_bias.getIdx(), reg_d_weights,
+                reg_d_bias};
 
         postops_injector_
                 = utils::make_unique<injector::jit_uni_postops_injector_t<isa>>(
-                        this, jcp.post_ops, static_params, quantization_static_params);
+                        this, jcp.post_ops, static_params,
+                        quantization_static_params);
     }
 }
 
@@ -194,16 +197,18 @@ void jit_uni_x8s8s32x_1x1_conv_kernel_vmm_t<isa, Vmm>::apply_postops(
         const int ur, const int load_loop_blk, const bool mask_flag_in,
         const float *p_sum_scale, const int32_t *p_sum_zp) {
 
-    if (jcp.with_eltwise || jcp.with_binary || jcp.with_sum || jcp.with_depthwise || jcp.with_quantization) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_sum
+            || jcp.with_depthwise || jcp.with_quantization) {
         std::map<size_t, int> vmm_idx_off;
         iterate(ur, load_loop_blk, [&](const int i_ur, const int i_load) {
-            vmm_idx_off.insert({vreg_accum_idx(load_loop_blk, i_load, i_ur), i_load * jcp.load_block * sizeof(float)});
+            vmm_idx_off.insert({vreg_accum_idx(load_loop_blk, i_load, i_ur),
+                    i_load * jcp.load_block * sizeof(float)});
         });
-        depthwise_injector::dynamic_params_t ddp {vmm_d_weights.getIdx(), vmm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
-                                                  reg_oc_off, vmm_idx_off,
-                                                  this->rsp, base_post_ops_data_offset};
-        quantization_injector::dynamic_params_t qdp {reg_oc_off, vmm_idx_off, jcp.dst_dt,
-                                                     this->rsp, base_post_ops_data_offset};
+        depthwise_injector::dynamic_params_t ddp {vmm_d_weights.getIdx(),
+                vmm_d_bias.getIdx(), reg_d_weights, reg_d_bias, reg_oc_off,
+                vmm_idx_off, this->rsp, base_post_ops_data_offset};
+        quantization_injector::dynamic_params_t qdp {reg_oc_off, vmm_idx_off,
+                jcp.dst_dt, this->rsp, base_post_ops_data_offset};
 
         if (jcp.with_sum && *p_sum_zp != 0)
             mov(ptr[rsp + reg_bcast_loop_iter_off], reg_ptr_sum_zp);
@@ -241,13 +246,15 @@ void jit_uni_x8s8s32x_1x1_conv_kernel_vmm_t<isa, Vmm>::apply_postops(
                 jmp(postops_done, T_NEAR);
                 L(postops_no_tail);
             }
-            postops_injector_->compute_vector_range(vmm_idxs, rhs_arg_params, ddp, qdp);
+            postops_injector_->compute_vector_range(
+                    vmm_idxs, rhs_arg_params, ddp, qdp);
             L(postops_done);
         } else {
             iterate(ur, load_loop_blk, [&](const int i_ur, const int i_load) {
                 vmm_idxs.emplace(vreg_accum_idx(load_loop_blk, i_load, i_ur));
             });
-            postops_injector_->compute_vector_range(vmm_idxs, rhs_arg_params, ddp, qdp);
+            postops_injector_->compute_vector_range(
+                    vmm_idxs, rhs_arg_params, ddp, qdp);
         }
         if (jcp.with_sum && *p_sum_zp != 0)
             mov(reg_ptr_sum_zp, ptr[rsp + reg_bcast_loop_iter_off]);
@@ -412,7 +419,8 @@ void jit_uni_x8s8s32x_1x1_conv_kernel_vmm_t<isa, Vmm>::reduce_loop(
             // temporary vector register for scales. Load bias data into it
             // after scales are processed.
             if (jcp.with_bias) {
-                if (jcp.signed_input || jcp.with_dst_scales || jcp.with_input_zp)
+                if (jcp.signed_input || jcp.with_dst_scales
+                        || jcp.with_input_zp)
                     mov(reg_bias_data, ptr[rsp + reg_bias_data_off]);
                 cvt2ps(jcp.bia_dt, vmm_bias, reg_bias_data,
                         jcp.typesize_bia * jcp.oc_block * i_load, load_size);
@@ -421,7 +429,8 @@ void jit_uni_x8s8s32x_1x1_conv_kernel_vmm_t<isa, Vmm>::reduce_loop(
             for (int i_ur = 0; i_ur < ur; ++i_ur) {
                 const auto r = vreg_accum(load_loop_blk, i_load, i_ur);
                 uni_vcvtdq2ps(r, r);
-                if (jcp.signed_input || jcp.with_input_zp) uni_vaddps(r, r, vmm_comp);
+                if (jcp.signed_input || jcp.with_input_zp)
+                    uni_vaddps(r, r, vmm_comp);
                 if (jcp.src_zero_point) uni_vaddps(r, r, vmm_zp_comp);
 
                 if (is_vmm_scales_set) uni_vmulps(r, r, vmm_scales);
@@ -587,7 +596,9 @@ void jit_uni_x8s8s32x_1x1_conv_kernel_vmm_t<isa, Vmm>::generate() {
     preamble();
 
     if (postops_injector_)
-        postops_injector_->push_post_ops_data_on_stack(this->param1, GET_OFF(post_ops_binary_rhs_arg_vec), reg_load_data, reg_output_data);
+        postops_injector_->push_post_ops_data_on_stack(this->param1,
+                GET_OFF(post_ops_binary_rhs_arg_vec), reg_load_data,
+                reg_output_data);
 
     sub(rsp, stack_space_needed);
     base_post_ops_data_offset += stack_space_needed;
@@ -613,7 +624,8 @@ void jit_uni_x8s8s32x_1x1_conv_kernel_vmm_t<isa, Vmm>::generate() {
         mov(ptr[rsp + reg_wei_scales_off], reg_wei_scales);
     }
     if (jcp.with_dst_scales) {
-        if (!jcp.signed_input && !jcp.with_input_zp) mov(ptr[rsp + reg_bias_data_off], reg_bias_data);
+        if (!jcp.signed_input && !jcp.with_input_zp)
+            mov(ptr[rsp + reg_bias_data_off], reg_bias_data);
         mov(reg_dst_scales, ptr[param1 + GET_OFF(dst_scales)]);
         mov(ptr[rsp + reg_dst_scales_off], reg_dst_scales);
     }
@@ -714,8 +726,7 @@ void jit_uni_x8s8s32x_1x1_conv_kernel_vmm_t<isa, Vmm>::generate() {
     base_post_ops_data_offset -= stack_space_needed;
     add(rsp, stack_space_needed);
 
-    if (postops_injector_)
-        postops_injector_->reset_stack_pointer();
+    if (postops_injector_) postops_injector_->reset_stack_pointer();
 
     postamble();
 
@@ -776,15 +787,15 @@ status_t jit_uni_x8s8s32x_1x1_conv_kernel_t<isa>::init_conf(
     jcp.with_weights_zp = !attr.weights_zero_points_.has_default_values();
 
     if (jcp.with_input_zp) {
-        if (attr.input_zero_points_.count_ != 1 && attr.input_zero_points_.count_ != jcp.ic * jcp.ngroups)
+        if (attr.input_zero_points_.count_ != 1
+                && attr.input_zero_points_.count_ != jcp.ic * jcp.ngroups)
             return status::unimplemented;
 
         if (attr.output_compensations_.count_ != jcp.oc * jcp.ngroups)
             return status::unimplemented;
     }
 
-    if (jcp.with_weights_zp)
-        return status::unimplemented;
+    if (jcp.with_weights_zp) return status::unimplemented;
 
     jcp.os = static_cast<dim_t>(jcp.od) * jcp.oh * jcp.ow;
     jcp.is = static_cast<dim_t>(jcp.id) * jcp.ih * jcp.iw;
@@ -807,8 +818,10 @@ status_t jit_uni_x8s8s32x_1x1_conv_kernel_t<isa>::init_conf(
     jcp.with_sum = sum_ind != -1;
 
     const auto &zp = attr.zero_points_;
-    jcp.with_depthwise = post_ops.find(primitive_kind::depthwise, 0, dw_conv_ind) != -1;
-    jcp.with_quantization = post_ops.find(primitive_kind::quantization, 0, dw_conv_ind) != -1;
+    jcp.with_depthwise
+            = post_ops.find(primitive_kind::depthwise, 0, dw_conv_ind) != -1;
+    jcp.with_quantization
+            = post_ops.find(primitive_kind::quantization, 0, dw_conv_ind) != -1;
 
     jcp.dst_zero_point = !zp.has_default_values(DNNL_ARG_DST);
     jcp.src_zero_point = !zp.has_default_values(DNNL_ARG_SRC);
@@ -844,7 +857,8 @@ status_t jit_uni_x8s8s32x_1x1_conv_kernel_t<isa>::init_conf(
 
     using namespace injector;
     const bool post_ops_ok_ = post_ops_ok(post_ops_ok_args_t(isa,
-            {eltwise, binary, sum, depthwise, quantization}, jcp.post_ops, &dst_d, false, false, false));
+            {eltwise, binary, sum, depthwise, quantization}, jcp.post_ops,
+            &dst_d, false, false, false));
     VDISPATCH_CONV_IC(post_ops_ok_, VERBOSE_UNSUPPORTED_POSTOP);
 
     args_ok = true && jcp.oc % simd_w == 0 && jcp.ic % simd_w == 0
@@ -856,8 +870,7 @@ status_t jit_uni_x8s8s32x_1x1_conv_kernel_t<isa>::init_conf(
 
     jcp.bia_dt = jcp.with_bias ? cd.bias_desc.data_type : data_type::undef;
     jcp.dst_dt = cd.dst_desc.data_type;
-    if (jcp.with_sum)
-        jcp.sum_dt = post_ops.get_sum_dt(jcp.dst_dt);
+    if (jcp.with_sum) jcp.sum_dt = post_ops.get_sum_dt(jcp.dst_dt);
 
     jcp.ic_block = jcp.oc_block = simd_w;
 

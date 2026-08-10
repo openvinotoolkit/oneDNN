@@ -73,13 +73,12 @@ struct jit_uni_x8s8s32x_1x1_convolution_fwd_t : public primitive_t {
                     VERBOSE_BAD_ALGORITHM);
             VDISPATCH_CONV(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
 
-            VDISPATCH_CONV(
-                    attr()->has_default_values(smask_t::scales
-                                    | smask_t::zero_points | smask_t::post_ops
-                                    | smask_t::sum_dt
-                                    | smask_t::input_zero_points
-                                    | smask_t::output_compensations,
-                            dst_md(0)->data_type),
+            VDISPATCH_CONV(attr()->has_default_values(smask_t::scales
+                                           | smask_t::zero_points
+                                           | smask_t::post_ops | smask_t::sum_dt
+                                           | smask_t::input_zero_points
+                                           | smask_t::output_compensations,
+                                   dst_md(0)->data_type),
                     VERBOSE_UNSUPPORTED_ATTR);
             VDISPATCH_CONV(set_default_formats_common(
                                    dat_tag(), format_tag::any, dat_tag()),
@@ -216,8 +215,7 @@ struct jit_uni_x8s8s32x_1x1_convolution_fwd_t : public primitive_t {
             CHECK_BOOL(memory_desc_init_by_tag(want_wei_md, wei_tag));
 
             if (is_src_s8) {
-                want_wei_md.extra.flags
-                        = 0 | compensation_conv_s8s8;
+                want_wei_md.extra.flags = 0 | compensation_conv_s8s8;
                 want_wei_md.extra.compensation_mask
                         = with_groups() ? g_mask : c_mask;
                 want_wei_md.extra.scale_adjust = 1.0f;

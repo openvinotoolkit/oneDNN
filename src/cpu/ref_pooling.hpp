@@ -42,18 +42,18 @@ struct ref_pooling_fwd_t : public primitive_t {
         status_t init(engine_t *engine) {
             using sm = primitive_attr_t::skip_mask_t;
 
-        const auto src_type = src_md()->data_type;
-        const auto dst_type = dst_md()->data_type;
+            const auto src_type = src_md()->data_type;
+            const auto dst_type = dst_md()->data_type;
 
-        VDISPATCH_POOLING(platform::has_data_type_support(src_type),
-            VERBOSE_UNSUPPORTED_DT);
-        VDISPATCH_POOLING(platform::has_data_type_support(dst_type),
+            VDISPATCH_POOLING(platform::has_data_type_support(src_type),
+                    VERBOSE_UNSUPPORTED_DT);
+            VDISPATCH_POOLING(platform::has_data_type_support(dst_type),
                     VERBOSE_UNSUPPORTED_DT);
             VDISPATCH_POOLING(set_default_params() == status::success,
                     VERBOSE_UNSUPPORTED_TAG);
             VDISPATCH_POOLING(is_fwd(), VERBOSE_BAD_PROPKIND);
-        VDISPATCH_POOLING(
-            is_supported_data_types(), VERBOSE_UNSUPPORTED_DT);
+            VDISPATCH_POOLING(
+                    is_supported_data_types(), VERBOSE_UNSUPPORTED_DT);
             VDISPATCH_POOLING(attr()->has_default_values(sm::post_ops),
                     VERBOSE_UNSUPPORTED_ATTR);
             // VDISPATCH_POOLING(
@@ -63,8 +63,7 @@ struct ref_pooling_fwd_t : public primitive_t {
                     attr_.set_default_formats(dst_md(0)) == status::success,
                     VERBOSE_UNSUPPORTED_POSTOP);
             VDISPATCH_POOLING(
-                    is_supported_post_ops(),
-                    VERBOSE_UNSUPPORTED_POSTOP);
+                    is_supported_post_ops(), VERBOSE_UNSUPPORTED_POSTOP);
 
             bool is_training = desc_.prop_kind == prop_kind::forward_training;
             if (desc()->alg_kind == alg_kind::pooling_max && is_training)
@@ -81,20 +80,20 @@ struct ref_pooling_fwd_t : public primitive_t {
                 bool ok = true;
 
                 for (int i = 0; i < p.len(); i++) {
-                ok = ok && utils::one_of(
-                    p.entry_[i].kind, primitive_kind::quantization);
+                    ok = ok
+                            && utils::one_of(p.entry_[i].kind,
+                                    primitive_kind::quantization);
                 }
                 return ok;
             };
 
-            return all_post_ops_supported() &&
-                IMPLICATION(p.len() > 0,
-                    (desc()->alg_kind
-                            == dnnl_pooling_avg_include_padding
-                        || desc()->alg_kind
-                            == dnnl_pooling_avg_exclude_padding)
-                        && src_type != data_type::bf16);
-
+            return all_post_ops_supported()
+                    && IMPLICATION(p.len() > 0,
+                            (desc()->alg_kind
+                                            == dnnl_pooling_avg_include_padding
+                                    || desc()->alg_kind
+                                            == dnnl_pooling_avg_exclude_padding)
+                                    && src_type != data_type::bf16);
         }
 
         virtual bool is_supported_data_types() const {
@@ -102,28 +101,27 @@ struct ref_pooling_fwd_t : public primitive_t {
             const auto dst_type = dst_md()->data_type;
             const auto acc_type = desc()->accum_data_type;
 
-            return utils::one_of(
-                std::make_tuple(src_type, dst_type, acc_type),
-                std::make_tuple(data_type::f32, data_type::f32,
-                    data_type::f32),
-                std::make_tuple(data_type::s32, data_type::s32,
-                    data_type::s32),
-                std::make_tuple(data_type::bf16, data_type::bf16,
-                    data_type::f32),
-                std::make_tuple(data_type::f16, data_type::f16,
-                    data_type::f32),
-                std::make_tuple(data_type::f8_e5m2, data_type::f8_e5m2,
-                    data_type::f32),
-                std::make_tuple(data_type::f8_e4m3, data_type::f8_e4m3,
-                    data_type::f32),
-                std::make_tuple(data_type::s8, data_type::s8,
-                    data_type::s32),
-                std::make_tuple(data_type::u8, data_type::u8,
-                    data_type::s32),
-                std::make_tuple(data_type::s8, data_type::f32,
-                    data_type::f32),
-                std::make_tuple(data_type::u8, data_type::f32,
-                    data_type::f32));
+            return utils::one_of(std::make_tuple(src_type, dst_type, acc_type),
+                    std::make_tuple(
+                            data_type::f32, data_type::f32, data_type::f32),
+                    std::make_tuple(
+                            data_type::s32, data_type::s32, data_type::s32),
+                    std::make_tuple(
+                            data_type::bf16, data_type::bf16, data_type::f32),
+                    std::make_tuple(
+                            data_type::f16, data_type::f16, data_type::f32),
+                    std::make_tuple(data_type::f8_e5m2, data_type::f8_e5m2,
+                            data_type::f32),
+                    std::make_tuple(data_type::f8_e4m3, data_type::f8_e4m3,
+                            data_type::f32),
+                    std::make_tuple(
+                            data_type::s8, data_type::s8, data_type::s32),
+                    std::make_tuple(
+                            data_type::u8, data_type::u8, data_type::s32),
+                    std::make_tuple(
+                            data_type::s8, data_type::f32, data_type::f32),
+                    std::make_tuple(
+                            data_type::u8, data_type::f32, data_type::f32));
         }
     };
 

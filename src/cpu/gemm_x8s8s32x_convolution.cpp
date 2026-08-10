@@ -152,8 +152,8 @@ status_t gemm_x8s8s32x_convolution_fwd_t::execute_forward(
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
         status_t st_thr = execute_forward_thr(ithr, nthr, src_base, wei_base,
                 bia_base, dst_base, scales, dst_scales, zp, scratchpad,
-                post_ops_binary_rhs_arg_vec.data(), ctx,
-                input_zp_base, output_compensation_base);
+                post_ops_binary_rhs_arg_vec.data(), ctx, input_zp_base,
+                output_compensation_base);
 
         if (st_thr != status::success) st = st_thr;
     });
@@ -174,7 +174,8 @@ status_t gemm_x8s8s32x_convolution_fwd_t::execute_forward_thr(const int ithr,
         const float *dst_scales, const zero_point_call_params_t &zp,
         const memory_tracking::grantor_t &scratchpad,
         const void *post_ops_binary_rhs_arg_vec, const exec_ctx_t &ctx,
-        const uint8_t *input_zp_base, const int32_t *output_compensation_base) const {
+        const uint8_t *input_zp_base,
+        const int32_t *output_compensation_base) const {
 
     const conv_gemm_conf_t &jcp = this->pd()->jcp_;
 
@@ -200,9 +201,9 @@ status_t gemm_x8s8s32x_convolution_fwd_t::execute_forward_thr(const int ithr,
     int *__restrict acc = scratchpad.get<int>(key_conv_int_dat_in_acc_dt)
             + (ptrdiff_t)ithr * jcp.oh_block * jcp.ow_block * jcp.oc;
 
-    const int32_t *_wei_comp
-            = jcp.signed_input ? get_wei_comp(wei_base, wei_md) :
-              jcp.with_input_zp ? output_compensation_base : nullptr;
+    const int32_t *_wei_comp = jcp.signed_input ? get_wei_comp(wei_base, wei_md)
+            : jcp.with_input_zp                 ? output_compensation_base
+                                                : nullptr;
 
     const bool should_apply_zp_src_comp_pad_jit_pp = false;
     const bool should_apply_zp_src_comp_outside_pp = false;
@@ -243,8 +244,7 @@ status_t gemm_x8s8s32x_convolution_fwd_t::execute_forward_thr(const int ithr,
                     + ((od * jcp.oh + oh) * jcp.ow + ow) * jcp.dst_os_stride;
 
             const uint8_t *__restrict input_zp = nullptr;
-            if (jcp.with_input_zp)
-                input_zp = input_zp_base + g * jcp.ic;
+            if (jcp.with_input_zp) input_zp = input_zp_base + g * jcp.ic;
 
             char *__restrict dst = (char *)dst_base
                     + types::data_type_size(dst_md.data_type()) * dst_off;
@@ -284,10 +284,13 @@ status_t gemm_x8s8s32x_convolution_fwd_t::execute_forward_thr(const int ithr,
             const float onef = 1.f, zerof = 0.f;
             const char *__restrict src_od
                     = src + od * jcp.oh * jcp.ow * jcp.ngroups * jcp.ic;
-            st = gemm_s8u8s32("N", BT, (jcp.signed_input || jcp.with_input_zp) ? "C" : "F", &M, &N, &K,
-                    &onef, wei, &LDA, &off_a,
+            st = gemm_s8u8s32("N", BT,
+                    (jcp.signed_input || jcp.with_input_zp) ? "C" : "F", &M, &N,
+                    &K, &onef, wei, &LDA, &off_a,
                     jcp.im2col_sz ? col : (uint8_t *)src_od, &LDB, &off_b,
-                    &zerof, acc, &M, (jcp.signed_input || jcp.with_input_zp) ? wei_comp : &off_c);
+                    &zerof, acc, &M,
+                    (jcp.signed_input || jcp.with_input_zp) ? wei_comp
+                                                            : &off_c);
 
             if (st != status::success) return st;
 

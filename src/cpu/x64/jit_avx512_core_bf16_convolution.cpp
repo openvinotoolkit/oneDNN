@@ -132,7 +132,8 @@ void jit_avx512_core_bf16_convolution_fwd_t::execute_forward_1d(
             par_conv.dst_orig = dst;
             par_conv.post_ops_binary_rhs_arg_vec
                     = post_ops_binary_rhs_arg_vec.data();
-            par_conv.oc_off = oc_idx * (is_dst_layout_nxc ? 1 : jcp.oc_block) * sizeof(float);
+            par_conv.oc_off = oc_idx * (is_dst_layout_nxc ? 1 : jcp.oc_block)
+                    * sizeof(float);
 
             (*kernel_)(&par_conv);
 
@@ -259,7 +260,9 @@ void jit_avx512_core_bf16_convolution_fwd_t::execute_forward_2d(
                 par_conv.dst_orig = dst;
                 par_conv.post_ops_binary_rhs_arg_vec
                         = post_ops_binary_rhs_arg_vec.data();
-                par_conv.oc_off = oc_idx * (is_dst_layout_nxc ? 1 : jcp.oc_block) * sizeof(float);
+                par_conv.oc_off = oc_idx
+                        * (is_dst_layout_nxc ? 1 : jcp.oc_block)
+                        * sizeof(float);
 
                 (*kernel_)(&par_conv);
 
@@ -400,7 +403,9 @@ void jit_avx512_core_bf16_convolution_fwd_t::execute_forward_3d(
                 par_conv.dst_orig = dst;
                 par_conv.post_ops_binary_rhs_arg_vec
                         = post_ops_binary_rhs_arg_vec.data();
-                par_conv.oc_off = oc_idx * (is_dst_layout_nxc ? 1 : jcp.oc_block) * sizeof(float);
+                par_conv.oc_off = oc_idx
+                        * (is_dst_layout_nxc ? 1 : jcp.oc_block)
+                        * sizeof(float);
 
                 (*kernel_)(&par_conv);
 
@@ -573,7 +578,9 @@ void jit_avx512_core_bf16_convolution_bwd_data_t ::execute_backward_data_3d(
                 par_conv.filt = wht_w + kh_lo * wht_h_stride;
                 par_conv.kh_padding = kh_len;
                 par_conv.kd_padding = kd_len;
-                par_conv.oc_off = ic_idx * (is_dsrc_layout_nxc ? 1 : jcp.ic_block) * sizeof(float);
+                par_conv.oc_off = ic_idx
+                        * (is_dsrc_layout_nxc ? 1 : jcp.ic_block)
+                        * sizeof(float);
                 par_conv.post_ops_binary_rhs_arg_vec
                         = post_ops_binary_rhs_arg_vec.data();
 
@@ -718,7 +725,9 @@ void jit_avx512_core_bf16_convolution_bwd_data_t ::execute_backward_data(
                 par_conv.filt = wht_w + k_lo * wht_h_stride;
                 par_conv.kh_padding = k_len;
                 par_conv.iwb = iwb;
-                par_conv.oc_off =  ic_idx * (is_dsrc_layout_nxc ? 1 : jcp.ic_block) * sizeof(float);
+                par_conv.oc_off = ic_idx
+                        * (is_dsrc_layout_nxc ? 1 : jcp.ic_block)
+                        * sizeof(float);
                 par_conv.post_ops_binary_rhs_arg_vec
                         = post_ops_binary_rhs_arg_vec.data();
 

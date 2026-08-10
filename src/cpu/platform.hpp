@@ -36,15 +36,16 @@
 // Target architecture macro is set to 1, others to 0. All macros are defined.
 
 #if defined(DNNL_X64) + defined(DNNL_AARCH64) + defined(DNNL_PPC64) \
-                + defined(DNNL_S390X) + defined(DNNL_RV64) \
-                + defined(DNNL_ARM) + defined(DNNL_X86) \
-                + defined(DNNL_ARCH_GENERIC) \
+                + defined(DNNL_S390X) + defined(DNNL_RV64) + defined(DNNL_ARM) \
+                + defined(DNNL_X86) + defined(DNNL_ARCH_GENERIC) \
         == 0
-#if defined(__amd64__) || defined(__amd64) || defined(__x86_64__) || \
-      defined(__x86_64) || defined(_M_X64) || defined(_M_AMD64)
+#if defined(__amd64__) || defined(__amd64) || defined(__x86_64__) \
+        || defined(__x86_64) || defined(_M_X64) || defined(_M_AMD64)
 #define DNNL_X64 1
-#elif defined(i386) || defined(__i386) || defined(__i386__) || defined(__IA32__) || defined(_M_I86) || \
-      defined(_M_IX86) || defined(__X86__) || defined(_X86_) || defined(__I86__) || defined(__386)
+#elif defined(i386) || defined(__i386) || defined(__i386__) \
+        || defined(__IA32__) || defined(_M_I86) || defined(_M_IX86) \
+        || defined(__X86__) || defined(_X86_) || defined(__I86__) \
+        || defined(__386)
 #define DNNL_X86 1
 #elif defined(__aarch64__) || defined(_M_ARM64)
 #define DNNL_AARCH64 1
@@ -62,9 +63,8 @@
 #endif // defined(DNNL_X64) + ... == 0
 
 #if defined(DNNL_X64) + defined(DNNL_AARCH64) + defined(DNNL_PPC64) \
-                + defined(DNNL_S390X) + defined(DNNL_RV64) \
-                + defined(DNNL_ARM) + defined(DNNL_X86) \
-                + defined(DNNL_ARCH_GENERIC) \
+                + defined(DNNL_S390X) + defined(DNNL_RV64) + defined(DNNL_ARM) \
+                + defined(DNNL_X86) + defined(DNNL_ARCH_GENERIC) \
         != 1
 #error One and only one architecture should be defined at a time
 #endif

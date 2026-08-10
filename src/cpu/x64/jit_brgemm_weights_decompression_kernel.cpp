@@ -33,7 +33,9 @@ using namespace Xbyak;
 using namespace std::placeholders;
 
 template <cpu_isa_t isa>
-void jit_brgemm_weights_decompression_kernel_t<isa>::init_decomp_params(std::function<Vmm(int)> vmm_params, Xbyak::Reg64 reg_params, bool broadcast_values, data_type_t element_type) {
+void jit_brgemm_weights_decompression_kernel_t<isa>::init_decomp_params(
+        std::function<Vmm(int)> vmm_params, Xbyak::Reg64 reg_params,
+        bool broadcast_values, data_type_t element_type) {
     size_t oc_blocks_num = div_up(jcp_.oc_size, vec_size);
     for (size_t ocb = 0; ocb < oc_blocks_num; ocb++) {
         if (broadcast_values) {
@@ -64,7 +66,7 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::init_decomp_params(std::fun
                 case data_type::e8m0: {
                     auto xmm_params = Xmm(vmm_params(ocb).getIdx());
                     auto reg_tmp_32 = Reg32(reg_tmp.getIdx());
-                    movzx(reg_tmp_32,  ptr[reg_params]);
+                    movzx(reg_tmp_32, ptr[reg_params]);
                     uni_vmovq(xmm_params, reg_tmp);
                     uni_vpslld(xmm_params, xmm_params, 23);
                     uni_vbroadcastss(vmm_params(ocb), xmm_params);
@@ -73,7 +75,8 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::init_decomp_params(std::fun
                 default: assert(!"unsupported data type");
             }
         } else {
-            const auto load_addr = ptr[reg_params + ocb * vec_size * types::data_type_size(element_type)];
+            const auto load_addr = ptr[reg_params
+                    + ocb * vec_size * types::data_type_size(element_type)];
             switch (element_type) {
                 case data_type::f32: {
                     uni_vmovups(vmm_params(ocb), load_addr);
@@ -96,7 +99,8 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::init_decomp_params(std::fun
 }
 
 template <cpu_isa_t isa>
-void jit_brgemm_weights_decompression_kernel_t<isa>::load_weights(Vmm vmm_load, const Xbyak::Address& addr, int ic) {
+void jit_brgemm_weights_decompression_kernel_t<isa>::load_weights(
+        Vmm vmm_load, const Xbyak::Address &addr, int ic) {
     switch (jcp_.weights_dt) {
         case data_type::u8: {
             uni_vpmovzxbd(vmm_load, addr);
@@ -202,7 +206,8 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::load_weights(Vmm vmm_load, 
 }
 
 template <cpu_isa_t isa>
-void jit_brgemm_weights_decompression_kernel_t<isa>::store_weights(const Xbyak::Address& addr, Vmm vmm_store) {
+void jit_brgemm_weights_decompression_kernel_t<isa>::store_weights(
+        const Xbyak::Address &addr, Vmm vmm_store) {
     switch (jcp_.decomp_buffer_dt) {
         case data_type::f32: {
             uni_vmovups(addr, vmm_store);
@@ -233,31 +238,15 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::generate() {
     mov(reg_ic_size, ptr[param1 + GET_OFF(ic_size)]);
 
     if (jcp_.weights_dt == data_type::nf4) {
-        static const float lookup[16] = {
-            -1.0,
-            -0.6961928009986877,
-            -0.5250730514526367,
-            -0.39491748809814453,
-            -0.28444138169288635,
-            -0.18477343022823334,
-            -0.09105003625154495,
-            0.0,
-            0.07958029955625534,
-            0.16093020141124725,
-            0.24611230194568634,
-            0.33791524171829224,
-            0.44070982933044434,
-            0.5626170039176941,
-            0.7229568362236023,
-            1.0
-        };
+        static const float lookup[16] = {-1.0, -0.6961928009986877,
+                -0.5250730514526367, -0.39491748809814453, -0.28444138169288635,
+                -0.18477343022823334, -0.09105003625154495, 0.0,
+                0.07958029955625534, 0.16093020141124725, 0.24611230194568634,
+                0.33791524171829224, 0.44070982933044434, 0.5626170039176941,
+                0.7229568362236023, 1.0};
 
-        static const int32_t mask8[16] = {
-            8, 8, 8, 8, 8, 8, 8, 8
-        };
-        static const int32_t mask7[16] = {
-            7, 7, 7, 7, 7, 7, 7, 7
-        };
+        static const int32_t mask8[16] = {8, 8, 8, 8, 8, 8, 8, 8};
+        static const int32_t mask7[16] = {7, 7, 7, 7, 7, 7, 7, 7};
 
         if (isa == avx2) {
             mov(reg_tmp, (size_t)lookup);
@@ -272,20 +261,19 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::generate() {
             uni_vmovups(vmm_lookup(), ptr[reg_tmp]);
         }
     } else if (jcp_.weights_dt == data_type::f4_e2m1) {
-        static const float lookup[16] = {
-            0.0f,   0.5f,
-            1.0f,   1.5f,
-            2.0f,   3.0f,
-            4.0f,   6.0f,
-            -0.0f,  -0.5f,
-            -1.0f,  -1.5f,
-            -2.0f,  -3.0f,
-            -4.0f,  -6.0f
-        };
+        static const float lookup[16]
+                = {0.0f, 0.5f, 1.0f, 1.5f, 2.0f, 3.0f, 4.0f, 6.0f, -0.0f, -0.5f,
+                        -1.0f, -1.5f, -2.0f, -3.0f, -4.0f, -6.0f};
 
         static const uint32_t mask_signed_bit[8] = {
-            0x80000000, 0x80000000, 0x80000000, 0x80000000,
-            0x80000000, 0x80000000, 0x80000000, 0x80000000,
+                0x80000000,
+                0x80000000,
+                0x80000000,
+                0x80000000,
+                0x80000000,
+                0x80000000,
+                0x80000000,
+                0x80000000,
         };
 
         if (isa == avx2) {
@@ -300,10 +288,19 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::generate() {
     }
 
     if (jcp_.with_scales)
-        init_decomp_params(std::bind(&jit_brgemm_weights_decompression_kernel_t::vmm_scales, this, _1), reg_scales, jcp_.broadcast_scales, jcp_.scales_dt);
+        init_decomp_params(
+                std::bind(
+                        &jit_brgemm_weights_decompression_kernel_t::vmm_scales,
+                        this, _1),
+                reg_scales, jcp_.broadcast_scales, jcp_.scales_dt);
 
     if (jcp_.with_zero_points)
-        init_decomp_params(std::bind(&jit_brgemm_weights_decompression_kernel_t::vmm_zero_points, this, _1), reg_zero_points, jcp_.broadcast_zero_points, jcp_.zero_points_dt);
+        init_decomp_params(
+                std::bind(&jit_brgemm_weights_decompression_kernel_t::
+                                  vmm_zero_points,
+                        this, _1),
+                reg_zero_points, jcp_.broadcast_zero_points,
+                jcp_.zero_points_dt);
 
     size_t oc_blocks_num = div_up(jcp_.oc_size, vec_size);
 
@@ -314,12 +311,13 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::generate() {
     size_t typesize_scale = [&] {
         if (jcp_.weights_dt == data_type::u2) {
             return 4;
-        } else if (one_of(jcp_.weights_dt, data_type::nf4, data_type::s4, data_type::u4, data_type::f4_e2m1)) {
+        } else if (one_of(jcp_.weights_dt, data_type::nf4, data_type::s4,
+                           data_type::u4, data_type::f4_e2m1)) {
             return 2;
         } else {
             return 1;
         }
-    } ();
+    }();
     size_t decomp_buf_dt_size = types::data_type_size(jcp_.decomp_buffer_dt);
 
     L(ic_loop_label);
@@ -331,10 +329,13 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::generate() {
             for (size_t ocb = 0; ocb < oc_blocks_num; ocb++) {
                 for (size_t ic = 0; ic < jcp_.ic_internal_size; ic++) {
                     size_t weights_offset;
-                    if (jcp_.weights_dt == data_type::u8 || jcp_.weights_dt == data_type::s8)
-                        weights_offset = (ic * jcp_.oc_size + ocb * vec_size) * weights_dt_size / typesize_scale;
+                    if (jcp_.weights_dt == data_type::u8
+                            || jcp_.weights_dt == data_type::s8)
+                        weights_offset = (ic * jcp_.oc_size + ocb * vec_size)
+                                * weights_dt_size / typesize_scale;
                     else
-                        weights_offset = ocb * jcp_.ic_internal_size * vec_size * weights_dt_size / typesize_scale;
+                        weights_offset = ocb * jcp_.ic_internal_size * vec_size
+                                * weights_dt_size / typesize_scale;
                     auto vmm_load = vmm_weights(ic);
                     const auto load_addr = ptr[reg_weights + weights_offset];
                     load_weights(vmm_load, load_addr, ic);
@@ -361,35 +362,48 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::generate() {
 
                 for (size_t ic = 0; ic < jcp_.ic_internal_size; ic++) {
                     auto ymm_store = Ymm(vmm_weights(ic).getIdx());
-                    size_t decomp_buffer_offset = jcp_.weights_dt == data_type::u2 ?
-                        (((ic / 2) * oc_blocks_num + ocb) * 2 + (ic % 2)) * vec_size * decomp_buf_dt_size :
-                        (ocb * jcp_.ic_internal_size + ic) * vec_size * decomp_buf_dt_size;
-                    const auto decomp_buffer_addr = ptr[reg_decomp_buffer + decomp_buffer_offset];
+                    size_t decomp_buffer_offset
+                            = jcp_.weights_dt == data_type::u2
+                            ? (((ic / 2) * oc_blocks_num + ocb) * 2 + (ic % 2))
+                                    * vec_size * decomp_buf_dt_size
+                            : (ocb * jcp_.ic_internal_size + ic) * vec_size
+                                    * decomp_buf_dt_size;
+                    const auto decomp_buffer_addr
+                            = ptr[reg_decomp_buffer + decomp_buffer_offset];
                     vmovdqu16(decomp_buffer_addr, ymm_store);
                 }
             }
         } else {
             for (size_t ocb = 0; ocb < oc_blocks_num; ocb++) {
                 for (size_t ic = 0; ic < jcp_.ic_internal_size; ic++) {
-                    size_t weights_offset = ocb * jcp_.ic_internal_size * vec_size * weights_dt_size / typesize_scale;
+                    size_t weights_offset = ocb * jcp_.ic_internal_size
+                            * vec_size * weights_dt_size / typesize_scale;
                     const auto weights_addr = ptr[reg_weights + weights_offset];
                     load_weights(vmm_weights(0), weights_addr, ic);
 
                     if (jcp_.with_zero_points)
-                        uni_vsubps(vmm_weights(0), vmm_weights(0), vmm_zero_points(ocb));
+                        uni_vsubps(vmm_weights(0), vmm_weights(0),
+                                vmm_zero_points(ocb));
                     if (jcp_.with_scales)
-                        uni_vmulps(vmm_weights(0), vmm_weights(0), vmm_scales(ocb));
+                        uni_vmulps(vmm_weights(0), vmm_weights(0),
+                                vmm_scales(ocb));
 
-                    size_t decomp_buffer_offset = (ic * jcp_.oc_size + ocb * vec_size) * decomp_buf_dt_size;
-                    const auto decomp_buffer_addr = ptr[reg_decomp_buffer + decomp_buffer_offset];
+                    size_t decomp_buffer_offset
+                            = (ic * jcp_.oc_size + ocb * vec_size)
+                            * decomp_buf_dt_size;
+                    const auto decomp_buffer_addr
+                            = ptr[reg_decomp_buffer + decomp_buffer_offset];
                     store_weights(decomp_buffer_addr, vmm_weights(0));
                 }
             }
         }
 
         dec(reg_ic_size);
-        add(reg_weights, weights_dt_size * jcp_.oc_size * jcp_.ic_internal_size / typesize_scale);
-        add(reg_decomp_buffer, decomp_buf_dt_size * jcp_.oc_size * jcp_.ic_internal_size);
+        add(reg_weights,
+                weights_dt_size * jcp_.oc_size * jcp_.ic_internal_size
+                        / typesize_scale);
+        add(reg_decomp_buffer,
+                decomp_buf_dt_size * jcp_.oc_size * jcp_.ic_internal_size);
 
         jmp(ic_loop_label, T_NEAR);
     }

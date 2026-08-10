@@ -29,21 +29,18 @@ using namespace dnnl::impl::status;
 using namespace dnnl::impl::utils;
 
 #define src_blk_off(f, n, c, d, h, w) \
-    pd()->ndims() == 5 \
-        ? (f).blk_off(n, c, d, h, w) \
-        : (f).blk_off(n, c, h, w)
+    pd()->ndims() == 5 ? (f).blk_off(n, c, d, h, w) : (f).blk_off(n, c, h, w)
 
 #define wht_blk_off(f, g, oc, ic, kd, kh, kw) \
-    pd()->ndims() == 5 \
-        ? pd()->with_groups() \
-            ? (f).blk_off(g, oc, ic, kd, kh, kw) \
-            : (f).blk_off(oc, ic, kd, kh, kw) \
-        : pd()->with_groups() \
-            ? (f).blk_off(g, oc, ic, kh, kw) \
-            : (f).blk_off(oc, ic, kh, kw)
+    pd()->ndims() == 5            ? pd()->with_groups() \
+                               ? (f).blk_off(g, oc, ic, kd, kh, kw) \
+                               : (f).blk_off(oc, ic, kd, kh, kw) \
+                       : pd()->with_groups() ? (f).blk_off(g, oc, ic, kh, kw) \
+                                  : (f).blk_off(oc, ic, kh, kw)
 
 template <cpu_isa_t isa>
-void _jit_uni_planar_convolution_fwd_t<isa>::execute_forward(const exec_ctx_t &ctx) const {
+void _jit_uni_planar_convolution_fwd_t<isa>::execute_forward(
+        const exec_ctx_t &ctx) const {
     auto src = CTX_IN_MEM(const data_t *, DNNL_ARG_SRC);
     auto weights = CTX_IN_MEM(const data_t *, DNNL_ARG_WEIGHTS);
     auto bias = CTX_IN_MEM(const data_t *, DNNL_ARG_BIAS);
@@ -61,53 +58,63 @@ void _jit_uni_planar_convolution_fwd_t<isa>::execute_forward(const exec_ctx_t &c
     int idx = 0;
     for (int i = 0; i < (jcp.dilate_h + 1); i++) {
         for (int ib = 0; ib < jcp.oh; ib += (jcp.dilate_h + 1)) {
-            if (ib + i >= jcp.oh)
-                continue;
+            if (ib + i >= jcp.oh) continue;
 
             oh_indexes[idx++] = ib + i;
-            if (idx >= jcp.oh)
-                break;
+            if (idx >= jcp.oh) break;
         }
-        if (idx >= jcp.oh)
-            break;
+        if (idx >= jcp.oh) break;
     }
 
     int threads_count = dnnl_get_max_threads();
     int ohb_size = div_up(jcp.oh, threads_count);
 
-    auto kernel_params = [&](int n, int g, int icb, int oc, int od, int oh, int oh_blocks) {
+    auto kernel_params = [&](int n, int g, int icb, int oc, int od, int oh,
+                                 int oh_blocks) {
         auto par_conv = jit_conv_args_t();
 
         const int dj = od * jcp.stride_d;
         const int d_t_overflow = nstl::max(0, jcp.f_pad - dj);
-        const int d_b_overflow = nstl::max(jcp.id, dj + (jcp.kd - 1) * (jcp.dilate_d + 1) - jcp.f_pad + 1) - jcp.id;
-        const int id = nstl::max(dj - jcp.f_pad + div_up(d_t_overflow, (jcp.dilate_d + 1)) * (jcp.dilate_d + 1), 0);
+        const int d_b_overflow = nstl::max(jcp.id,
+                                         dj + (jcp.kd - 1) * (jcp.dilate_d + 1)
+                                                 - jcp.f_pad + 1)
+                - jcp.id;
+        const int id = nstl::max(dj - jcp.f_pad
+                        + div_up(d_t_overflow, (jcp.dilate_d + 1))
+                                * (jcp.dilate_d + 1),
+                0);
         const int wd = div_up(d_t_overflow, (jcp.dilate_d + 1));
-        const int kd_padding = jcp.kd - div_up(d_t_overflow, (jcp.dilate_d + 1)) - div_up(d_b_overflow, (jcp.dilate_d + 1));
+        const int kd_padding = jcp.kd - div_up(d_t_overflow, (jcp.dilate_d + 1))
+                - div_up(d_b_overflow, (jcp.dilate_d + 1));
 
         const int hj = oh * jcp.stride_h;
         const int i_t_overflow = nstl::max(0, jcp.t_pad - hj);
-        const int i_b_overflow = nstl::max(jcp.ih, hj + (jcp.kh - 1) * (jcp.dilate_h + 1) - jcp.t_pad + 1) - jcp.ih;
-        const int ih = nstl::max(hj - jcp.t_pad + div_up(i_t_overflow, (jcp.dilate_h + 1)) * (jcp.dilate_h + 1), 0);
+        const int i_b_overflow = nstl::max(jcp.ih,
+                                         hj + (jcp.kh - 1) * (jcp.dilate_h + 1)
+                                                 - jcp.t_pad + 1)
+                - jcp.ih;
+        const int ih = nstl::max(hj - jcp.t_pad
+                        + div_up(i_t_overflow, (jcp.dilate_h + 1))
+                                * (jcp.dilate_h + 1),
+                0);
         const int wh = div_up(i_t_overflow, (jcp.dilate_h + 1));
-        const int kh_padding = jcp.kh - div_up(i_t_overflow, (jcp.dilate_h + 1)) - div_up(i_b_overflow, (jcp.dilate_h + 1));
+        const int kh_padding = jcp.kh - div_up(i_t_overflow, (jcp.dilate_h + 1))
+                - div_up(i_b_overflow, (jcp.dilate_h + 1));
 
         const size_t _oc = oc;
         const size_t _ic = g * jcp.nb_ic + icb;
 
         par_conv.src = &src[src_blk_off(src_d, n, _ic, id, ih, 0)];
         par_conv.dst = &dst[src_blk_off(dst_d, n, _oc, od, oh, 0)];
-        par_conv.filt = &weights[wht_blk_off(weights_d, g, _oc, _ic, wd, wh, 0)];
+        par_conv.filt
+                = &weights[wht_blk_off(weights_d, g, _oc, _ic, wd, wh, 0)];
 
         if (icb == 0) {
-            if (bias)
-                par_conv.bias = &bias[bias_d.blk_off(_oc)];
+            if (bias) par_conv.bias = &bias[bias_d.blk_off(_oc)];
             par_conv.flags |= FLAG_IC_FIRST;
         }
 
-        if (icb + 1 == jcp.nb_ic) {
-            par_conv.flags |= FLAG_IC_LAST;
-        }
+        if (icb + 1 == jcp.nb_ic) { par_conv.flags |= FLAG_IC_LAST; }
 
         par_conv.oc_off = _oc * sizeof(float);
         par_conv.oh_blocks = (size_t)oh_blocks;
@@ -132,14 +139,18 @@ void _jit_uni_planar_convolution_fwd_t<isa>::execute_forward(const exec_ctx_t &c
 
                 for (int icb = icbb; icb < icbb + icb_step; ++icb) {
                     for (int odb = 0; odb < (jcp.dilate_d + 1); odb++) {
-                        for (int od = odb; od < jcp.od; od += (jcp.dilate_d + 1)) {
+                        for (int od = odb; od < jcp.od;
+                                od += (jcp.dilate_d + 1)) {
                             int oh_idx_off = ithr * ohb_size;
                             for (int oh_idx = 0; oh_idx < ohb_size; oh_idx++) {
-                                if ((oh_idx_off + oh_idx) >= jcp.oh || oh_indexes[oh_idx_off + oh_idx] >= jcp.oh)
+                                if ((oh_idx_off + oh_idx) >= jcp.oh
+                                        || oh_indexes[oh_idx_off + oh_idx]
+                                                >= jcp.oh)
                                     continue;
                                 int oh = oh_indexes[oh_idx_off + oh_idx];
 
-                                jit_conv_args_t par_conv = kernel_params(n, g, icb, oc, od, oh, 1);
+                                jit_conv_args_t par_conv = kernel_params(
+                                        n, g, icb, oc, od, oh, 1);
 
                                 (*kernel_)(&par_conv);
                             }
@@ -154,11 +165,10 @@ void _jit_uni_planar_convolution_fwd_t<isa>::execute_forward(const exec_ctx_t &c
     parallel(0, ker);
 }
 
-
 template struct _jit_uni_planar_convolution_fwd_t<avx512_core>;
 template struct _jit_uni_planar_convolution_fwd_t<avx2>;
 
-}
-}
-}
-}
+} // namespace x64
+} // namespace cpu
+} // namespace impl
+} // namespace dnnl

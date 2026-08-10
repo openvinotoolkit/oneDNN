@@ -103,15 +103,18 @@ struct prec_traits_t<data_type::boolean> {
     using type = bool;
 };
 
-template <> struct prec_traits_t<data_type::bin> {
+template <>
+struct prec_traits_t<data_type::bin> {
     using type = uint8_t;
 };
 
-template <> struct prec_traits_t<data_type::nf4> {
+template <>
+struct prec_traits_t<data_type::nf4> {
     using type = uint8_t;
 };
 
-template <> struct prec_traits_t<data_type::u2> {
+template <>
+struct prec_traits_t<data_type::u2> {
     using type = uint8_t;
 };
 

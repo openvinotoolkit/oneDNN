@@ -388,8 +388,7 @@ struct jit_avx2_1x1_convolution_bwd_data_t : public primitive_t {
             VDISPATCH_CONV(set_default_alg_kind(alg_kind::convolution_direct),
                     VERBOSE_BAD_ALGORITHM);
             VDISPATCH_CONV(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
-            VDISPATCH_CONV(
-                    is_supported_post_ops(), VERBOSE_UNSUPPORTED_ATTR);
+            VDISPATCH_CONV(is_supported_post_ops(), VERBOSE_UNSUPPORTED_ATTR);
             VDISPATCH_CONV(set_default_formats(), VERBOSE_UNSUPPORTED_TAG);
 
             const convolution_desc_t *conv_d = desc();
@@ -443,14 +442,15 @@ struct jit_avx2_1x1_convolution_bwd_data_t : public primitive_t {
 
         virtual bool is_supported_post_ops() const {
             const auto &p = this->attr()->post_ops_;
-            if (p.len() > 1)
-                return false;
+            if (p.len() > 1) return false;
 
             auto all_post_ops_supported = [&]() {
                 bool ok = true;
 
                 for (int i = 0; i < p.len(); i++) {
-                    ok = ok && utils::one_of(p.entry_[i].kind, primitive_kind::depthwise);
+                    ok = ok
+                            && utils::one_of(p.entry_[i].kind,
+                                    primitive_kind::depthwise);
                 }
                 return ok;
             };

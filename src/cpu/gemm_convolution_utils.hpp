@@ -96,8 +96,11 @@ struct pp_kernel_t {
 
     virtual ~pp_kernel_t() = default;
 
-    virtual void operator()(float *dst_orig, float *dst, const float *bias, const int len, const int oc_start, const int oc_work, const int oc_stride,
-                            const std::vector<const void *>& post_ops_binary_rhs_arg_vec) const = 0;
+    virtual void operator()(float *dst_orig, float *dst, const float *bias,
+            const int len, const int oc_start, const int oc_work,
+            const int oc_stride,
+            const std::vector<const void *> &post_ops_binary_rhs_arg_vec) const
+            = 0;
 
     virtual status_t create_kernel() { return status::success; }
 
@@ -121,7 +124,8 @@ void transpose_dt(const conv_gemm_conf_t &jcp, const T *__restrict im,
 
 template <typename im_dt, typename col_dt>
 void im2col_dt_3d(const conv_gemm_conf_t &jcp, const void *__restrict im,
-        col_dt *__restrict col, dim_t od, const uint8_t *__restrict input_zp = nullptr);
+        col_dt *__restrict col, dim_t od,
+        const uint8_t *__restrict input_zp = nullptr);
 
 template <typename data_type_t>
 void im2col(const conv_gemm_conf_t &jcp, const data_type_t *__restrict im,
