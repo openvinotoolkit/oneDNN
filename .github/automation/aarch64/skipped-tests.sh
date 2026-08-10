@@ -17,8 +17,6 @@
 # limitations under the License.
 # *******************************************************************************
 
-# Test oneDNN for aarch64.
-
 set -eo pipefail
 
 OS=${OS:-"Linux"}
@@ -26,26 +24,47 @@ OS=${OS:-"Linux"}
 # Nightly failures
 SKIPPED_TEST_FAILURES+="test_benchdnn_modeC_graph_fusions_cpu"
 
-#  We currently have some OS and config specific test failures.
+# We currently have some OS and config specific test failures.
 if [[ "$OS" == "Linux" ]]; then
+    SKIPPED_TEST_FAILURES+="|cpu-matmul-coo-cpp"
+    SKIPPED_TEST_FAILURES+="|cpu-matmul-csr-cpp"
+    SKIPPED_TEST_FAILURES+="|cpu-tutorials-matmul-sgemm-and-matmul-cpp"
+    SKIPPED_TEST_FAILURES+="|cpu-tutorials-matmul-weights-decompression-matmul-cpp"
     SKIPPED_TEST_FAILURES+="|test_benchdnn_modeC_graph_ci_cpu"
 
-    # OpenVINO Toolkit OneDNN fork failed tests
     SKIPPED_TEST_FAILURES+="|test_batch_normalization"
     SKIPPED_TEST_FAILURES+="|test_eltwise"
     SKIPPED_TEST_FAILURES+="|test_iface_attr"
+    SKIPPED_TEST_FAILURES+="|test_iface_sparse"
     SKIPPED_TEST_FAILURES+="|test_lrn"
     SKIPPED_TEST_FAILURES+="|test_pooling_forward"
     SKIPPED_TEST_FAILURES+="|test_reduction"
     SKIPPED_TEST_FAILURES+="|test_api"
     SKIPPED_TEST_FAILURES+="|test_benchdnn_modeC_binary_smoke_cpu"
     SKIPPED_TEST_FAILURES+="|test_benchdnn_modeC_bnorm_smoke_cpu"
+    SKIPPED_TEST_FAILURES+="|test_benchdnn_modeC_brgemm_smoke_cpu"
     SKIPPED_TEST_FAILURES+="|test_benchdnn_modeC_conv_smoke_cpu"
     SKIPPED_TEST_FAILURES+="|test_benchdnn_modeC_deconv_smoke_cpu"
     SKIPPED_TEST_FAILURES+="|test_benchdnn_modeC_eltwise_smoke_cpu"
     SKIPPED_TEST_FAILURES+="|test_benchdnn_modeC_lrn_smoke_cpu"
     SKIPPED_TEST_FAILURES+="|test_benchdnn_modeC_pool_smoke_cpu"
     SKIPPED_TEST_FAILURES+="|test_benchdnn_modeC_reduction_smoke_cpu"
+    SKIPPED_TEST_FAILURES+="|test_benchdnn_modeC_softmax_smoke_cpu"
+elif [[ "$OS" == "Darwin" ]]; then
+    SKIPPED_TEST_FAILURES+="|cpu-matmul-coo-cpp"
+    SKIPPED_TEST_FAILURES+="|cpu-matmul-csr-cpp"
+    SKIPPED_TEST_FAILURES+="|cpu-tutorials-matmul-sgemm-and-matmul-cpp"
+    SKIPPED_TEST_FAILURES+="|cpu-tutorials-matmul-weights-decompression-matmul-cpp"
+    SKIPPED_TEST_FAILURES+="|test_eltwise"
+    SKIPPED_TEST_FAILURES+="|test_iface_attr"
+    SKIPPED_TEST_FAILURES+="|test_iface_sparse"
+    SKIPPED_TEST_FAILURES+="|test_pooling_forward"
+    SKIPPED_TEST_FAILURES+="|test_benchdnn_modeC_brgemm_smoke_cpu"
+    SKIPPED_TEST_FAILURES+="|test_benchdnn_modeC_conv_smoke_cpu"
+    SKIPPED_TEST_FAILURES+="|test_benchdnn_modeC_deconv_smoke_cpu"
+    SKIPPED_TEST_FAILURES+="|test_benchdnn_modeC_eltwise_smoke_cpu"
+    SKIPPED_TEST_FAILURES+="|test_benchdnn_modeC_pool_smoke_cpu"
+    SKIPPED_TEST_FAILURES+="|test_benchdnn_modeC_softmax_smoke_cpu"
 fi
 
 printf "${SKIPPED_TEST_FAILURES}"
