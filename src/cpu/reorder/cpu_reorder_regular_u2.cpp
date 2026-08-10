@@ -37,6 +37,11 @@ const impl_list_map_t &regular_u2_impl_list_map() {
             REG_SR(u2, any, u2, OI16i32o4i, fmt_order_keep)
             REG_SR(u2, any, u2, OI16i48o4i, fmt_order_keep)
             REG_SR(u2, any, u2, OI16i64o4i, fmt_order_keep)
+            REG_SR(u2, any, u2, aBC16c16b4c, fmt_order_keep)
+            REG_SR(u2, any, u2, aBC16c32b4c, fmt_order_keep)
+            REG_SR(u2, any, u2, aBC16c48b4c, fmt_order_keep)
+            REG_SR(u2, any, u2, aBC16c64b4c, fmt_order_keep)
+            REG_SR(u2, any, u2, aBC4c24b4c, fmt_order_keep)
             nullptr,
         }},
     });

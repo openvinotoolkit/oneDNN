@@ -386,6 +386,7 @@ const format_tag_t aBC16c16b4c = dnnl_aBC16c16b4c;
 const format_tag_t aBC16c32b4c = dnnl_aBC16c32b4c;
 const format_tag_t aBC16c48b4c = dnnl_aBC16c48b4c;
 const format_tag_t aBC16c64b4c = dnnl_aBC16c64b4c;
+const format_tag_t aBC4c24b4c = dnnl_aBC4c24b4c;
 const format_tag_t BA4b4a = dnnl_BA4b4a;
 const format_tag_t BA8b4a = dnnl_BA8b4a;
 const format_tag_t BA16a16b = dnnl_BA16a16b;
