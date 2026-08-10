@@ -22,7 +22,7 @@
 
 set -o errexit -o pipefail -o noclobber
 
-SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 
 get_filtered_tests() {
     local skipped_tests="$1"
@@ -308,7 +308,7 @@ run_balanced_ci_tests() {
 
         for ((group = 2; group <= total_parts; group++)); do
             if (( group_costs[group] < best_cost )) \
-                    || (( group_costs[group] == best_cost
+                    || (( group_costs[group] == best_cost \
                             && group_counts[group] < best_count )); then
                 best_group=${group}
                 best_cost=${group_costs[group]}
@@ -350,7 +350,7 @@ export QEMU_LD_PREFIX=/usr/riscv64-linux-gnu
 
 if [[ "$ONEDNN_TEST_SET" == "SMOKE" ]]; then
     set -x
-    ctest --no-tests=error --output-on-failure -E $("${SCRIPT_DIR}"/skipped-tests.sh)
+    ctest --no-tests=error --output-on-failure -E "$("${SCRIPT_DIR}"/skipped-tests.sh)"
     set +x
 
 elif [[ "$ONEDNN_TEST_SET" == "CI" ]]; then
@@ -363,7 +363,7 @@ elif [[ "$ONEDNN_TEST_SET" == "CI" ]]; then
         run_balanced_ci_tests "${skipped_tests}"
     else
         set -x
-        ctest --no-tests=error --output-on-failure -I ${start},,${stride} \
+        ctest --no-tests=error --output-on-failure -I "${start},,${stride}" \
                 -E "${skipped_tests}"
         set +x
     fi

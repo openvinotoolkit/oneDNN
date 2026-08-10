@@ -22,7 +22,7 @@
 
 set -o errexit -o pipefail -o noclobber
 
-SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 
 # Defines MP, CC, CXX, OS and RISC-V specific variables.
 source ${SCRIPT_DIR}/common.sh
@@ -31,29 +31,31 @@ CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE:-"Release"}
 ONEDNN_TEST_SET=${ONEDNN_TEST_SET:-"SMOKE"}
 ONEDNN_BUILD_GRAPH=${ONEDNN_BUILD_GRAPH:-"ON"}
 ONEDNN_THREADING=${ONEDNN_THREADING:-"OMP"}
+ONEDNN_CMAKE_EXTRA_FLAGS=${ONEDNN_CMAKE_EXTRA_FLAGS:-""}
+
+GENERATOR_ARGS=()
+if [[ -n "${CMAKE_GENERATOR}" ]]; then
+    GENERATOR_ARGS=(-G "${CMAKE_GENERATOR}")
+fi
 
 if [[ "$ONEDNN_ACTION" == "configure" ]]; then
     set -x
-
-    CMAKE_ARGS=(
-        -Bbuild -S.
-        -DONEDNN_BUILD_GRAPH=$ONEDNN_BUILD_GRAPH
-        -DDNNL_CPU_RUNTIME=$ONEDNN_THREADING
-        -DONEDNN_WERROR=ON
-        -DDNNL_BUILD_FOR_CI=ON
-        -DONEDNN_TEST_SET=$ONEDNN_TEST_SET
-        -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE
-        -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TOOLCHAIN_FILE"
-    )
-
-    cmake "${CMAKE_ARGS[@]}"
+    cmake \
+        "${GENERATOR_ARGS[@]}" \
+        -Bbuild -S. \
+        -DONEDNN_BUILD_GRAPH=$ONEDNN_BUILD_GRAPH \
+        -DDNNL_CPU_RUNTIME=$ONEDNN_THREADING \
+        -DDNNL_WERROR=ON \
+        -DDNNL_BUILD_FOR_CI=ON \
+        -DONEDNN_TEST_SET=$ONEDNN_TEST_SET \
+        -DCMAKE_BUILD_TYPE=$CMAKE_BUILD_TYPE \
+        -DCMAKE_TOOLCHAIN_FILE="$CMAKE_TOOLCHAIN_FILE" \
+        ${ONEDNN_CMAKE_EXTRA_FLAGS}
     set +x
-
 elif [[ "$ONEDNN_ACTION" == "build" ]]; then
     set -x
-    cmake --build build --parallel ${MP#-j}
+    cmake --build build --parallel "${MP#-j}"
     set +x
-
 else
     echo "Unknown action: $ONEDNN_ACTION"
     exit 1

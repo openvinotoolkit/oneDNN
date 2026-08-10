@@ -18,10 +18,9 @@
 # limitations under the License.
 # *******************************************************************************
 
-import argparse
 import re
+import argparse
 import subprocess
-
 
 # Ensure the scope ends in a colon and that same level scopes are
 # comma delimited.
@@ -51,7 +50,6 @@ def __scopeCheck(msg: str):
     print(f"{status} OK")
     return True
 
-
 # Ensure a character limit for the first line.
 def __numCharacterCheck(msg: str):
     status = "Message length:"
@@ -74,7 +72,6 @@ def __numCharacterCheck(msg: str):
                 "exceed 72 characters."
             )
             return False
-
 
 def main():
     parser = argparse.ArgumentParser()

@@ -29,13 +29,16 @@ echo "Starting format check..."
 
 src_regex='.*\.(c|h|cpp|hpp|cxx|hxx|cl)$'
 
-# Treat each argument as an input file. If called with no arguments check the
-# whole repo.
+# Treat the first argument as a base SHA for git diff. If called with no
+# arguments, check the whole repo.
 if [[ $# -gt 0 ]]; then
     base_sha=$1
-    file_list=$(git diff --name-only $base_sha | grep -E "$src_regex")
+    file_list=$(git diff --name-only --diff-filter=ACMRT "$base_sha" | grep -E "$src_regex" || true)
     echo "Checking: $file_list"
-    for filename in $file_list; do ${CLANG_FORMAT} -style=file -i $filename; done
+    while IFS= read -r filename; do
+        [[ -f "$filename" ]] || continue
+        "${CLANG_FORMAT}" -style=file -i "$filename"
+    done <<< "$file_list"
 else
     find "$(pwd)" -type f -regextype posix-egrep -regex "$src_regex" -exec "$CLANG_FORMAT" -style=file -i {} \+
 fi
