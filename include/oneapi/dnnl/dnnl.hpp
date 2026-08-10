@@ -27,12 +27,12 @@
 
 /// @cond DO_NOT_DOCUMENT_THIS
 #include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <iterator>
 #include <memory>
 #include <string>
 #include <vector>
-#include <array>
 #include <unordered_map>
 
 #include "oneapi/dnnl/dnnl.h"
@@ -3130,13 +3130,15 @@ struct memory : public handle<dnnl_memory_t> {
         static desc packed_v0(const dims &adims, data_type adata_type,
                 bool allow_empty = false) {
             dnnl_memory_desc_t md = nullptr;
-            dnnl_status_t status = dnnl_memory_desc_create_with_packed_encoding_v0(
-                    &md, dnnl_packed,
-                    (int)adims.size(), adims.data(), convert_to_c(adata_type));
+            dnnl_status_t status
+                    = dnnl_memory_desc_create_with_packed_encoding_v0(&md,
+                            dnnl_packed, (int)adims.size(), adims.data(),
+                            convert_to_c(adata_type));
 
             if (!allow_empty)
                 error::wrap_c_api(status,
-                        "could not construct a memory descriptor with sparse format");
+                        "could not construct a memory descriptor with sparse "
+                        "format");
             return desc(md);
         }
 
@@ -3177,7 +3179,7 @@ struct memory : public handle<dnnl_memory_t> {
         /// To preserve behavior of 2.x oneDNN versions
         ///
         /// @param desc memory descriptor to copy.
-        desc(const memory::desc& adesc) {
+        desc(const memory::desc &adesc) {
             auto cdesc = adesc.get();
             dnnl_memory_desc_t cloned_md = nullptr;
             dnnl_memory_desc_clone(&cloned_md, cdesc);
@@ -4073,10 +4075,11 @@ struct post_ops : public handle<dnnl_post_ops_t> {
                 "could not append a binary post-op with ternary operators");
     }
 
-    void append_dw_conv(int in_h, int in_w, int ker_h, int ker_w, int str_h, int str_w, dnnl_data_type_t in_dt) {
-        error::wrap_c_api(dnnl_post_ops_append_dw_conv(get(),
-                                                       in_h, in_w, ker_h, ker_w, str_h, str_w, in_dt),
-                          "could not append dw conv");
+    void append_dw_conv(int in_h, int in_w, int ker_h, int ker_w, int str_h,
+            int str_w, dnnl_data_type_t in_dt) {
+        error::wrap_c_api(dnnl_post_ops_append_dw_conv(get(), in_h, in_w, ker_h,
+                                  ker_w, str_h, str_w, in_dt),
+                "could not append dw conv");
     }
 
     /// Returns the parameters of a binary post-op.
@@ -4191,21 +4194,30 @@ struct post_ops : public handle<dnnl_post_ops_t> {
                 "could not get parameters of a binary post-op");
     }
 
-    void append_depthwise(algorithm alg, const std::array<size_t, 2>& offset) {
-        error::wrap_c_api(dnnl_post_ops_append_depthwise(get(), convert_to_c(alg), offset.size(), offset.data()),
+    void append_depthwise(algorithm alg, const std::array<size_t, 2> &offset) {
+        error::wrap_c_api(
+                dnnl_post_ops_append_depthwise(
+                        get(), convert_to_c(alg), offset.size(), offset.data()),
                 "could not append depthwise");
     }
 
-    void append_quantization(algorithm alg, const std::array<bool, 6>& per_channel, const std::array<bool, 6>& all_default,
-                             const std::array<size_t, 6>& offset) {
-        error::wrap_c_api(dnnl_post_ops_append_quantization(get(), convert_to_c(alg), per_channel.size(), per_channel.data(),
-                all_default.size(), all_default.data(), offset.size(), offset.data()),
-                          "could not append quantization");
+    void append_quantization(algorithm alg,
+            const std::array<bool, 6> &per_channel,
+            const std::array<bool, 6> &all_default,
+            const std::array<size_t, 6> &offset) {
+        error::wrap_c_api(
+                dnnl_post_ops_append_quantization(get(), convert_to_c(alg),
+                        per_channel.size(), per_channel.data(),
+                        all_default.size(), all_default.data(), offset.size(),
+                        offset.data()),
+                "could not append quantization");
     }
 
-    void append_binarization(algorithm alg, const float* weights_data, const float* output_mask) {
-        error::wrap_c_api(dnnl_post_ops_append_binarization(get(), convert_to_c(alg), weights_data, output_mask),
-                          "could not append binarization");
+    void append_binarization(algorithm alg, const float *weights_data,
+            const float *output_mask) {
+        error::wrap_c_api(dnnl_post_ops_append_binarization(get(),
+                                  convert_to_c(alg), weights_data, output_mask),
+                "could not append binarization");
     }
 };
 
@@ -4438,8 +4450,11 @@ struct primitive_attr : public handle<dnnl_primitive_attr_t> {
         error::wrap_c_api(dnnl_primitive_attr_set_scales_mask(get(), arg, mask),
                 "could not set scales primitive attribute");
     }
-    void set_scales_dims(int arg, const memory::dims& dims, memory::data_type data_type = memory::data_type::f32) {
-        error::wrap_c_api(dnnl_primitive_attr_set_scales_dims(get(), arg, dims.data(), dims.size(), memory::convert_to_c(data_type)),
+    void set_scales_dims(int arg, const memory::dims &dims,
+            memory::data_type data_type = memory::data_type::f32) {
+        error::wrap_c_api(
+                dnnl_primitive_attr_set_scales_dims(get(), arg, dims.data(),
+                        dims.size(), memory::convert_to_c(data_type)),
                 "could not set scales primitive attribute");
     }
 
@@ -4514,9 +4529,11 @@ struct primitive_attr : public handle<dnnl_primitive_attr_t> {
                 dnnl_primitive_attr_set_zero_points_mask(get(), arg, mask),
                 "could not set zero points primitive attribute");
     }
-    void set_zero_points_dims(int arg, const memory::dims& dims, memory::data_type dt) {
+    void set_zero_points_dims(
+            int arg, const memory::dims &dims, memory::data_type dt) {
         error::wrap_c_api(
-                dnnl_primitive_attr_set_zero_points_dims(get(), arg, dims.data(), dims.size(), memory::convert_to_c(dt)),
+                dnnl_primitive_attr_set_zero_points_dims(get(), arg,
+                        dims.data(), dims.size(), memory::convert_to_c(dt)),
                 "could not set zero points primitive attribute");
     }
 
@@ -4600,21 +4617,21 @@ struct primitive_attr : public handle<dnnl_primitive_attr_t> {
                 "could not set precomputed reductions primitive attribute");
     }
 
-    void set_output_compensations(dnnl_dim_t count, int mask)
-    {
-        error::wrap_c_api(dnnl_primitive_attr_set_output_compensations(get(), count, mask),
+    void set_output_compensations(dnnl_dim_t count, int mask) {
+        error::wrap_c_api(dnnl_primitive_attr_set_output_compensations(
+                                  get(), count, mask),
                 "could not set int output compensations");
     }
 
-    void set_input_zero_points(dnnl_dim_t count, int mask)
-    {
-        error::wrap_c_api(dnnl_primitive_attr_set_input_zero_points(get(), count, mask),
+    void set_input_zero_points(dnnl_dim_t count, int mask) {
+        error::wrap_c_api(
+                dnnl_primitive_attr_set_input_zero_points(get(), count, mask),
                 "could not set int input zero_points");
     }
 
-    void set_weights_zero_points(dnnl_dim_t count, int mask)
-    {
-        error::wrap_c_api(dnnl_primitive_attr_set_weights_zero_points(get(), count, mask),
+    void set_weights_zero_points(dnnl_dim_t count, int mask) {
+        error::wrap_c_api(
+                dnnl_primitive_attr_set_weights_zero_points(get(), count, mask),
                 "could not set int weights zero_points");
     }
 
@@ -4843,13 +4860,17 @@ struct primitive_attr : public handle<dnnl_primitive_attr_t> {
     }
 
     void set_src_dyn_quant_params(uint64_t group_size) {
-        error::wrap_c_api(dnnl_primitive_attr_set_src_dyn_quant_params(get(), group_size),
-                "could not set src dynamic quantization parameters primitive attribute");
+        error::wrap_c_api(
+                dnnl_primitive_attr_set_src_dyn_quant_params(get(), group_size),
+                "could not set src dynamic quantization parameters primitive "
+                "attribute");
     }
 
-    void get_src_dyn_quant_params(uint64_t& group_size) const {
-        error::wrap_c_api(dnnl_primitive_attr_get_src_dyn_quant_params(get(), &group_size),
-                "could not get src dynamic quantization parameters primitive attribute");
+    void get_src_dyn_quant_params(uint64_t &group_size) const {
+        error::wrap_c_api(dnnl_primitive_attr_get_src_dyn_quant_params(
+                                  get(), &group_size),
+                "could not get src dynamic quantization parameters primitive "
+                "attribute");
     }
 };
 

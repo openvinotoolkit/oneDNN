@@ -47,10 +47,11 @@ struct ref_pp_ker_t : pp_ker_t {
         for (int i = 0; i < post_ops_.len(); i++) {
             auto &post_op = post_ops_.entry_[i];
             if (post_op.is_eltwise()) {
-                ref_eltwise_injectors_.push_back(new ref_eltwise_scalar_fwd_t(post_op.eltwise));
+                ref_eltwise_injectors_.push_back(
+                        new ref_eltwise_scalar_fwd_t(post_op.eltwise));
             } else if (post_op.is_depthwise()) {
-                ref_depthwise_injectors_.push_back(new ref_depthwise_scalar_fwd_t(
-                        post_op.depthwise.alg));
+                ref_depthwise_injectors_.push_back(
+                        new ref_depthwise_scalar_fwd_t(post_op.depthwise.alg));
             }
         }
     }
@@ -74,8 +75,8 @@ struct ref_pp_ker_t : pp_ker_t {
             const single_gemm_conv_chunk_desc_t &chunk_desc) const override;
 
 private:
-    nstl::vector<ref_eltwise_scalar_fwd_t*> ref_eltwise_injectors_;
-    nstl::vector<ref_depthwise_scalar_fwd_t*> ref_depthwise_injectors_;
+    nstl::vector<ref_eltwise_scalar_fwd_t *> ref_eltwise_injectors_;
+    nstl::vector<ref_depthwise_scalar_fwd_t *> ref_depthwise_injectors_;
 };
 
 template <typename dst_data_t>
@@ -83,9 +84,8 @@ void ref_pp_ker_t<dst_data_t>::operator()(void *void_dst, acc_data_t *acc,
         const char *bias, const float *scales, float dst_scale, float sum_scale,
         float signed_scale, int g, int mb, size_t start, size_t end,
         const zero_point_call_params_t &zp,
-        const void * post_ops_binary_rhs_arg_vec,
-        const void * /* dst_orig */, const exec_ctx_t &ctx,
-        const memory_desc_t &dst_md,
+        const void *post_ops_binary_rhs_arg_vec, const void * /* dst_orig */,
+        const exec_ctx_t &ctx, const memory_desc_t &dst_md,
         const single_gemm_conv_chunk_desc_t &chunk_desc) const {
 
     if (end <= start) return;
@@ -107,11 +107,12 @@ void ref_pp_ker_t<dst_data_t>::operator()(void *void_dst, acc_data_t *acc,
                 const size_t acc_off = os * jcp_.oc + oc;
                 const size_t dst_off = os * dst_os_stride_ + oc;
 
-                float d = (float) (acc[acc_off]);
+                float d = (float)(acc[acc_off]);
                 if (jcp_.signed_input) d *= signed_scale;
 
                 if (do_bias_)
-                    d += math::get_bias(bias, g * jcp_.oc + oc, bias_data_type_);
+                    d += math::get_bias(
+                            bias, g * jcp_.oc + oc, bias_data_type_);
 
                 d *= scales[(g * jcp_.oc + oc) * jcp_.scale_idx_mult];
 
@@ -119,23 +120,25 @@ void ref_pp_ker_t<dst_data_t>::operator()(void *void_dst, acc_data_t *acc,
                 if (jcp_.with_dst_scale) d *= dst_scale;
                 if (jcp_.zp.dst_exists) d += zp_dst_val;
 
-                dst[dst_off] = dnnl::impl::cpu::q10n::qz_a1b0_t<float, dst_data_t>()(d);
+                dst[dst_off]
+                        = dnnl::impl::cpu::q10n::qz_a1b0_t<float, dst_data_t>()(
+                                d);
             }
         }
     } else {
-        float* acc_fp = reinterpret_cast<float*>(acc);
+        float *acc_fp = reinterpret_cast<float *>(acc);
 
-        auto load = [&](int idx, size_t oc, size_t os, size_t acc_off, size_t dst_off) {
+        auto load = [&](int idx, size_t oc, size_t os, size_t acc_off,
+                            size_t dst_off) {
             float d;
             if (idx == 0) {
-                d = (float) (acc[acc_off]);
+                d = (float)(acc[acc_off]);
 
-                if (jcp_.signed_input)
-                    d *= signed_scale;
+                if (jcp_.signed_input) d *= signed_scale;
 
                 if (do_bias_)
-                    d += math::get_bias(bias, g * jcp_.oc + oc,
-                                        bias_data_type_);
+                    d += math::get_bias(
+                            bias, g * jcp_.oc + oc, bias_data_type_);
 
                 d *= scales[(g * jcp_.oc + oc) * jcp_.scale_idx_mult];
             } else {
@@ -147,12 +150,15 @@ void ref_pp_ker_t<dst_data_t>::operator()(void *void_dst, acc_data_t *acc,
 
         auto store = [&](int idx, float d, size_t acc_off, size_t dst_off) {
             if (idx == post_ops_.len() - 1)
-                dst[dst_off] = dnnl::impl::cpu::q10n::qz_a1b0_t<float, dst_data_t>()(d);
+                dst[dst_off]
+                        = dnnl::impl::cpu::q10n::qz_a1b0_t<float, dst_data_t>()(
+                                d);
             else
                 acc_fp[acc_off] = d;
         };
 
-        auto post_ops_data_ptrs = reinterpret_cast<const float* const*>(post_ops_binary_rhs_arg_vec);
+        auto post_ops_data_ptrs = reinterpret_cast<const float *const *>(
+                post_ops_binary_rhs_arg_vec);
         std::size_t post_ops_data_idx = 0;
         int eltwise_inj_idx = 0;
         int depthwise_inj_idx = 0;
@@ -168,7 +174,8 @@ void ref_pp_ker_t<dst_data_t>::operator()(void *void_dst, acc_data_t *acc,
 
                         float d = load(i, oc, os, acc_off, dst_off);
 
-                        d = ref_eltwise_injectors_[eltwise_inj_idx]->compute_scalar(d);
+                        d = ref_eltwise_injectors_[eltwise_inj_idx]
+                                    ->compute_scalar(d);
 
                         store(i, d, acc_off, dst_off);
                     }
@@ -182,17 +189,24 @@ void ref_pp_ker_t<dst_data_t>::operator()(void *void_dst, acc_data_t *acc,
                         const size_t acc_off = os * jcp_.oc + oc;
                         const size_t dst_off = os * this->dst_os_stride_ + oc;
 
-                        auto depthwise_base = post_ops_data_ptrs[post_ops_data_idx];
-                        auto depthwise_weights = depthwise_base + post_op.depthwise.offset[post_op.depthwise.scales];
-                        auto depthwise_bias = depthwise_base + post_op.depthwise.offset[post_op.depthwise.shifts];
+                        auto depthwise_base
+                                = post_ops_data_ptrs[post_ops_data_idx];
+                        auto depthwise_weights = depthwise_base
+                                + post_op.depthwise
+                                          .offset[post_op.depthwise.scales];
+                        auto depthwise_bias = depthwise_base
+                                + post_op.depthwise
+                                          .offset[post_op.depthwise.shifts];
 
                         float d = load(i, oc, os, acc_off, dst_off);
 
-                        d = ref_depthwise_injectors_[depthwise_inj_idx]->compute_scalar(d, depthwise_weights + g * jcp_.oc + oc,
-                                                                                        depthwise_bias + g * jcp_.oc + oc);
+                        d = ref_depthwise_injectors_[depthwise_inj_idx]
+                                    ->compute_scalar(d,
+                                            depthwise_weights + g * jcp_.oc
+                                                    + oc,
+                                            depthwise_bias + g * jcp_.oc + oc);
 
                         store(i, d, acc_off, dst_off);
-
                     }
                 }
                 post_ops_data_idx++;
@@ -206,22 +220,43 @@ void ref_pp_ker_t<dst_data_t>::operator()(void *void_dst, acc_data_t *acc,
                         const size_t dst_off = os * this->dst_os_stride_ + oc;
 
                         auto quant = post_op.quantization;
-                        auto quantization_base = post_ops_data_ptrs[post_ops_data_idx];
-                        auto pcl = quantization_base + post_op.quantization.offset[quant.crop_low];
-                        auto pch = quantization_base + post_op.quantization.offset[quant.crop_high];
-                        auto pisc = quantization_base + post_op.quantization.offset[quant.inp_scale];
-                        auto pish = quantization_base + post_op.quantization.offset[quant.inp_shift];
-                        auto posc = quantization_base + post_op.quantization.offset[quant.output_scale];
-                        auto posh = quantization_base + post_op.quantization.offset[quant.output_shift];
+                        auto quantization_base
+                                = post_ops_data_ptrs[post_ops_data_idx];
+                        auto pcl = quantization_base
+                                + post_op.quantization.offset[quant.crop_low];
+                        auto pch = quantization_base
+                                + post_op.quantization.offset[quant.crop_high];
+                        auto pisc = quantization_base
+                                + post_op.quantization.offset[quant.inp_scale];
+                        auto pish = quantization_base
+                                + post_op.quantization.offset[quant.inp_shift];
+                        auto posc = quantization_base
+                                + post_op.quantization
+                                          .offset[quant.output_scale];
+                        auto posh = quantization_base
+                                + post_op.quantization
+                                          .offset[quant.output_shift];
 
                         float d = load(i, oc, os, acc_off, dst_off);
 
-                        int cl_idx = !quant.per_channel[quant.crop_low] ? 0 : g * jcp_.oc + oc;
-                        int ch_idx = !quant.per_channel[quant.crop_high] ? 0 : g * jcp_.oc + oc;
-                        int isc_idx = !quant.per_channel[quant.inp_scale] ? 0 : g * jcp_.oc + oc;
-                        int ish_idx = !quant.per_channel[quant.inp_shift] ? 0 : g * jcp_.oc + oc;
-                        int osc_idx = !quant.per_channel[quant.output_scale] ? 0 : g * jcp_.oc + oc;
-                        int osh_idx = !quant.per_channel[quant.output_shift] ? 0 : g * jcp_.oc + oc;
+                        int cl_idx = !quant.per_channel[quant.crop_low]
+                                ? 0
+                                : g * jcp_.oc + oc;
+                        int ch_idx = !quant.per_channel[quant.crop_high]
+                                ? 0
+                                : g * jcp_.oc + oc;
+                        int isc_idx = !quant.per_channel[quant.inp_scale]
+                                ? 0
+                                : g * jcp_.oc + oc;
+                        int ish_idx = !quant.per_channel[quant.inp_shift]
+                                ? 0
+                                : g * jcp_.oc + oc;
+                        int osc_idx = !quant.per_channel[quant.output_scale]
+                                ? 0
+                                : g * jcp_.oc + oc;
+                        int osh_idx = !quant.per_channel[quant.output_shift]
+                                ? 0
+                                : g * jcp_.oc + oc;
 
                         d = nstl::min(pch[ch_idx], nstl::max(pcl[cl_idx], d));
                         d = d * pisc[isc_idx] + pish[ish_idx];
@@ -229,7 +264,6 @@ void ref_pp_ker_t<dst_data_t>::operator()(void *void_dst, acc_data_t *acc,
                         d = d * posc[osc_idx] + posh[osh_idx];
 
                         store(i, d, acc_off, dst_off);
-
                     }
                 }
                 post_ops_data_idx++;
@@ -243,7 +277,9 @@ void ref_pp_ker_t<dst_data_t>::operator()(void *void_dst, acc_data_t *acc,
 
                         float d = load(i, oc, os, acc_off, dst_off);
 
-                        d += post_op.sum.scale * math::get_sum((char *) dst, dst_off, post_op.sum.dt);
+                        d += post_op.sum.scale
+                                * math::get_sum(
+                                        (char *)dst, dst_off, post_op.sum.dt);
 
                         store(i, d, acc_off, dst_off);
                     }
@@ -256,10 +292,7 @@ void ref_pp_ker_t<dst_data_t>::operator()(void *void_dst, acc_data_t *acc,
 // Interface section
 
 pp_ker_t::pp_ker_t(const convolution_pd_t *pd, const conv_gemm_conf_t &jcp)
-    : jcp_(jcp)
-    , post_ops_(pd->attr()->post_ops_)
-    , OC_(jcp_.oc)
-{
+    : jcp_(jcp), post_ops_(pd->attr()->post_ops_), OC_(jcp_.oc) {
     const auto dst_md = memory_desc_wrapper(pd->dst_md());
 
     dst_os_stride_ = dst_md.blocking_desc().strides[pd->ndims() - 1];

@@ -31,12 +31,12 @@
 #include "cpu/x64/brgemm/brgemm_containers.hpp"
 #include "cpu/x64/cpu_barrier.hpp"
 #include "cpu/x64/cpu_reducer.hpp"
-#include "cpu/x64/jit_brgemm_inner_product_utils.hpp"
 #include "cpu/x64/jit_brgemm_decompress_kernel.hpp"
-#include "cpu/x64/jit_brgemm_weights_decompression_kernel.hpp"
-#include "cpu/x64/jit_brgemm_src_quantization_kernel.hpp"
+#include "cpu/x64/jit_brgemm_inner_product_utils.hpp"
 #include "cpu/x64/jit_brgemm_post_ops.hpp"
+#include "cpu/x64/jit_brgemm_src_quantization_kernel.hpp"
 #include "cpu/x64/jit_brgemm_transpose_utils.hpp"
+#include "cpu/x64/jit_brgemm_weights_decompression_kernel.hpp"
 #include "cpu/x64/jit_transpose_utils.hpp"
 
 namespace dnnl {
@@ -60,8 +60,10 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
             auto dst_dt = invariant_dst_md()->data_type;
             auto wei_dt = invariant_wei_md()->data_type;
             const bool is_int8 = one_of(src_dt, u8, s8);
-            const bool is_wei_decomp = (one_of(src_dt, f32, bf16) && one_of(wei_dt, u8, s8, nf4, s4, u4, f4_e2m1, u2)) ||
-                                       (one_of(src_dt, f32) && one_of(wei_dt, f16, bf16));
+            const bool is_wei_decomp = (one_of(src_dt, f32, bf16)
+                                               && one_of(wei_dt, u8, s8, nf4,
+                                                       s4, u4, f4_e2m1, u2))
+                    || (one_of(src_dt, f32) && one_of(wei_dt, f16, bf16));
 
             using skip_mask_t = primitive_attr_t::skip_mask_t;
             auto skip_mask = skip_mask_t::post_ops | skip_mask_t::sum_dt
@@ -85,8 +87,7 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
 
             VDISPATCH_INNER_PRODUCT(
                     // get_prop_kind() == prop_kind::forward_training,
-                    is_fwd(),
-                    VERBOSE_BAD_PROPKIND);
+                    is_fwd(), VERBOSE_BAD_PROPKIND);
             VDISPATCH_INNER_PRODUCT(
                     expect_data_types(src_dt, wei_dt, data_type::undef, dst_dt,
                             data_type::undef),
@@ -124,7 +125,9 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
             const float beta_init = 0.0;
 
             // f16/bf16 weights decompression doesn't need scales/zero-points which is handled by normal brgemm kernel
-            bool brgemm_with_wei_decomp = is_wei_decomp && jbgp_.wei_decomp_algo == weights_decomp_kind_t::immediate && !one_of(wei_dt, f16, bf16);
+            bool brgemm_with_wei_decomp = is_wei_decomp
+                    && jbgp_.wei_decomp_algo == weights_decomp_kind_t::immediate
+                    && !one_of(wei_dt, f16, bf16);
 
             for_(int i_bs = 0; i_bs < 2; i_bs++)
             for_(int i_init = 0; i_init < 2; i_init++)
@@ -143,10 +146,9 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
                         jbgp_.wei_dt, false, false, brgemm_row_major, alpha,
                         vbeta, jbgp_.LDA, jbgp_.LDB, jbgp_.LDC, vM, vN, vK,
                         nullptr, false, brgemm_with_wei_decomp,
-                        jbgp_.with_src_dynamic_quant,
-                        &weights_md_, attr()));
-                CHECK(brgemm_desc_set_postops(
-                        &brg, attr(), &dst_md_, jbgp_.LDD, jbgp_.bia_dt, is_wei_decomp));
+                        jbgp_.with_src_dynamic_quant, &weights_md_, attr()));
+                CHECK(brgemm_desc_set_postops(&brg, attr(), &dst_md_, jbgp_.LDD,
+                        jbgp_.bia_dt, is_wei_decomp));
 
                 brgemm_attr_t brgattr;
                 if (jbgp_.is_amx) {
@@ -242,7 +244,9 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
                     new jit_brgemm_decompress_kernel_t(&pd()->jbgp_)));
         }
 
-        if (pd()->jbgp_.weights_decompression && pd()->jbgp_.wei_decomp_algo == weights_decomp_kind_t::prepack) {
+        if (pd()->jbgp_.weights_decompression
+                && pd()->jbgp_.wei_decomp_algo
+                        == weights_decomp_kind_t::prepack) {
             weights_decompression_compile_params_t jcp = {};
             jcp.oc_size = pd()->jbgp_.oc_block;
             jcp.ic_internal_size = [&] {
@@ -250,16 +254,26 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
                     return 4;
                 } else if (pd()->jbgp_.wei_dt == data_type::bf16) {
                     return 2;
-                } else if (utils::one_of(pd()->jbgp_.orig_wei_dt, data_type::nf4, data_type::s4, data_type::u4, data_type::f4_e2m1)) {
+                } else if (utils::one_of(pd()->jbgp_.orig_wei_dt,
+                                   data_type::nf4, data_type::s4, data_type::u4,
+                                   data_type::f4_e2m1)) {
                     return 2;
                 } else {
                     return 1;
                 }
-            } ();
-            jcp.with_scales = !pd()->attr()->scales_.get(DNNL_ARG_WEIGHTS).has_default_values();
-            jcp.broadcast_scales = pd()->attr()->scales_.get(DNNL_ARG_WEIGHTS).get_dims()[0] == 1;
-            jcp.with_zero_points = !pd()->attr()->zero_points_.has_default_values(DNNL_ARG_WEIGHTS);
-            jcp.broadcast_zero_points = pd()->attr()->zero_points_.get_dims(DNNL_ARG_WEIGHTS)[0] == 1;
+            }();
+            jcp.with_scales = !pd()->attr()
+                                       ->scales_.get(DNNL_ARG_WEIGHTS)
+                                       .has_default_values();
+            jcp.broadcast_scales
+                    = pd()->attr()->scales_.get(DNNL_ARG_WEIGHTS).get_dims()[0]
+                    == 1;
+            jcp.with_zero_points
+                    = !pd()->attr()->zero_points_.has_default_values(
+                            DNNL_ARG_WEIGHTS);
+            jcp.broadcast_zero_points
+                    = pd()->attr()->zero_points_.get_dims(DNNL_ARG_WEIGHTS)[0]
+                    == 1;
             jcp.weights_dt = pd()->jbgp_.orig_wei_dt;
             jcp.decomp_buffer_dt = pd()->jbgp_.wei_dt;
             jcp.scales_dt = pd()->jbgp_.wei_decomp_scales_dt;
@@ -267,10 +281,12 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
 
             if (is_superset(pd()->jbgp_.isa, avx512_core)) {
                 CHECK(safe_ptr_assign(brg_weights_decomp_kernel_,
-                        new jit_brgemm_weights_decompression_kernel_t<avx512_core>(jcp)));
+                        new jit_brgemm_weights_decompression_kernel_t<
+                                avx512_core>(jcp)));
             } else if (is_superset(pd()->jbgp_.isa, avx2)) {
                 CHECK(safe_ptr_assign(brg_weights_decomp_kernel_,
-                        new jit_brgemm_weights_decompression_kernel_t<avx2>(jcp)));
+                        new jit_brgemm_weights_decompression_kernel_t<avx2>(
+                                jcp)));
             } else {
                 return status::unimplemented;
             }
@@ -279,14 +295,17 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
         if (pd()->jbgp_.with_src_dynamic_quant) {
             src_quantization_compile_params_t jcp = {};
             jcp.ic_quant_block = pd()->jbgp_.src_quant_group_size;
-            jcp.with_src_grouped_sum = !pd()->attr()->zero_points_.has_default_values(DNNL_ARG_WEIGHTS);
+            jcp.with_src_grouped_sum
+                    = !pd()->attr()->zero_points_.has_default_values(
+                            DNNL_ARG_WEIGHTS);
             jcp.src_sum_group_size = pd()->jbgp_.src_sum_group_size;
             jcp.src_dt = pd()->jbgp_.orig_src_dt;
             jcp.qsrc_dt = data_type::s8;
 
             if (is_superset(pd()->jbgp_.isa, avx512_core)) {
                 CHECK(safe_ptr_assign(brg_src_quant_kernel_,
-                        new jit_brgemm_src_quantization_kernel_t<avx512_core>(jcp)));
+                        new jit_brgemm_src_quantization_kernel_t<avx512_core>(
+                                jcp)));
             } else if (is_superset(pd()->jbgp_.isa, avx2)) {
                 CHECK(safe_ptr_assign(brg_src_quant_kernel_,
                         new jit_brgemm_src_quantization_kernel_t<avx2>(jcp)));
@@ -321,7 +340,8 @@ private:
     brgemm_containers::brgemm_palette_container_t brgemm_palettes_ {
             brgemm_inner_product_utils::max_num_brg_kernels_ip};
     std::unique_ptr<jit_brgemm_decompress_kernel_t> brg_decomp_kernel_;
-    std::unique_ptr<jit_weights_decompression_kernel_t> brg_weights_decomp_kernel_;
+    std::unique_ptr<jit_weights_decompression_kernel_t>
+            brg_weights_decomp_kernel_;
     std::unique_ptr<jit_src_quantization_kernel_t> brg_src_quant_kernel_;
 };
 

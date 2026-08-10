@@ -67,7 +67,8 @@ inline void jit_conv_ker_pipeline_iw_thr(const jit_conv_ker_t ker,
 inline void jit_conv_3d_ker_pipeline(const jit_conv_ker_t ker,
         jit_conv_args_t &p, const void *src, const void *dst, const void *filt,
         const void *bias, int channel, int kh_padding, int kd_padding,
-        int reduce_work, int load_work, int oc_off, const void *post_ops_binary_rhs_arg_vec) {
+        int reduce_work, int load_work, int oc_off,
+        const void *post_ops_binary_rhs_arg_vec) {
     p.src = src;
     p.dst = dst;
     p.filt = filt;
@@ -116,7 +117,8 @@ inline void jit_conv_3d_ker_pipeline_ow_thr(const jit_conv_ker_t ker,
     p.flags = flags;
 
     jit_conv_3d_ker_pipeline(ker, p, src, dst, filt, bias, channel, kh_padding,
-            kd_padding, reduce_work, load_work, oc_off, post_ops_binary_rhs_arg_vec);
+            kd_padding, reduce_work, load_work, oc_off,
+            post_ops_binary_rhs_arg_vec);
 }
 
 inline void jit_conv_ker_pipeline_bwd_w(const jit_conv_ker_t ker,
@@ -287,10 +289,13 @@ void jit_avx512_common_convolution_fwd_t<src_type, wei_type,
                         ic_work = utils::this_block_size(icb * jcp.ic_block,
                                 jcp.ic, icb_step * jcp.ic_block);
                     }
-                    int oc_off = oc_off_idx * (is_dst_layout_nxc ? 1 : jcp.oc_block) * sizeof(float);
+                    int oc_off = oc_off_idx
+                            * (is_dst_layout_nxc ? 1 : jcp.oc_block)
+                            * sizeof(float);
                     jit_conv_ker_pipeline_ow_thr(jit_ker, par_conv, src_w,
                             dst_w, wht_w, bias_w, icb, 1, owb, ic_work, oc_work,
-                            post_ops_binary_rhs_arg_vec.data(), dst, flags, oc_off);
+                            post_ops_binary_rhs_arg_vec.data(), dst, flags,
+                            oc_off);
 
                     src_w += src_c_stride;
                     wht_w += wht_ic_stride;
@@ -444,7 +449,9 @@ void jit_avx512_common_convolution_fwd_t<src_type, wei_type,
                                     + i_t_overflow * dilate_h * src_h_stride;
                             auto aux_wht = wht_w + i_t_overflow * wht_h_stride;
 
-                            int oc_off = oc_off_idx * (is_dst_layout_nxc ? 1 : jcp.oc_block) * sizeof(float);
+                            int oc_off = oc_off_idx
+                                    * (is_dst_layout_nxc ? 1 : jcp.oc_block)
+                                    * sizeof(float);
                             jit_conv_ker_pipeline_ow_thr(jit_ker, par_conv,
                                     aux_src, dst_c, aux_wht, bias_w, icb,
                                     kh_padding, owb, ic_work, oc_work,
@@ -608,13 +615,16 @@ void jit_avx512_common_convolution_fwd_t<src_type, wei_type,
                                 dilate_h);
                         int kh_padding = nstl::max(
                                 0, jcp.kh - i_t_overflow - i_b_overflow);
-                        int oc_off = oc_off_idx * (is_dst_layout_nxc ? 1 : jcp.oc_block) * sizeof(float);
+                        int oc_off = oc_off_idx
+                                * (is_dst_layout_nxc ? 1 : jcp.oc_block)
+                                * sizeof(float);
                         jit_conv_3d_ker_pipeline_ow_thr(jit_ker, par_conv,
                                 src_c + i_t_overflow * dilate_h * src_h_stride,
                                 dst_c, wht_w + i_t_overflow * wht_h_stride,
                                 bias_w, icb, kh_padding, kd_padding, owb,
                                 ic_work, oc_work,
-                                post_ops_binary_rhs_arg_vec.data(), dst, flags, oc_off);
+                                post_ops_binary_rhs_arg_vec.data(), dst, flags,
+                                oc_off);
 
                         src_c += src_h_stride * jcp.stride_h;
                         dst_c += dst_h_stride;
@@ -726,7 +736,9 @@ void jit_avx512_common_convolution_bwd_data_t<diff_dst_type, wei_type,
                         jcp.ic, jcp.nb_ic_blocking * jcp.ic_block);
                 int reduce_work = ocb_step * jcp.oc_block;
 
-                int ic_off = ic_off_idx * (is_dsrc_layout_nxc ? 1 : jcp.ic_block) * sizeof(float);
+                int ic_off = ic_off_idx
+                        * (is_dsrc_layout_nxc ? 1 : jcp.ic_block)
+                        * sizeof(float);
 
                 for (int ocb = ocb_l2; ocb < ocb_end; ocb += ocb_step) {
                     int curr_nb_oc = nstl::min(ocb_step, ocb_end - ocb);
@@ -737,7 +749,8 @@ void jit_avx512_common_convolution_bwd_data_t<diff_dst_type, wei_type,
 
                     jit_conv_ker_pipeline_iw_thr(jit_ker, par_conv, diff_src_w,
                             diff_dst_w, wht_w, nullptr, ocb, 1, iwb,
-                            reduce_work, load_work, ic_off, post_ops_binary_rhs_arg_vec.data());
+                            reduce_work, load_work, ic_off,
+                            post_ops_binary_rhs_arg_vec.data());
                     diff_dst_w += diff_dst_c_stride;
                     wht_w += wht_oc_stride;
                 }
@@ -902,7 +915,9 @@ void jit_avx512_common_convolution_bwd_data_t<diff_dst_type, wei_type,
                             oj = (ij + jcp.t_pad - k_lo) / jcp.stride_h;
                         }
 
-                        int ic_off = ic_off_idx * (is_dsrc_layout_nxc ? 1 : jcp.ic_block) * sizeof(float);
+                        int ic_off = ic_off_idx
+                                * (is_dsrc_layout_nxc ? 1 : jcp.ic_block)
+                                * sizeof(float);
 
                         jit_conv_ker_pipeline_iw_thr(jit_ker, par_conv,
                                 diff_src_w + ij * diff_src_h_stride,
@@ -1118,7 +1133,9 @@ void jit_avx512_common_convolution_bwd_data_t<diff_dst_type, wei_type,
                         }
                         assert(k_len >= 0);
 
-                        int ic_off = ic_off_idx * (is_dsrc_layout_nxc ? 1 : jcp.ic_block) * sizeof(float);
+                        int ic_off = ic_off_idx
+                                * (is_dsrc_layout_nxc ? 1 : jcp.ic_block)
+                                * sizeof(float);
 
                         jit_conv_3d_ker_pipeline(jit_ker, par_conv,
                                 diff_src_w + ij * diff_src_h_stride,

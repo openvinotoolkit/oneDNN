@@ -134,8 +134,7 @@ public:
                 /* pos inf input copied to output */
                 encode_fixup_selector(
                         fixup_input_code_pinf, fixup_output_code_copy_input);
-        if (preserve_scratch)
-            host_->push(scratch_);
+        if (preserve_scratch) host_->push(scratch_);
 
         host_->xor_(scratch_, scratch_);
         host_->mov(scratch_.cvt32(), 0x1);
@@ -149,8 +148,7 @@ public:
         host_->mov(scratch_.cvt32(), selector_int32);
         host_->vpbroadcastd(selector_, scratch_.cvt32());
 
-        if (preserve_scratch)
-            host_->pop(scratch_);
+        if (preserve_scratch) host_->pop(scratch_);
     }
 
     static cpu_isa_t get_isa() { return avx512_core; }

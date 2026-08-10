@@ -66,7 +66,7 @@ std::string quant_entry_t::get_verbose() const {
     s.append(":").append(std::to_string(type_));
     s.append(":");
     if (group_ndims_ > 0) {
-                s.append(std::to_string(group_dims_[0]))
+        s.append(std::to_string(group_dims_[0]))
                 .append("x")
                 .append(std::to_string(group_dims_[1]));
     }
@@ -76,9 +76,9 @@ std::string quant_entry_t::get_verbose() const {
     }
     s.append(":");
     if (get_ndims() > 0) {
-            s.append(std::to_string(get_dims()[0]))
-            .append("x")
-            .append(std::to_string(get_dims()[1]));
+        s.append(std::to_string(get_dims()[0]))
+                .append("x")
+                .append(std::to_string(get_dims()[1]));
     }
     return s;
 }

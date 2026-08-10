@@ -244,9 +244,9 @@ status_t jit_uni_dw_conv_fwd_kernel_t<isa, kernel_dt>::init_conf(
     using namespace injector;
     static constexpr bool sum_at_pos_0_only = true;
     static constexpr bool sum_requires_scale_one = true;
-    const bool post_ops_ok_ = post_ops_ok(
-            post_ops_ok_args_t(isa, {eltwise, binary, sum, depthwise, quantization}, jcp.post_ops,
-                    &dst_d, sum_at_pos_0_only, sum_requires_scale_one));
+    const bool post_ops_ok_ = post_ops_ok(post_ops_ok_args_t(isa,
+            {eltwise, binary, sum, depthwise, quantization}, jcp.post_ops,
+            &dst_d, sum_at_pos_0_only, sum_requires_scale_one));
     VDISPATCH_CONV_IC(post_ops_ok_, VERBOSE_UNSUPPORTED_POSTOP);
 
     const bool ok_to_pad_channels = true && !is_data_layout_nxc
@@ -284,16 +284,18 @@ void jit_uni_dw_conv_fwd_kernel_t<isa, kernel_dt>::init_scratchpad(
 }
 
 template <cpu_isa_t isa, data_type_t kernel_dt>
-bool jit_uni_dw_conv_bwd_data_kernel_t<isa, kernel_dt>::post_ops_ok(const jit_conv_conf_t& jcp) {
+bool jit_uni_dw_conv_bwd_data_kernel_t<isa, kernel_dt>::post_ops_ok(
+        const jit_conv_conf_t &jcp) {
     const auto &p = jcp.post_ops;
-    if (p.len() > 1)
-        return false;
+    if (p.len() > 1) return false;
 
     auto all_post_ops_supported = [&]() {
         bool ok = true;
 
         for (int i = 0; i < p.len(); i++) {
-            ok = ok && utils::one_of(p.entry_[i].kind, primitive_kind::depthwise);
+            ok = ok
+                    && utils::one_of(
+                            p.entry_[i].kind, primitive_kind::depthwise);
         }
         return ok;
     };
@@ -410,8 +412,7 @@ status_t jit_uni_dw_conv_bwd_data_kernel_t<isa, kernel_dt>::init_conf(
     // from: 'simd_w_ * reg_repeats_ = 4 * 2'
     jcp.ch_block = isa == avx512_core ? 16 : 8;
 
-    if (!post_ops_ok(jcp))
-        return status::unimplemented;
+    if (!post_ops_ok(jcp)) return status::unimplemented;
 
     bool ok_to_pad_channels = !is_data_layout_nxc && jcp.oc == jcp.ngroups
             && jcp.ic == jcp.ngroups && one_of(isa, avx512_core, avx2);

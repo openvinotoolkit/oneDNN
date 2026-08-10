@@ -185,7 +185,7 @@ private:
     int base_post_ops_data_offset = 0;
     constexpr static int reg64_size = 8;
 
-    nstl::vector<jit_uni_depthwise_injector_f32<isa>*> depthwise_injectors;
+    nstl::vector<jit_uni_depthwise_injector_f32<isa> *> depthwise_injectors;
 
     void load_vmm(Vmm &vmm, const Xbyak::Address &addr, bool tail);
     void store_vmm(Vmm &vmm, const Xbyak::Address &addr, bool tail);

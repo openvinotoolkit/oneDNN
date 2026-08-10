@@ -52,12 +52,16 @@ struct weights_decompression_runtime_params_t {
 };
 
 struct jit_weights_decompression_kernel_t {
-    void operator()(const weights_decompression_runtime_params_t *args) { assert(ker_);
+    void operator()(const weights_decompression_runtime_params_t *args) {
+        assert(ker_);
         ker_(args);
     }
 
-    jit_weights_decompression_kernel_t(const weights_decompression_compile_params_t& jcp) : ker_(nullptr), jcp_(jcp) {}
+    jit_weights_decompression_kernel_t(
+            const weights_decompression_compile_params_t &jcp)
+        : ker_(nullptr), jcp_(jcp) {}
     virtual ~jit_weights_decompression_kernel_t() {}
+
 protected:
     void (*ker_)(const weights_decompression_runtime_params_t *);
 
@@ -65,10 +69,13 @@ protected:
 };
 
 template <cpu_isa_t isa>
-struct jit_brgemm_weights_decompression_kernel_t : public jit_weights_decompression_kernel_t, public jit_generator_t {
+struct jit_brgemm_weights_decompression_kernel_t
+    : public jit_weights_decompression_kernel_t,
+      public jit_generator_t {
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_brgemm_weights_decompression_kernel_t)
 
-    jit_brgemm_weights_decompression_kernel_t(const weights_decompression_compile_params_t& jcp)
+    jit_brgemm_weights_decompression_kernel_t(
+            const weights_decompression_compile_params_t &jcp)
         : jit_weights_decompression_kernel_t(jcp), jit_generator_t(jit_name()) {
         vec_size = cpu_isa_traits_t<isa>::vlen / sizeof(float);
 
@@ -77,31 +84,28 @@ struct jit_brgemm_weights_decompression_kernel_t : public jit_weights_decompress
     }
 
 private:
-    using Vmm = typename utils::conditional3<isa == x64::sse41, Xbyak::Xmm, isa == x64::avx2, Xbyak::Ymm, Xbyak::Zmm>::type;
+    using Vmm = typename utils::conditional3<isa == x64::sse41, Xbyak::Xmm,
+            isa == x64::avx2, Xbyak::Ymm, Xbyak::Zmm>::type;
 
     static constexpr int n_vregs = cpu_isa_traits_t<isa>::n_vregs;
 
     void generate() override;
-    void init_decomp_params(std::function<Vmm(int)> vmm_params, Xbyak::Reg64 reg_params, bool broadcast_values, data_type_t element_type);
-    void load_weights(Vmm vmm_load, const Xbyak::Address& addr, int ic);
-    void store_weights(const Xbyak::Address& addr, Vmm vmm_store);
+    void init_decomp_params(std::function<Vmm(int)> vmm_params,
+            Xbyak::Reg64 reg_params, bool broadcast_values,
+            data_type_t element_type);
+    void load_weights(Vmm vmm_load, const Xbyak::Address &addr, int ic);
+    void store_weights(const Xbyak::Address &addr, Vmm vmm_store);
 
-    Vmm vmm_scales(int ocb) {
-        return Vmm(unroll_factor + ocb);
-    }
+    Vmm vmm_scales(int ocb) { return Vmm(unroll_factor + ocb); }
 
-    Vmm vmm_zero_points(int ocb) {
-        return Vmm(2 * unroll_factor + ocb);
-    }
+    Vmm vmm_zero_points(int ocb) { return Vmm(2 * unroll_factor + ocb); }
 
     Vmm vmm_weights(int ocb) {
         assert(ocb < unroll_factor);
         return Vmm(ocb);
     }
 
-    Vmm vmm_tmp(int idx) {
-        return Vmm(n_vregs - idx - 1);
-    }
+    Vmm vmm_tmp(int idx) { return Vmm(n_vregs - idx - 1); }
 
     Vmm vmm_lookup() { return vmm_tmp(0); }
     Vmm vmm_lookup_low() { return vmm_tmp(0); }

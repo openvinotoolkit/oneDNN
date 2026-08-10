@@ -798,13 +798,11 @@ public:
     }
 
     void uni_vhsubps(const Xbyak::Xmm &x, const Xbyak::Xmm &x2,
-                     const Xbyak::Operand &op) {
+            const Xbyak::Operand &op) {
         if (is_valid_isa(avx)) {
             vhsubps(x, x2, op);
         } else {
-            if (!x.isEqualIfNotInherited(x2)) {
-                movups(x, x2);
-            }
+            if (!x.isEqualIfNotInherited(x2)) { movups(x, x2); }
             hsubps(x, op);
         }
     }
@@ -910,13 +908,11 @@ public:
     }
 
     void uni_vaddsubps(const Xbyak::Xmm &x, const Xbyak::Operand &op1,
-                       const Xbyak::Operand &op2) {
+            const Xbyak::Operand &op2) {
         if (is_valid_isa(avx)) {
             vaddsubps(x, op1, op2);
         } else {
-            if (!x.isEqualIfNotInherited(op1)) {
-                movups(x, op1);
-            }
+            if (!x.isEqualIfNotInherited(op1)) { movups(x, op1); }
             addsubps(x, op2);
         }
     }
@@ -1985,7 +1981,7 @@ public:
     }
 
     void uni_vcmpgtps(const Xbyak::Xmm &x1, const Xbyak::Xmm &x2,
-                      const Xbyak::Operand &op) {
+            const Xbyak::Operand &op) {
         if (is_valid_isa(avx))
             vcmpps(x1, x2, op, _cmp_nle_us);
         else {
@@ -2007,7 +2003,7 @@ public:
     }
 
     void uni_vpand(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
-                    const Xbyak::Operand &op = Xbyak::Operand()) {
+            const Xbyak::Operand &op = Xbyak::Operand()) {
         vpand(x1, x2, op);
     }
 
@@ -2094,7 +2090,8 @@ public:
         }
     }
 
-    void uni_vpminsd(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2, const Xbyak::Operand &op) {
+    void uni_vpminsd(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
+            const Xbyak::Operand &op) {
         vpminsd(x1, x2, op);
     }
 
@@ -2125,10 +2122,9 @@ public:
     // End of custom instructions section.
 
     void uni_vcmpgtps(const Xbyak::Ymm &x1, const Xbyak::Ymm &x2,
-                      const Xbyak::Operand &op) {
+            const Xbyak::Operand &op) {
         vcmpgtps(x1, x2, op);
     }
-
 
     void uni_vmovshdup(const Xbyak::Xmm &x, const Xbyak::Operand &op) {
         if (is_valid_isa(avx))
@@ -2858,7 +2854,7 @@ public:
     void dump_debug_traces(const uint8_t *code, size_t code_size) const {
 #if !defined(NDEBUG) && defined(__GNUC__)
         if (code && get_jit_dump()) {
-        #define MAX_FNAME_LEN 256
+#define MAX_FNAME_LEN 256
             static int counter = 0;
             char fname[MAX_FNAME_LEN + 1];
             snprintf(fname, MAX_FNAME_LEN, "dnnl_traces_cpu_%s.%d.txt", name(),
@@ -2868,12 +2864,12 @@ public:
             std::cout << "[ oneDNN ] dump_debug_traces: " << fname << std::endl;
             FILE *fp = fopen(fname, "wb+");
             if (fp) {
-                for (const auto & p : get_debug_traces()) {
+                for (const auto &p : get_debug_traces()) {
                     fprintf(fp, "%lx:\t%s\n", p.first, p.second.c_str());
                 }
                 fclose(fp);
             }
-        #undef MAX_FNAME_LEN
+#undef MAX_FNAME_LEN
         }
 #endif
     }

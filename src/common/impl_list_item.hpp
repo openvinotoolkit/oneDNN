@@ -18,8 +18,8 @@
 #define COMMON_IMPL_LIST_ITEM_HPP
 
 #include "c_types_map.hpp"
-#include "primitive_desc.hpp"
 #include "dnnl_sel_build.hpp"
+#include "primitive_desc.hpp"
 #include "utils.hpp"
 
 namespace dnnl {
@@ -118,7 +118,6 @@ struct impl_list_item_t {
         create_reorder_pd_func_ = deduced_pd_t::create;
         DNNL_PRIMITIVE_NAME_INIT(pd_t);
     }
-
 
     explicit operator bool() const {
         return !utils::everyone_is(nullptr, create_pd_func_,
@@ -223,11 +222,11 @@ private:
 };
 
 #if defined(SELECTIVE_BUILD_ANALYZER)
-inline impl_list_item_t&& move(impl_list_item_t &&t, const char *name) {
-    OV_ITT_SCOPED_TASK(
-        dnnl::FACTORY_DNNL,
-        openvino::itt::handle(std::string("REG$CPUEngine$") + t.name + "$" + name));
-    return static_cast<impl_list_item_t&&>(t);
+inline impl_list_item_t &&move(impl_list_item_t &&t, const char *name) {
+    OV_ITT_SCOPED_TASK(dnnl::FACTORY_DNNL,
+            openvino::itt::handle(
+                    std::string("REG$CPUEngine$") + t.name + "$" + name));
+    return static_cast<impl_list_item_t &&>(t);
 }
 #endif
 

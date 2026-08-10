@@ -41,9 +41,9 @@ inline status_t memory_desc_sanity_check(int ndims, const dims_t dims,
             VERBOSE_NULL_ARG);
     VCHECK_MEMORY(0 < ndims && ndims <= DNNL_MAX_NDIMS,
             status::invalid_arguments, VERBOSE_BAD_NDIMS, "tensor", ndims);
-    VCHECK_MEMORY(utils::one_of(data_type, f4_e2m1, e8m0, f8_e5m2, f8_e4m3, f16,
-                          bf16, f32, f64, s64, s32, s8, u8, s4, u4, u2, nf4,
-                          bin),
+    VCHECK_MEMORY(
+            utils::one_of(data_type, f4_e2m1, e8m0, f8_e5m2, f8_e4m3, f16, bf16,
+                    f32, f64, s64, s32, s8, u8, s4, u4, u2, nf4, bin),
             status::invalid_arguments, VERBOSE_UNSUPPORTED_DT);
 
     // A bounds check on the dimensions ensures that the tensor size
@@ -464,8 +464,8 @@ status_t memory_desc_init_with_grouped_encoding(memory_desc_t &memory_desc,
 }
 #endif // DNNL_EXPERIMENTAL_GROUPED_MEMORY
 
-status_t memory_desc_init_by_packed_encoding_v0(sparse_desc_t **sparse_desc,
-        sparse_encoding_t encoding) {
+status_t memory_desc_init_by_packed_encoding_v0(
+        sparse_desc_t **sparse_desc, sparse_encoding_t encoding) {
     if (!sparse_desc) return invalid_arguments;
     auto sd = utils::make_unique<sparse_desc_t>();
 
@@ -945,11 +945,11 @@ status_t dnnl_memory_desc_create_with_grouped_encoding(
 #endif // DNNL_EXPERIMENTAL_GROUPED_MEMORY
 
 status_t dnnl_memory_desc_create_with_packed_encoding_v0(
-        memory_desc_t **memory_desc,
-        sparse_encoding_t encoding, int ndims,
+        memory_desc_t **memory_desc, sparse_encoding_t encoding, int ndims,
         const dims_t dims, data_type_t data_type) {
 
-    sparse_desc_t* sd = nullptr;;
+    sparse_desc_t *sd = nullptr;
+    ;
     CHECK(memory_desc_init_by_packed_encoding_v0(&sd, encoding));
 
     auto md = utils::make_unique<memory_desc_t>();
@@ -962,7 +962,8 @@ status_t dnnl_memory_desc_create_with_packed_encoding_v0(
     md->format_kind = format_kind::sparse;
     md->format_desc.sparse_desc = *sd;
 
-    *memory_desc = md.release();;
+    *memory_desc = md.release();
+    ;
 
     return success;
 }

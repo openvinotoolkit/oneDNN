@@ -150,7 +150,8 @@ void jit_avx2_convolution_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
                         par_conv.flags |= FLAG_IC_FIRST;
                     }
 
-                    if ((jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise || jcp.with_quantization)
+                    if ((jcp.with_eltwise || jcp.with_binary
+                                || jcp.with_depthwise || jcp.with_quantization)
                             && icb + 1 == jcp.nb_ic)
                         par_conv.flags |= FLAG_IC_LAST;
 
@@ -338,7 +339,10 @@ void jit_avx2_convolution_bwd_data_t::execute_backward_data(
                             par_conv.flags |= FLAG_IC_LAST;
                     }
 
-                    par_conv.ic_off = (g * jcp.ic_without_padding + jcp.nb_ic_blocking * icbb * jcp.ic_block) * sizeof(float);
+                    par_conv.ic_off = (g * jcp.ic_without_padding
+                                              + jcp.nb_ic_blocking * icbb
+                                                      * jcp.ic_block)
+                            * sizeof(float);
                     par_conv.post_ops_binary_rhs_arg_vec
                             = post_ops_binary_rhs_arg_vec.data();
 

@@ -82,8 +82,7 @@ status_t jit_uni_x8s8s32x_1x1_convolution_fwd_t<isa>::execute_forward(
                 dw_dst_scales, src_zero_points, dst_zero_points,
                 ctx.get_scratchpad_grantor(),
                 post_ops_binary_rhs_arg_vec.data(),
-                post_ops_binary_rhs_arg_vec_dw.data(),
-                output_compensation);
+                post_ops_binary_rhs_arg_vec_dw.data(), output_compensation);
     });
     return status::success;
 }
@@ -127,8 +126,10 @@ void jit_uni_x8s8s32x_1x1_convolution_fwd_t<isa>::execute_forward_thr(
 
     auto offset = weights_d.size() - weights_d.additional_buffer_size();
     char *w = const_cast<char *>(weights);
-    const int32_t *compensation = (jcp.signed_input) ? reinterpret_cast<int32_t *>(w + offset) :
-                                  (jcp.with_input_zp) ? output_compensation : nullptr;
+    const int32_t *compensation = (jcp.signed_input)
+            ? reinterpret_cast<int32_t *>(w + offset)
+            : (jcp.with_input_zp) ? output_compensation
+                                  : nullptr;
     const int32_t *zp_compensation = jcp.src_zero_point
             ? reinterpret_cast<int32_t *>(&w[offset])
                     + (jcp.signed_input ? jcp.ngroups * jcp.oc : 0)
@@ -256,7 +257,9 @@ void jit_uni_x8s8s32x_1x1_convolution_fwd_t<isa>::execute_forward_thr(
                 : weights_d.blk_off(ocb, icb);
         p.load_data = weights + wei_offset;
         p.bias_data = &bias[_ocb * jcp.oc_block * bia_dt_size];
-        p.compensation = (jcp.signed_input || jcp.with_input_zp) ? &compensation[_ocb * jcp.oc_block] : nullptr;
+        p.compensation = (jcp.signed_input || jcp.with_input_zp)
+                ? &compensation[_ocb * jcp.oc_block]
+                : nullptr;
         p.zp_compensation = jcp.src_zero_point
                 ? zp_compensation + _ocb * jcp.oc_block
                 : nullptr;

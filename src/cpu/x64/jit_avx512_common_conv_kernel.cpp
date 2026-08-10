@@ -94,7 +94,8 @@ jit_avx512_common_conv_fwd_kernel_vmm_t<Vmm>::
         jit_avx512_common_conv_fwd_kernel_vmm_t(const jit_conv_conf_t &ajcp,
                 const primitive_attr_t &attr, const memory_desc_t &dst_md)
     : jit_generator_t(jit_name()), jcp(ajcp), attr_(attr) {
-    if (jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise || jcp.with_quantization) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise
+            || jcp.with_quantization) {
         using namespace binary_injector;
         static constexpr bool preserve_gpr = true;
         static constexpr bool preserve_vmm = false;
@@ -109,8 +110,9 @@ jit_avx512_common_conv_fwd_kernel_vmm_t<Vmm>::
                 use_exact_tail_scalar_bcast};
         const binary_injector::static_params_t static_params {
                 this->param1, rhs_args_static_params};
-        quantization_injector::static_params_t quantization_static_params
-                {zmm_d_weights.getIdx(), zmm_d_bias.getIdx(), reg_d_weights, reg_d_bias};
+        quantization_injector::static_params_t quantization_static_params {
+                zmm_d_weights.getIdx(), zmm_d_bias.getIdx(), reg_d_weights,
+                reg_d_bias};
 
         postops_injector_ = utils::make_unique<
                 injector::jit_uni_postops_injector_t<avx512_core>>(
@@ -147,13 +149,16 @@ void jit_avx512_common_conv_fwd_kernel_vmm_t<Vmm>::apply_postops(int ur_w) {
     std::map<size_t, int> vmm_idx_off;
     iterate(jcp.nb_oc_blocking, ur_w,
             [&](const bool, const int i_load, const int i_ur) {
-                vmm_idx_off.insert({vmm_out_idx(i_ur, i_load), i_load * jcp.oc_block * sizeof(float)});
-            });
-    depthwise_injector::dynamic_params_t ddp {zmm_d_weights.getIdx(), zmm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
-                                              ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off,
-                                              this->rsp, base_post_ops_data_offset};
-    quantization_injector::dynamic_params_t qdp {ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, jcp.dst_dt,
-                                                 this->rsp, base_post_ops_data_offset};
+        vmm_idx_off.insert({vmm_out_idx(i_ur, i_load),
+                i_load * jcp.oc_block * sizeof(float)});
+    });
+    depthwise_injector::dynamic_params_t ddp {zmm_d_weights.getIdx(),
+            zmm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
+            ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, this->rsp,
+            base_post_ops_data_offset};
+    quantization_injector::dynamic_params_t qdp {
+            ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, jcp.dst_dt,
+            this->rsp, base_post_ops_data_offset};
 
     injector_utils::vmm_index_set_t vmm_idxs;
     if (jcp.with_binary) {
@@ -172,14 +177,15 @@ void jit_avx512_common_conv_fwd_kernel_vmm_t<Vmm>::apply_postops(int ur_w) {
             if (mask_flag) { rhs_arg_params.vmm_tail_idx_.emplace(vmm_idx); }
         });
 
-        postops_injector_->compute_vector_range(vmm_idxs, rhs_arg_params, ddp, qdp);
+        postops_injector_->compute_vector_range(
+                vmm_idxs, rhs_arg_params, ddp, qdp);
     } else {
         iterate(jcp.nb_oc_blocking, ur_w,
                 [&](const bool, const int i_load, const int i_ur) {
-        vmm_idxs.emplace(vmm_out_idx(i_ur, i_load));
-    });
-    postops_injector_->compute_vector_range(vmm_idxs,
-        binary_injector::rhs_arg_dynamic_params_t(), ddp, qdp);
+            vmm_idxs.emplace(vmm_out_idx(i_ur, i_load));
+        });
+        postops_injector_->compute_vector_range(vmm_idxs,
+                binary_injector::rhs_arg_dynamic_params_t(), ddp, qdp);
     }
 }
 
@@ -232,7 +238,8 @@ void jit_avx512_common_conv_fwd_kernel_vmm_t<Vmm>::store_output(int ur_w) {
 
     L(post_ops_label);
 
-    if (jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise || jcp.with_quantization) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise
+            || jcp.with_quantization) {
         test(reg_channel, FLAG_IC_LAST);
         jz(store_label, T_NEAR);
 
@@ -605,7 +612,8 @@ void jit_avx512_common_conv_fwd_kernel_vmm_t<Vmm>::generate() {
     preamble();
 
     if (postops_injector_)
-        postops_injector_->push_post_ops_data_on_stack(this->param1, GET_OFF(post_ops_binary_rhs_arg_vec), reg_inp, reg_out);
+        postops_injector_->push_post_ops_data_on_stack(this->param1,
+                GET_OFF(post_ops_binary_rhs_arg_vec), reg_inp, reg_out);
 
     mov(reg_inp, ptr[param1 + GET_OFF(src)]);
     mov(reg_out, ptr[param1 + GET_OFF(dst)]);
@@ -789,8 +797,7 @@ void jit_avx512_common_conv_fwd_kernel_vmm_t<Vmm>::generate() {
         L(end_label);
     }
 
-    if (postops_injector_)
-        postops_injector_->reset_stack_pointer();
+    if (postops_injector_) postops_injector_->reset_stack_pointer();
 
     postamble();
 
@@ -999,8 +1006,9 @@ status_t jit_avx512_common_conv_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
     static constexpr bool sum_requires_scale_one = true;
     static constexpr bool sum_requires_zp_zero = true;
     bool post_ops_ok_ = post_ops_ok(post_ops_ok_args_t(avx512_core,
-            {eltwise, binary, sum, depthwise, quantization}, jcp.post_ops, &dst_d, sum_at_pos_0_only,
-            sum_requires_scale_one, sum_requires_zp_zero));
+            {eltwise, binary, sum, depthwise, quantization}, jcp.post_ops,
+            &dst_d, sum_at_pos_0_only, sum_requires_scale_one,
+            sum_requires_zp_zero));
     // temporary workaround that skips avx2 implementation for ternary
     // post-ops with scalar broadcasting to avoid register collisions.
     post_ops_ok_ = post_ops_ok_
@@ -1364,7 +1372,9 @@ void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<Vmm>::store_output(
     const bool with_depthwise = p.find(primitive_kind::depthwise) != -1;
 
     if (with_depthwise) {
-        mov(reg_d_weights, ptr[this->rsp + base_post_ops_data_offset + post_ops_data_offset]);
+        mov(reg_d_weights,
+                ptr[this->rsp + base_post_ops_data_offset
+                        + post_ops_data_offset]);
         add(reg_d_weights, ptr[this->param1 + GET_OFF(oc_off)]);
     }
 
@@ -1373,12 +1383,16 @@ void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<Vmm>::store_output(
             post_ops_data_offset = 0;
             depthwise_inj_idx = 0;
             for (int i = 0; i < p.len(); i++) {
-                auto& post_op = p.entry_[i];
+                auto &post_op = p.entry_[i];
                 if (post_op.is_depthwise()) {
-                    depthwise_injectors[depthwise_inj_idx]->compute_vector_range(
-                        k*jcp.ur_w, k*jcp.ur_w + ur_w, reg_d_weights, reg_d_weights, false, true);
+                    depthwise_injectors[depthwise_inj_idx]
+                            ->compute_vector_range(k * jcp.ur_w,
+                                    k * jcp.ur_w + ur_w, reg_d_weights,
+                                    reg_d_weights, false, true);
 
-                    post_ops_data_offset += depthwise_injectors[depthwise_inj_idx]->memoryStep();
+                    post_ops_data_offset
+                            += depthwise_injectors[depthwise_inj_idx]
+                                       ->memoryStep();
                     depthwise_inj_idx++;
                 }
             }
@@ -1389,8 +1403,8 @@ void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<Vmm>::store_output(
             Vmm vmm = vmm_out(j, k);
             size_t aux_src_offset = get_diff_src_offset(j, k);
             vaddps(vmm,
-                        EVEX_compress_addr_safe(
-                                reg_src, aux_src_offset, reg_long_offt));
+                    EVEX_compress_addr_safe(
+                            reg_src, aux_src_offset, reg_long_offt));
         }
     }
     jmp(skip_post_ops, T_NEAR);
@@ -1400,18 +1414,22 @@ void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<Vmm>::store_output(
     depthwise_inj_idx = 0;
 
     for (int i = 0; i < p.len(); i++) {
-        auto& post_op = p.entry_[i];
+        auto &post_op = p.entry_[i];
         if (post_op.is_depthwise()) {
-            mov(reg_d_weights, ptr[this->rsp + base_post_ops_data_offset + post_ops_data_offset]);
+            mov(reg_d_weights,
+                    ptr[this->rsp + base_post_ops_data_offset
+                            + post_ops_data_offset]);
             add(reg_d_weights, ptr[this->param1 + GET_OFF(oc_off)]);
 
             for (int k = 0; k < jcp.nb_ic_blocking; k++) {
                 depthwise_injectors[depthwise_inj_idx]->compute_vector_range(
-                        k*jcp.ur_w, k*jcp.ur_w + ur_w, reg_d_weights, reg_d_weights);
+                        k * jcp.ur_w, k * jcp.ur_w + ur_w, reg_d_weights,
+                        reg_d_weights);
 
                 add(reg_d_weights, jcp.ic_block * sizeof(float));
             }
-            post_ops_data_offset += depthwise_injectors[depthwise_inj_idx]->memoryStep();
+            post_ops_data_offset
+                    += depthwise_injectors[depthwise_inj_idx]->memoryStep();
             depthwise_inj_idx++;
         }
     }
@@ -1773,10 +1791,9 @@ void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<Vmm>::generate() {
     for (int i = 0; i < p.len(); i++) {
         auto &post_op = p.entry_[i];
         if (post_op.is_depthwise()) {
-            depthwise_injectors.push_back(new jit_uni_depthwise_injector_f32<avx512_core>(
-                    this,
-                    post_op
-            ));
+            depthwise_injectors.push_back(
+                    new jit_uni_depthwise_injector_f32<avx512_core>(
+                            this, post_op));
         }
     }
 
@@ -1989,16 +2006,18 @@ void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<Vmm>::generate() {
     postamble();
 }
 
-bool jit_avx512_common_conv_bwd_data_kernel_f32_t::post_ops_ok(const jit_conv_conf_t &jcp) {
+bool jit_avx512_common_conv_bwd_data_kernel_f32_t::post_ops_ok(
+        const jit_conv_conf_t &jcp) {
     const auto &p = jcp.post_ops;
-    if (p.len() > 1)
-        return false;
+    if (p.len() > 1) return false;
 
     auto all_post_ops_supported = [&]() {
         bool ok = true;
 
         for (int i = 0; i < p.len(); i++) {
-            ok = ok && utils::one_of(p.entry_[i].kind, primitive_kind::depthwise);
+            ok = ok
+                    && utils::one_of(
+                            p.entry_[i].kind, primitive_kind::depthwise);
         }
         return ok;
     };
@@ -2012,8 +2031,7 @@ status_t jit_avx512_common_conv_bwd_data_kernel_f32_t::init_conf(
         memory_desc_t &diff_dst_md, int nthreads) {
     if (!mayiuse(avx512_core)) return status::unimplemented;
 
-    if (!post_ops_ok(jcp))
-        return status::unimplemented;
+    if (!post_ops_ok(jcp)) return status::unimplemented;
 
     const memory_desc_wrapper diff_src_d(&diff_src_md);
     const memory_desc_wrapper weights_d(&weights_md);

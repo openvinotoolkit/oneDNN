@@ -15,8 +15,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#include <mutex>
 #include <iostream>
+#include <mutex>
 
 #include "common/utils.hpp"
 #include "common/verbose.hpp"
@@ -139,7 +139,8 @@ void register_jit_code(const void *code, size_t code_size,
     snprintf(unique_code_name, MAX_CODENAME_LEN, "%s.%d", code_name,
             unique_id++);
     if (code && get_jit_dump()) {
-        std::cout << "[ oneDNN ] register_jit_code: " << unique_code_name << ", " << code_name << std::endl;
+        std::cout << "[ oneDNN ] register_jit_code: " << unique_code_name
+                  << ", " << code_name << std::endl;
     }
     dump_jit_code(code, code_size, unique_code_name);
     // VTune Profiler does not need a unique name, because it uses

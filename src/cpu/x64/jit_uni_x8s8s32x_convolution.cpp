@@ -81,8 +81,10 @@ status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_2d(
 
     size_t offset = weights_d.size() - weights_d.additional_buffer_size();
     auto w = const_cast<char *>(weights);
-    const int32_t *compensation = (jcp.signed_input) ? reinterpret_cast<int32_t *>(&w[offset]) :
-                                  (jcp.with_input_zp) ? output_compensation : nullptr;
+    const int32_t *compensation = (jcp.signed_input)
+            ? reinterpret_cast<int32_t *>(&w[offset])
+            : (jcp.with_input_zp) ? output_compensation
+                                  : nullptr;
     const int32_t *zp_compensation = jcp.src_zero_point
             ? reinterpret_cast<int32_t *>(&w[offset])
                     + (jcp.signed_input ? jcp.ngroups * jcp.oc : 0)
@@ -147,7 +149,9 @@ status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_2d(
                 auto bias_w = bias ? bias + (bias_d.blk_off(g_oc) * bia_dt_size)
                                    : nullptr;
                 const int32_t *compensation_w
-                        = (jcp.signed_input || jcp.with_input_zp) ? compensation + g_oc : nullptr;
+                        = (jcp.signed_input || jcp.with_input_zp)
+                        ? compensation + g_oc
+                        : nullptr;
 
                 auto dst_w = dst
                         + dst_dt_size * dst_d.blk_off(n, g_oc, oh_s, ow_s);
@@ -168,7 +172,8 @@ status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_2d(
                             0, jcp.kh - i_t_overflow - i_b_overflow);
 
                     const size_t wei_stride
-                            = (jcp.signed_input || jcp.src_zero_point || jcp.with_input_zp)
+                            = (jcp.signed_input || jcp.src_zero_point
+                                      || jcp.with_input_zp)
                             ? 0
                             : i_t_overflow * wht_h_stride;
                     p.src = src_w + i_t_overflow * dilate_h * src_h_stride;
@@ -197,8 +202,7 @@ status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_2d(
                             = post_ops_binary_rhs_arg_vec.data();
                     p.dst_orig = dst;
                     p.oc_off = g_oc * sizeof(float);
-                    if (jcp.with_input_zp)
-                        p.input_zp = input_zp + g_ic;
+                    if (jcp.with_input_zp) p.input_zp = input_zp + g_ic;
 
                     (*kernel_)(&p);
                     src_w += src_h_stride * jcp.stride_h;
@@ -269,8 +273,10 @@ status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_1d(
     size_t ch_offset = jcp.is_depthwise ? jcp.nb_ch * jcp.ch_block
                                         : jcp.ngroups * jcp.oc;
     auto w = const_cast<char *>(weights);
-    const int32_t *compensation = (jcp.signed_input) ? reinterpret_cast<int32_t *>(&w[extra_data_offset]) :
-                                  (jcp.with_input_zp) ? output_compensation : nullptr;
+    const int32_t *compensation = (jcp.signed_input)
+            ? reinterpret_cast<int32_t *>(&w[extra_data_offset])
+            : (jcp.with_input_zp) ? output_compensation
+                                  : nullptr;
     const int32_t *zp_compensation = jcp.src_zero_point
             ? reinterpret_cast<int32_t *>(&w[extra_data_offset])
                     + (jcp.signed_input ? ch_offset : 0)
@@ -328,7 +334,9 @@ status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_1d(
 
             p.bias = bias ? bias + (bias_d.blk_off(g_oc) * bia_dt_size)
                           : nullptr;
-            p.compensation = (jcp.signed_input || jcp.with_input_zp) ? compensation + g_oc : nullptr;
+            p.compensation = (jcp.signed_input || jcp.with_input_zp)
+                    ? compensation + g_oc
+                    : nullptr;
             p.zp_compensation
                     = jcp.src_zero_point ? zp_compensation + g_oc : nullptr;
             p.src_zero_point = src_zero_points;
@@ -351,8 +359,7 @@ status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_1d(
             p.post_ops_binary_rhs_arg_vec = post_ops_binary_rhs_arg_vec.data();
             p.dst_orig = dst;
             p.oc_off = g_oc * sizeof(float);
-            if (jcp.with_input_zp)
-                p.input_zp = input_zp + g_ic;
+            if (jcp.with_input_zp) p.input_zp = input_zp + g_ic;
 
             (*kernel_)(&p);
 
@@ -425,8 +432,10 @@ status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_2d_dw(
 
     size_t offset = weights_d.size() - weights_d.additional_buffer_size();
     auto w = const_cast<char *>(weights);
-    const int32_t *compensation = (jcp.signed_input) ? reinterpret_cast<int32_t *>(&w[offset]) :
-                                  (jcp.with_input_zp) ? output_compensation : nullptr;
+    const int32_t *compensation = (jcp.signed_input)
+            ? reinterpret_cast<int32_t *>(&w[offset])
+            : (jcp.with_input_zp) ? output_compensation
+                                  : nullptr;
     const int32_t *zp_compensation = jcp.src_zero_point
             ? reinterpret_cast<int32_t *>(&w[offset])
                     + (jcp.signed_input ? jcp.nb_ch * jcp.ch_block : 0)
@@ -481,8 +490,8 @@ status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_2d_dw(
                         dilate_h));
         int kh_padding = nstl::max(0, jcp.kh - i_t_overflow - i_b_overflow);
 
-        size_t wei_stride = (jcp.signed_input || jcp.src_zero_point
-                                    || jcp.with_input_zp)
+        size_t wei_stride
+                = (jcp.signed_input || jcp.src_zero_point || jcp.with_input_zp)
                 ? 0
                 : i_t_overflow * wht_h_stride;
         p.src = src_w + i_t_overflow * dilate_h * src_h_stride;
@@ -505,8 +514,7 @@ status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_2d_dw(
         p.post_ops_binary_rhs_arg_vec = post_ops_binary_rhs_arg_vec.data();
         p.dst_orig = dst;
         p.oc_off = g * sizeof(float);
-        if (jcp.with_input_zp)
-            p.input_zp = input_zp + g;
+        if (jcp.with_input_zp) p.input_zp = input_zp + g;
 
         (*kernel_)(&p);
     });
@@ -555,8 +563,10 @@ status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_3d(
 
     size_t offset = weights_d.size() - weights_d.additional_buffer_size();
     auto w = const_cast<char *>(weights);
-    const int32_t *compensation = (jcp.signed_input) ? reinterpret_cast<int32_t *>(&w[offset]) :
-                                  (jcp.with_input_zp) ? output_compensation : nullptr;
+    const int32_t *compensation = (jcp.signed_input)
+            ? reinterpret_cast<int32_t *>(&w[offset])
+            : (jcp.with_input_zp) ? output_compensation
+                                  : nullptr;
     const int32_t *zp_compensation = jcp.src_zero_point
             ? reinterpret_cast<int32_t *>(&w[offset])
                     + (jcp.signed_input ? jcp.ngroups * jcp.oc : 0)
@@ -636,7 +646,9 @@ status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_3d(
                 auto bias_w = bias ? bias + (bias_d.blk_off(g_oc) * bia_dt_size)
                                    : nullptr;
                 const int32_t *compensation_w
-                        = (jcp.signed_input || jcp.with_input_zp) ? compensation + g_oc : nullptr;
+                        = (jcp.signed_input || jcp.with_input_zp)
+                        ? compensation + g_oc
+                        : nullptr;
                 p.zp_compensation
                         = jcp.src_zero_point ? zp_compensation + g_oc : nullptr;
                 p.src_zero_point = src_zero_points;
@@ -648,7 +660,8 @@ status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_3d(
                 auto src_w = src + src_d.blk_off(n, g_ic, id_s, ih_s, iw_s)
                         + d_f_overflow * dilate_d * src_d_stride;
                 auto wht_w = weights + wht_blk_off(weights_d, g, ocb, 0)
-                        + ((jcp.signed_input || jcp.src_zero_point || jcp.with_input_zp)
+                        + ((jcp.signed_input || jcp.src_zero_point
+                                   || jcp.with_input_zp)
                                           ? 0
                                           : d_f_overflow)
                                 * wht_d_stride;
@@ -666,7 +679,8 @@ status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_3d(
                     int kh_padding = nstl::max(
                             0, jcp.kh - i_t_overflow - i_b_overflow);
 
-                    size_t wei_stride = (jcp.signed_input || jcp.src_zero_point || jcp.with_input_zp)
+                    size_t wei_stride = (jcp.signed_input || jcp.src_zero_point
+                                                || jcp.with_input_zp)
                             ? 0
                             : wht_h_stride * i_t_overflow;
                     p.src = src_w + i_t_overflow * dilate_h * src_h_stride;
@@ -693,8 +707,7 @@ status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_3d(
                             = post_ops_binary_rhs_arg_vec.data();
                     p.dst_orig = dst;
                     p.oc_off = g_oc * sizeof(float);
-                    if (jcp.with_input_zp)
-                        p.input_zp = input_zp + g_ic;
+                    if (jcp.with_input_zp) p.input_zp = input_zp + g_ic;
 
                     (*kernel_)(&p);
                     src_w += src_h_stride * jcp.stride_h;
@@ -725,7 +738,8 @@ status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_3d(
 }
 
 template <cpu_isa_t isa>
-status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_3d_dw(const exec_ctx_t &ctx) const {
+status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_3d_dw(
+        const exec_ctx_t &ctx) const {
     auto src = CTX_IN_MEM(const char *, DNNL_ARG_SRC);
     auto weights = CTX_IN_MEM(const char *, DNNL_ARG_WEIGHTS);
     auto bias = CTX_IN_MEM(const char *, DNNL_ARG_BIAS);
@@ -763,12 +777,15 @@ status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_3d_dw(const ex
 
     size_t offset = weights_d.size() - weights_d.additional_buffer_size();
     auto w = const_cast<char *>(weights);
-    const int32_t* compensation = (jcp.signed_input) ? reinterpret_cast<int32_t *>(&w[offset]) :
-                                  (jcp.with_input_zp) ? output_compensation : 0;
+    const int32_t *compensation = (jcp.signed_input)
+            ? reinterpret_cast<int32_t *>(&w[offset])
+            : (jcp.with_input_zp) ? output_compensation
+                                  : 0;
     int nb_groups = jcp.nb_ch / jcp.nb_ch_blocking;
     int group_block = jcp.ch_block;
 
-    parallel_nd(jcp.mb, jcp.od, jcp.oh, jcp.nb_ow, nb_groups, [&](int n, int od_s, int oh_s, int owb, int gg) {
+    parallel_nd(jcp.mb, jcp.od, jcp.oh, jcp.nb_ow, nb_groups,
+            [&](int n, int od_s, int oh_s, int owb, int gg) {
         auto p = jit_conv_args_t();
 
         size_t src_d_stride = src_d.blk_off(0, 0, 1);
@@ -787,7 +804,9 @@ status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_3d_dw(const ex
         int iw_s = ow_s * jcp.stride_w;
 
         auto bias_w = bias ? bias + (bias_d.blk_off(g) * bia_dt_size) : 0;
-        const int32_t *compensation_w = (jcp.signed_input || jcp.with_input_zp) ? compensation + g : 0;
+        const int32_t *compensation_w = (jcp.signed_input || jcp.with_input_zp)
+                ? compensation + g
+                : 0;
 
         auto dst_w = dst + dst_dt_size * dst_d.blk_off(n, g, od_s, oh_s, ow_s);
         auto src_w = src + src_d.blk_off(n, g, id_s, ih_s, iw_s);
@@ -811,20 +830,24 @@ status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_3d_dw(const ex
         int dilate_d = jcp.dilate_d + 1;
         int i_f_overflow = nstl::min(jcp.kd, div_up(max(0, -id_s), dilate_d));
         int i_back_overflow = nstl::min(jcp.kd,
-                                        div_up(max(0, id_s - jcp.id + (jcp.kd - 1) * dilate_d + 1),
-                                               dilate_d));
+                div_up(max(0, id_s - jcp.id + (jcp.kd - 1) * dilate_d + 1),
+                        dilate_d));
         int kd_padding = nstl::max(0, jcp.kd - i_f_overflow - i_back_overflow);
 
-        size_t wei_d_stride = (jcp.signed_input || jcp.with_input_zp) ? 0 : i_f_overflow * wht_d_stride;
+        size_t wei_d_stride = (jcp.signed_input || jcp.with_input_zp)
+                ? 0
+                : i_f_overflow * wht_d_stride;
 
         int dilate_h = jcp.dilate_h + 1;
         int i_t_overflow = nstl::min(jcp.kh, div_up(max(0, -ih_s), dilate_h));
         int i_b_overflow = nstl::min(jcp.kh,
-                                     div_up(max(0, ih_s - jcp.ih + (jcp.kh - 1) * dilate_h + 1),
-                                            dilate_h));
+                div_up(max(0, ih_s - jcp.ih + (jcp.kh - 1) * dilate_h + 1),
+                        dilate_h));
         int kh_padding = nstl::max(0, jcp.kh - i_t_overflow - i_b_overflow);
 
-        size_t wei_h_stride = (jcp.signed_input || jcp.with_input_zp) ? 0 : i_t_overflow * wht_h_stride;
+        size_t wei_h_stride = (jcp.signed_input || jcp.with_input_zp)
+                ? 0
+                : i_t_overflow * wht_h_stride;
         p.src = src_w + i_t_overflow * dilate_h * src_h_stride
                 + i_f_overflow * dilate_d * src_d_stride;
         p.dst = dst_w;
@@ -842,12 +865,10 @@ status_t jit_uni_x8s8s32x_convolution_fwd_t<isa>::execute_forward_3d_dw(const ex
         p.t_overflow = i_t_overflow;
         p.b_overflow = i_b_overflow;
         p.owb = owb;
-        p.post_ops_binary_rhs_arg_vec
-                = post_ops_binary_rhs_arg_vec.data();
+        p.post_ops_binary_rhs_arg_vec = post_ops_binary_rhs_arg_vec.data();
 
         p.oc_off = g * sizeof(float);
-        if (jcp.with_input_zp)
-            p.input_zp = input_zp + g;
+        if (jcp.with_input_zp) p.input_zp = input_zp + g;
 
         (*kernel_)(&p);
     });

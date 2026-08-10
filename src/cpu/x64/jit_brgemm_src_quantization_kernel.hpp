@@ -47,12 +47,15 @@ struct src_quantization_runtime_params_t {
 };
 
 struct jit_src_quantization_kernel_t {
-    void operator()(const src_quantization_runtime_params_t *args) { assert(ker_);
+    void operator()(const src_quantization_runtime_params_t *args) {
+        assert(ker_);
         ker_(args);
     }
 
-    jit_src_quantization_kernel_t(const src_quantization_compile_params_t& jcp) : ker_(nullptr), jcp_(jcp) {}
+    jit_src_quantization_kernel_t(const src_quantization_compile_params_t &jcp)
+        : ker_(nullptr), jcp_(jcp) {}
     virtual ~jit_src_quantization_kernel_t() {}
+
 protected:
     void (*ker_)(const src_quantization_runtime_params_t *);
 
@@ -60,10 +63,13 @@ protected:
 };
 
 template <cpu_isa_t isa>
-struct jit_brgemm_src_quantization_kernel_t : public jit_src_quantization_kernel_t, public jit_generator_t {
+struct jit_brgemm_src_quantization_kernel_t
+    : public jit_src_quantization_kernel_t,
+      public jit_generator_t {
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_brgemm_src_quantization_kernel_t)
 
-    jit_brgemm_src_quantization_kernel_t(const src_quantization_compile_params_t& jcp)
+    jit_brgemm_src_quantization_kernel_t(
+            const src_quantization_compile_params_t &jcp)
         : jit_src_quantization_kernel_t(jcp), jit_generator_t(jit_name()) {
         vec_size = cpu_isa_traits_t<isa>::vlen / sizeof(float);
 
@@ -72,47 +78,32 @@ struct jit_brgemm_src_quantization_kernel_t : public jit_src_quantization_kernel
     }
 
 private:
-    using Vmm = typename utils::conditional3<isa == x64::sse41, Xbyak::Xmm, isa == x64::avx2, Xbyak::Ymm, Xbyak::Zmm>::type;
+    using Vmm = typename utils::conditional3<isa == x64::sse41, Xbyak::Xmm,
+            isa == x64::avx2, Xbyak::Ymm, Xbyak::Zmm>::type;
 
     static constexpr int n_vregs = cpu_isa_traits_t<isa>::n_vregs;
 
     void generate() override;
-    void load_src(Vmm vmm_load, const Xbyak::Address& addr);
+    void load_src(Vmm vmm_load, const Xbyak::Address &addr);
 
-    enum class op_type {max, sum};
+    enum class op_type { max, sum };
     void horiz_op(Vmm vmm_src, Vmm vmm_aux, op_type op);
 
-    Vmm vmm_src() {
-        return Vmm(0);
-    }
+    Vmm vmm_src() { return Vmm(0); }
 
-    Vmm vmm_max() {
-        return Vmm(1);
-    }
+    Vmm vmm_max() { return Vmm(1); }
 
-    Vmm vmm_sign_bit_mask() {
-        return Vmm(2);
-    }
+    Vmm vmm_sign_bit_mask() { return Vmm(2); }
 
-    Vmm vmm_aux() {
-        return Vmm(3);
-    }
+    Vmm vmm_aux() { return Vmm(3); }
 
-    Vmm vmm_int8_max() {
-        return Vmm(4);
-    }
+    Vmm vmm_int8_max() { return Vmm(4); }
 
-    Vmm vmm_qscale() {
-        return Vmm(5);
-    }
+    Vmm vmm_qscale() { return Vmm(5); }
 
-    Vmm vmm_one() {
-        return Vmm(6);
-    }
+    Vmm vmm_one() { return Vmm(6); }
 
-    Vmm vmm_src_sum_accum() {
-        return Vmm(7);
-    }
+    Vmm vmm_src_sum_accum() { return Vmm(7); }
 
     Xbyak::Reg64 reg_src = r8;
     Xbyak::Reg64 reg_qsrc = r9;

@@ -125,7 +125,8 @@ struct rhs_arg_static_params_t {
             bool preserve_vmm_helper, std::size_t abi_param_offset,
             std::size_t dst_orig_offset, const memory_desc_wrapper &dst_d,
             std::size_t tail_size, const Xbyak::Opmask &tail_opmask,
-            bool use_exact_tail_scalar_bcast, std::size_t rhs_prelu_helper_vmm_idx = 0);
+            bool use_exact_tail_scalar_bcast,
+            std::size_t rhs_prelu_helper_vmm_idx = 0);
     rhs_arg_static_params_t(std::size_t rhs_dt_helper_vmm_idx,
             const Xbyak::Reg64 &rhs_addr_reg,
             const Xbyak::Reg64 &rhs_helper_reg,
@@ -133,8 +134,8 @@ struct rhs_arg_static_params_t {
             bool preserve_vmm_helper, std::size_t abi_param_offset,
             std::size_t dst_orig_offset, const memory_desc_wrapper &dst_d,
             std::size_t tail_size, const Xbyak::Opmask &tail_opmask,
-            const Xbyak::Reg64 &reg_tail_size,
-            bool use_exact_tail_scalar_bcast, std::size_t rhs_prelu_helper_vmm_idx = 0);
+            const Xbyak::Reg64 &reg_tail_size, bool use_exact_tail_scalar_bcast,
+            std::size_t rhs_prelu_helper_vmm_idx = 0);
 
     bool is_opmask_set() const noexcept { return is_opmask_set_; }
 

@@ -28,11 +28,11 @@
 #include "common/memory.hpp"
 #include "common/memory_tracking.hpp"
 
+#include "cpu/x64/injectors/jit_uni_depthwise_injector.hpp"
+#include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
+#include "cpu/x64/injectors/jit_uni_quantization_injector.hpp"
 #include "cpu/x64/jit_generator.hpp"
 #include "cpu/x64/jit_primitive_conf.hpp"
-#include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
-#include "cpu/x64/injectors/jit_uni_depthwise_injector.hpp"
-#include "cpu/x64/injectors/jit_uni_quantization_injector.hpp"
 
 namespace dnnl {
 namespace impl {
@@ -42,9 +42,12 @@ namespace x64 {
 struct jit_avx2_1x1_conv_kernel_f32_old : public jit_generator_t {
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_avx2_1x1_conv_kernel_f32_old)
 
-    jit_avx2_1x1_conv_kernel_f32_old(
-            const jit_1x1_conv_conf_t &ajcp, jit_conv_conf_t ajcp_dw, const primitive_attr_t &attr)
-            : jit_generator_t(jit_name()), jcp(ajcp), jcp_dw(ajcp_dw), attr_(attr) {}
+    jit_avx2_1x1_conv_kernel_f32_old(const jit_1x1_conv_conf_t &ajcp,
+            jit_conv_conf_t ajcp_dw, const primitive_attr_t &attr)
+        : jit_generator_t(jit_name())
+        , jcp(ajcp)
+        , jcp_dw(ajcp_dw)
+        , attr_(attr) {}
 
     ~jit_avx2_1x1_conv_kernel_f32_old() {
         for (auto inj : eltwise_injectors)
@@ -64,12 +67,13 @@ struct jit_avx2_1x1_conv_kernel_f32_old : public jit_generator_t {
             jit_1x1_conv_conf_t &jcp, const primitive_attr_t &attr);
 
     static status_t init_conf(jit_1x1_conv_conf_t &jcp,
-                              const convolution_desc_t &cd, const memory_desc_wrapper &src_d,
-                              const memory_desc_wrapper &weights_d,
-                              const memory_desc_wrapper &dst_d, const primitive_attr_t &attr);
+            const convolution_desc_t &cd, const memory_desc_wrapper &src_d,
+            const memory_desc_wrapper &weights_d,
+            const memory_desc_wrapper &dst_d, const primitive_attr_t &attr);
 
     static void init_scratchpad(memory_tracking::registrar_t &scratchpad,
-                                const jit_1x1_conv_conf_t &jcp, const jit_conv_conf_t &jcp_dw = jit_conv_conf_t());
+            const jit_1x1_conv_conf_t &jcp,
+            const jit_conv_conf_t &jcp_dw = jit_conv_conf_t());
 
     jit_1x1_conv_conf_t jcp;
     jit_conv_conf_t jcp_dw;
@@ -115,9 +119,10 @@ private:
     void generate_reduce_loop(int load_loop_blk, int ur);
     void generate_diff_bias_loop(int load_loop_blk);
 
-    nstl::vector<jit_uni_eltwise_injector_t<avx2>*> eltwise_injectors;
-    nstl::vector<jit_uni_depthwise_injector_f32<avx2>*> depthwise_injectors;
-    nstl::vector<jit_uni_quantization_injector_f32<avx2>*> quantization_injectors;
+    nstl::vector<jit_uni_eltwise_injector_t<avx2> *> eltwise_injectors;
+    nstl::vector<jit_uni_depthwise_injector_f32<avx2> *> depthwise_injectors;
+    nstl::vector<jit_uni_quantization_injector_f32<avx2> *>
+            quantization_injectors;
 
     void generate() override;
 };

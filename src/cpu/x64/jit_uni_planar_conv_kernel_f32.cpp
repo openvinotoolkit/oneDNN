@@ -40,8 +40,7 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::load_src_scalar(int ur_h) {
     Label init_first_label;
 
     mov(reg_ci_flag, ptr[this->param1 + GET_OFF(flags)]);
-    if (jcp.with_bias)
-        mov(reg_bias, ptr[this->param1 + GET_OFF(bias)]);
+    if (jcp.with_bias) mov(reg_bias, ptr[this->param1 + GET_OFF(bias)]);
 
     if (!jcp.with_sum) {
         test(reg_ci_flag, FLAG_IC_FIRST);
@@ -105,8 +104,12 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::filter_scalar(int ur_h) {
     {
         for (size_t ifm2 = 0; ifm2 < (size_t)ic_blk; ifm2++) {
             for (int kk = 0; kk < ur_h; kk++) {
-                size_t inp_off = sizeof(float) * (ifm2 * id * ih * iw + kk * jcp.iw * jcp.oh_block_step);
-                movss(xmm_src, make_safe_addr(aux_reg_input_w, inp_off, reg_long_offt));
+                size_t inp_off = sizeof(float)
+                        * (ifm2 * id * ih * iw
+                                + kk * jcp.iw * jcp.oh_block_step);
+                movss(xmm_src,
+                        make_safe_addr(
+                                aux_reg_input_w, inp_off, reg_long_offt));
 
                 size_t ker_off = sizeof(float) * (ifm2 * kd * kh * kw);
                 movss(xmm_ker, ptr[aux_reg_kernel_w + ker_off]);
@@ -191,7 +194,8 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::apply_filter_scalar(int ur_h) {
 }
 
 template <cpu_isa_t isa>
-void jit_uni_planar_conv_fwd_kernel_f32<isa>::apply_postprocess_scalar(int ur_h) {
+void jit_uni_planar_conv_fwd_kernel_f32<isa>::apply_postprocess_scalar(
+        int ur_h) {
     Label regular_store_label;
 
     mov(reg_ci_flag, ptr[this->param1 + GET_OFF(flags)]);
@@ -206,7 +210,7 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::apply_postprocess_scalar(int ur_h)
     }
 
     for (int i = 0; i < p.len(); i++) {
-        auto& post_op = p.entry_[i];
+        auto &post_op = p.entry_[i];
         if (post_op.is_eltwise()) {
             eltwise_injectors[eltwise_inj_idx]->compute_vector_range(0, ur_h);
             eltwise_inj_idx++;
@@ -230,8 +234,7 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::load_src(int ur_h, int ur_w) {
     Label init_first_label;
 
     mov(reg_ci_flag, ptr[this->param1 + GET_OFF(flags)]);
-    if (jcp.with_bias)
-        mov(reg_bias, ptr[this->param1 + GET_OFF(bias)]);
+    if (jcp.with_bias) mov(reg_bias, ptr[this->param1 + GET_OFF(bias)]);
 
     if (!jcp.with_sum) {
         test(reg_ci_flag, FLAG_IC_FIRST);
@@ -240,8 +243,10 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::load_src(int ur_h, int ur_w) {
 
     for (int kk = 0; kk < ur_h; kk++) {
         for (int jj = 0; jj < ur_w; jj++) {
-            size_t offt = sizeof(float) * (jj * jcp.ow_block + kk * jcp.ow * jcp.oh_block_step);
-            uni_vmovups(Vmm(kk * ur_w + jj), make_safe_addr(reg_output, offt, reg_long_offt));
+            size_t offt = sizeof(float)
+                    * (jj * jcp.ow_block + kk * jcp.ow * jcp.oh_block_step);
+            uni_vmovups(Vmm(kk * ur_w + jj),
+                    make_safe_addr(reg_output, offt, reg_long_offt));
         }
     }
 
@@ -270,7 +275,8 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::load_src(int ur_h, int ur_w) {
     } else {
         for (int kk = 0; kk < ur_h; kk++) {
             for (int jj = 0; jj < ur_w; jj++) {
-                uni_vpxor(Vmm(kk * ur_w + jj), Vmm(kk * ur_w + jj), Vmm(kk * ur_w + jj));
+                uni_vpxor(Vmm(kk * ur_w + jj), Vmm(kk * ur_w + jj),
+                        Vmm(kk * ur_w + jj));
             }
         }
     }
@@ -279,7 +285,8 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::load_src(int ur_h, int ur_w) {
 }
 
 template <cpu_isa_t isa>
-void jit_uni_planar_conv_fwd_kernel_f32<isa>::filter_unrolled(int ur_h, int ur_w) {
+void jit_uni_planar_conv_fwd_kernel_f32<isa>::filter_unrolled(
+        int ur_h, int ur_w) {
     int iw = jcp.iw;
     int ih = jcp.ih;
     int id = jcp.id;
@@ -295,11 +302,16 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::filter_unrolled(int ur_h, int ur_w
         for (int ifm2 = 0; ifm2 < ic_blk; ifm2++) {
             for (int kk = 0; kk < ur_h; kk++) {
                 for (int jj = 0; jj < ur_w; jj++) {
-                    size_t inp_off = sizeof(float) * ((size_t) ifm2 * id * ih * iw + ki * dilate_w +
-                            jj * stride_w * ow_blk + kk * jcp.ow * jcp.oh_block_step);
-                    uni_vmovups(vmm_src, make_safe_addr(aux_reg_input_h, inp_off, reg_long_offt));
+                    size_t inp_off = sizeof(float)
+                            * ((size_t)ifm2 * id * ih * iw + ki * dilate_w
+                                    + jj * stride_w * ow_blk
+                                    + kk * jcp.ow * jcp.oh_block_step);
+                    uni_vmovups(vmm_src,
+                            make_safe_addr(
+                                    aux_reg_input_h, inp_off, reg_long_offt));
 
-                    int ker_off = sizeof(float) * ((size_t) ifm2 * kd * kh * kw + ki);
+                    int ker_off = sizeof(float)
+                            * ((size_t)ifm2 * kd * kh * kw + ki);
                     uni_vbroadcastss(vmm_ker, ptr[aux_reg_kernel_h + ker_off]);
 
                     uni_vfmadd231ps(Vmm(kk * ur_w + jj), vmm_src, vmm_ker);
@@ -334,10 +346,14 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::filter(int ur_h) {
     {
         for (int ifm2 = 0; ifm2 < ic_blk; ifm2++) {
             for (int kk = 0; kk < ur_h; kk++) {
-                size_t inp_off = sizeof(float) * ((size_t) ifm2 * id * ih * iw + kk * jcp.ow * jcp.oh_block_step);
-                uni_vmovups(vmm_src, make_safe_addr(aux_reg_input_w, inp_off, reg_long_offt));
+                size_t inp_off = sizeof(float)
+                        * ((size_t)ifm2 * id * ih * iw
+                                + kk * jcp.ow * jcp.oh_block_step);
+                uni_vmovups(vmm_src,
+                        make_safe_addr(
+                                aux_reg_input_w, inp_off, reg_long_offt));
 
-                size_t ker_off = sizeof(float) * ((size_t) ifm2 * kd * kh * kw);
+                size_t ker_off = sizeof(float) * ((size_t)ifm2 * kd * kh * kw);
                 uni_vbroadcastss(vmm_ker, ptr[aux_reg_kernel_w + ker_off]);
 
                 uni_vfmadd231ps(Vmm(kk), vmm_src, vmm_ker);
@@ -423,7 +439,8 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::apply_filter(int ur_h, int ur_w) {
 }
 
 template <cpu_isa_t isa>
-void jit_uni_planar_conv_fwd_kernel_f32<isa>::apply_postprocess(int ur_h, int ur_w) {
+void jit_uni_planar_conv_fwd_kernel_f32<isa>::apply_postprocess(
+        int ur_h, int ur_w) {
     Label regular_store_label;
 
     mov(reg_ci_flag, ptr[this->param1 + GET_OFF(flags)]);
@@ -438,9 +455,10 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::apply_postprocess(int ur_h, int ur
     }
 
     for (int i = 0; i < p.len(); i++) {
-        auto& post_op = p.entry_[i];
+        auto &post_op = p.entry_[i];
         if (post_op.is_eltwise()) {
-            eltwise_injectors[eltwise_inj_idx]->compute_vector_range(0, ur_w * ur_h);
+            eltwise_injectors[eltwise_inj_idx]->compute_vector_range(
+                    0, ur_w * ur_h);
             eltwise_inj_idx++;
         }
     }
@@ -452,8 +470,10 @@ template <cpu_isa_t isa>
 void jit_uni_planar_conv_fwd_kernel_f32<isa>::store_dst(int ur_h, int ur_w) {
     for (int kk = 0; kk < ur_h; kk++) {
         for (int jj = 0; jj < ur_w; jj++) {
-            size_t o_off = sizeof(float) * (jj * jcp.ow_block + kk * jcp.ow * jcp.oh_block_step);
-            uni_vmovups(make_safe_addr(reg_output, o_off, reg_long_offt), Vmm(kk * ur_w + jj));
+            size_t o_off = sizeof(float)
+                    * (jj * jcp.ow_block + kk * jcp.ow * jcp.oh_block_step);
+            uni_vmovups(make_safe_addr(reg_output, o_off, reg_long_offt),
+                    Vmm(kk * ur_w + jj));
         }
     }
 }
@@ -521,7 +541,7 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::solve_common(int ur_h) {
         Label border_indexes_right_exit_label;
 
         imul(reg_wj, reg_ow, jcp.stride_w);
-        add(reg_wj, (jcp.kw-1) * (jcp.dilate_w+1) - jcp.l_pad+1 - jcp.iw);
+        add(reg_wj, (jcp.kw - 1) * (jcp.dilate_w + 1) - jcp.l_pad + 1 - jcp.iw);
 
         L(border_indexes_right_label);
         {
@@ -538,7 +558,8 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::solve_common(int ur_h) {
     };
 
     int left_border_end = nstl::min(div_up(jcp.l_pad, jcp.stride_w), jcp.ow);
-    L(left_border_label); {
+    L(left_border_label);
+    {
         cmp(reg_ow, left_border_end);
         jge(main_loop_unrolled_label, T_NEAR);
 
@@ -555,8 +576,12 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::solve_common(int ur_h) {
         jmp(left_border_label, T_NEAR);
     }
 
-    int main_loop_end = (jcp.iw - (jcp.kw - 1)*(jcp.dilate_w + 1) + jcp.l_pad - 1) / jcp.stride_w + 1;
-    L(main_loop_unrolled_label); {
+    int main_loop_end
+            = (jcp.iw - (jcp.kw - 1) * (jcp.dilate_w + 1) + jcp.l_pad - 1)
+                    / jcp.stride_w
+            + 1;
+    L(main_loop_unrolled_label);
+    {
         cmp(reg_ow, main_loop_end - jcp.nb_ow_blocking * jcp.ow_block);
         jg(main_loop_label, T_NEAR);
 
@@ -570,7 +595,8 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::solve_common(int ur_h) {
         jmp(main_loop_unrolled_label, T_NEAR);
     }
 
-    L(main_loop_label); {
+    L(main_loop_label);
+    {
         cmp(reg_ow, main_loop_end - jcp.ow_block);
         jg(right_border_label, T_NEAR);
 
@@ -585,7 +611,8 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::solve_common(int ur_h) {
     }
 
     int right_border_end = jcp.ow;
-    L(right_border_label); {
+    L(right_border_label);
+    {
         cmp(reg_ow, right_border_end);
         jge(exit_label, T_NEAR);
 
@@ -611,10 +638,8 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::generate() {
     for (int i = 0; i < p.len(); i++) {
         auto &post_op = p.entry_[i];
         if (post_op.is_eltwise()) {
-            eltwise_injectors.push_back(new jit_uni_eltwise_injector_t<isa>(
-                    this,
-                    post_op.eltwise
-            ));
+            eltwise_injectors.push_back(
+                    new jit_uni_eltwise_injector_t<isa>(this, post_op.eltwise));
         }
     }
 
@@ -633,7 +658,7 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::generate() {
 
     this->postamble();
 
-    for (auto& inj : eltwise_injectors)
+    for (auto &inj : eltwise_injectors)
         inj->prepare_table();
 }
 
@@ -647,29 +672,30 @@ bool jit_uni_planar_conv_fwd_kernel_f32<isa>::post_ops_ok(
     auto is_simple = [&](int idx) { return is_eltwise(idx); };
 
     switch (p.len()) {
-    case 0: return true; // no post_ops
-    case 1:
-        return true // sum OR eltwise OR depthwise
-                && !jcp.with_eltwise && (is_simple(0) || is_sum(0));
-    case 2:
-        return true // sum->relu
-                && !jcp.with_eltwise && ((is_sum(0) && is_simple(1)) ||
-                                         (is_simple(0) && is_simple(1)));
-    case 3:
-        return true // sum->relu
-                && !jcp.with_eltwise && (is_sum(0) && is_simple(1) && is_simple(2));
-    default: return false;
+        case 0: return true; // no post_ops
+        case 1:
+            return true // sum OR eltwise OR depthwise
+                    && !jcp.with_eltwise && (is_simple(0) || is_sum(0));
+        case 2:
+            return true // sum->relu
+                    && !jcp.with_eltwise
+                    && ((is_sum(0) && is_simple(1))
+                            || (is_simple(0) && is_simple(1)));
+        case 3:
+            return true // sum->relu
+                    && !jcp.with_eltwise
+                    && (is_sum(0) && is_simple(1) && is_simple(2));
+        default: return false;
     }
 
     return false;
 }
 
 template <cpu_isa_t isa>
-status_t jit_uni_planar_conv_fwd_kernel_f32<isa>::init_conf(jit_conv_conf_t &jcp,
-        const convolution_desc_t &cd, memory_desc_t &src_md,
-        memory_desc_t &weights_md, memory_desc_t &dst_md,
-        memory_desc_t &bias_md, const primitive_attr_t &attr)
-{
+status_t jit_uni_planar_conv_fwd_kernel_f32<isa>::init_conf(
+        jit_conv_conf_t &jcp, const convolution_desc_t &cd,
+        memory_desc_t &src_md, memory_desc_t &weights_md, memory_desc_t &dst_md,
+        memory_desc_t &bias_md, const primitive_attr_t &attr) {
     if (!mayiuse(isa)) return status::unimplemented;
 
     const memory_desc_wrapper src_d(&src_md);
@@ -691,25 +717,25 @@ status_t jit_uni_planar_conv_fwd_kernel_f32<isa>::init_conf(jit_conv_conf_t &jcp
     jcp.ic = src_d.dims()[1] / jcp.ngroups;
 
     jcp.id = (ndims == 5) ? src_d.dims()[2] : 1;
-    jcp.ih = (ndims == 3) ? 1 : src_d.dims()[ndims-2];
-    jcp.iw = src_d.dims()[ndims-1];
+    jcp.ih = (ndims == 3) ? 1 : src_d.dims()[ndims - 2];
+    jcp.iw = src_d.dims()[ndims - 1];
     jcp.od = (ndims == 5) ? dst_d.dims()[2] : 1;
-    jcp.oh = (ndims == 3) ? 1 : dst_d.dims()[ndims-2];
-    jcp.ow = dst_d.dims()[ndims-1];
+    jcp.oh = (ndims == 3) ? 1 : dst_d.dims()[ndims - 2];
+    jcp.ow = dst_d.dims()[ndims - 1];
     jcp.kd = (ndims == 5) ? weights_d.dims()[with_groups + 2] : 1;
-    jcp.kh = (ndims == 3) ? 1 : weights_d.dims()[with_groups + ndims-2];
-    jcp.kw = weights_d.dims()[with_groups + ndims-1];
+    jcp.kh = (ndims == 3) ? 1 : weights_d.dims()[with_groups + ndims - 2];
+    jcp.kw = weights_d.dims()[with_groups + ndims - 1];
 
     jcp.f_pad = (ndims == 5) ? cd.padding[0][0] : 0;
-    jcp.t_pad = (ndims == 3) ? 0 : cd.padding[0][ndims-4];
-    jcp.l_pad = cd.padding[0][ndims-3];
+    jcp.t_pad = (ndims == 3) ? 0 : cd.padding[0][ndims - 4];
+    jcp.l_pad = cd.padding[0][ndims - 3];
     jcp.stride_d = (ndims == 5) ? cd.strides[0] : 1;
-    jcp.stride_h = (ndims == 3) ? 1 : cd.strides[ndims-4];
-    jcp.stride_w = cd.strides[ndims-3];
+    jcp.stride_h = (ndims == 3) ? 1 : cd.strides[ndims - 4];
+    jcp.stride_w = cd.strides[ndims - 3];
 
     jcp.dilate_d = (ndims == 5) ? cd.dilates[0] : 0;
-    jcp.dilate_h = (ndims == 3) ? 0 : cd.dilates[ndims-4];
-    jcp.dilate_w = cd.dilates[ndims-3];
+    jcp.dilate_h = (ndims == 3) ? 0 : cd.dilates[ndims - 4];
+    jcp.dilate_w = cd.dilates[ndims - 3];
 
     jcp.b_pad = (jcp.oh - 1) * jcp.stride_h + (jcp.kh - 1) * (jcp.dilate_h + 1)
             - (jcp.ih + jcp.t_pad - 1);
@@ -717,8 +743,7 @@ status_t jit_uni_planar_conv_fwd_kernel_f32<isa>::init_conf(jit_conv_conf_t &jcp
     jcp.with_bias = cd.bias_desc.format_kind != format_kind::undef;
     jcp.with_eltwise = false;
 
-    if (!post_ops_ok(jcp, attr))
-        return status::unimplemented;
+    if (!post_ops_ok(jcp, attr)) return status::unimplemented;
 
     const auto &p = attr.post_ops_;
     jcp.with_sum = p.find(primitive_kind::sum) != -1;
@@ -728,7 +753,8 @@ status_t jit_uni_planar_conv_fwd_kernel_f32<isa>::init_conf(jit_conv_conf_t &jcp
     auto set_or_check_wei_format = [&]() {
         using namespace format_tag;
         format_tag_t wei_tag = with_groups ? ndims == 5 ? goidhw : goihw
-                                           : ndims == 5 ? oidhw : oihw;
+                : ndims == 5               ? oidhw
+                                           : oihw;
 
         memory_desc_t want_wei_md = weights_md;
         memory_desc_init_by_tag(want_wei_md, wei_tag);
@@ -741,8 +767,7 @@ status_t jit_uni_planar_conv_fwd_kernel_f32<isa>::init_conf(jit_conv_conf_t &jcp
         return weights_md == want_wei_md;
     };
 
-    if (!set_or_check_wei_format())
-        return status::unimplemented;
+    if (!set_or_check_wei_format()) return status::unimplemented;
 
     auto dat_tag = ndims == 5 ? format_tag::ncdhw : format_tag::nchw;
     if (src_d.format_kind() == format_kind::any) {
@@ -751,8 +776,7 @@ status_t jit_uni_planar_conv_fwd_kernel_f32<isa>::init_conf(jit_conv_conf_t &jcp
     } else {
         jcp.src_tag = src_d.mb_stride_relaxed_match(dat_tag);
     }
-    if (jcp.src_tag != dat_tag)
-        return status::unimplemented;
+    if (jcp.src_tag != dat_tag) return status::unimplemented;
 
     if (dst_d.format_kind() == format_kind::any) {
         CHECK(memory_desc_init_by_tag(dst_md, dat_tag));
@@ -760,8 +784,7 @@ status_t jit_uni_planar_conv_fwd_kernel_f32<isa>::init_conf(jit_conv_conf_t &jcp
     } else {
         jcp.dst_tag = dst_d.mb_stride_relaxed_match(dat_tag);
     }
-    if (jcp.dst_tag != dat_tag)
-        return status::unimplemented;
+    if (jcp.dst_tag != dat_tag) return status::unimplemented;
 
     if (jcp.with_bias) {
         if (bias_d.format_kind() == format_kind::any)
@@ -770,9 +793,8 @@ status_t jit_uni_planar_conv_fwd_kernel_f32<isa>::init_conf(jit_conv_conf_t &jcp
 
     // This convolution implementation was introduced as workaround to provide competitive performance on MSD topology.
     // The conditions below are needed to bound applicability scope.
-    bool args_ok = jcp.ngroups == 1 &&
-              jcp.oc == 1 &&
-              jcp.stride_d == 1 && jcp.stride_h == 1 && jcp.stride_w == 1;
+    bool args_ok = jcp.ngroups == 1 && jcp.oc == 1 && jcp.stride_d == 1
+            && jcp.stride_h == 1 && jcp.stride_w == 1;
     if (!args_ok) return status::unimplemented;
 
     jcp.ur_w = 1;
@@ -798,7 +820,7 @@ status_t jit_uni_planar_conv_fwd_kernel_f32<isa>::init_conf(jit_conv_conf_t &jcp
 template struct jit_uni_planar_conv_fwd_kernel_f32<avx512_core>;
 template struct jit_uni_planar_conv_fwd_kernel_f32<avx2>;
 
-}
-}
-}
-}
+} // namespace x64
+} // namespace cpu
+} // namespace impl
+} // namespace dnnl

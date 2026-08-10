@@ -17,9 +17,9 @@
 #ifndef CPU_X64_JIT_SSE41_1X1_CONV_KERNEL_F32_HPP
 #define CPU_X64_JIT_SSE41_1X1_CONV_KERNEL_F32_HPP
 
-#include "common/memory_tracking.hpp"
 #include "common/c_types_map.hpp"
 #include "common/memory.hpp"
+#include "common/memory_tracking.hpp"
 
 #include "cpu/x64/injectors/jit_uni_postops_injector.hpp"
 #include "cpu/x64/jit_generator.hpp"
@@ -42,7 +42,7 @@ struct jit_sse41_1x1_conv_kernel_f32_t : public jit_generator_t {
 
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_sse41_1x1_conv_kernel_f32_t)
     static void init_scratchpad(memory_tracking::registrar_t &scratchpad,
-                                const jit_1x1_conv_conf_t &jcp);
+            const jit_1x1_conv_conf_t &jcp);
 
     jit_1x1_conv_conf_t jcp;
     const primitive_attr_t &attr_;

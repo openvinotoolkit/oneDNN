@@ -152,10 +152,10 @@ struct ref_convolution_bwd_data_t : public primitive_t {
             VDISPATCH_CONV(set_default_formats(), VERBOSE_UNSUPPORTED_TAG);
             VDISPATCH_CONV(
                     attr()->has_default_values(), VERBOSE_UNSUPPORTED_ATTR);
-            VDISPATCH_CONV(
-                    attr()->has_default_values(primitive_attr_t::skip_mask_t::post_ops), VERBOSE_UNSUPPORTED_ATTR);
-            VDISPATCH_CONV(
-                    is_supported_post_ops(), VERBOSE_UNSUPPORTED_POSTOP);
+            VDISPATCH_CONV(attr()->has_default_values(
+                                   primitive_attr_t::skip_mask_t::post_ops),
+                    VERBOSE_UNSUPPORTED_ATTR);
+            VDISPATCH_CONV(is_supported_post_ops(), VERBOSE_UNSUPPORTED_POSTOP);
 
             return status::success;
         }
@@ -172,14 +172,15 @@ struct ref_convolution_bwd_data_t : public primitive_t {
 
         bool is_supported_post_ops() const {
             const auto &p = this->attr()->post_ops_;
-            if (p.len() > 1)
-                return false;
+            if (p.len() > 1) return false;
 
             auto all_post_ops_supported = [&]() {
                 bool ok = true;
 
                 for (int i = 0; i < p.len(); i++) {
-                    ok = ok && utils::one_of(p.entry_[i].kind, primitive_kind::depthwise);
+                    ok = ok
+                            && utils::one_of(p.entry_[i].kind,
+                                    primitive_kind::depthwise);
                 }
                 return ok;
             };
@@ -194,7 +195,8 @@ struct ref_convolution_bwd_data_t : public primitive_t {
         for (int i = 0; i < post_ops.len(); i++) {
             auto &post_op = post_ops.entry_[i];
             if (post_op.is_depthwise()) {
-                depthwise_injectors.push_back(new ref_depthwise_scalar_fwd_t(post_op.depthwise.alg));
+                depthwise_injectors.push_back(
+                        new ref_depthwise_scalar_fwd_t(post_op.depthwise.alg));
             }
         }
     }
@@ -213,7 +215,7 @@ private:
     status_t execute_backward_data(const exec_ctx_t &ctx) const;
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 
-    nstl::vector<ref_depthwise_scalar_fwd_t*> depthwise_injectors;
+    nstl::vector<ref_depthwise_scalar_fwd_t *> depthwise_injectors;
 };
 
 struct ref_convolution_bwd_weights_t : public primitive_t {

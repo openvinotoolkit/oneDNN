@@ -25,8 +25,8 @@
 #include "cpu/x64/jit_generator.hpp"
 #include "cpu/x64/jit_primitive_conf.hpp"
 
-#include "cpu/x64/jit_avx512_core_bf16cvt.hpp"
 #include "cpu/x64/injectors/jit_uni_depthwise_injector.hpp"
+#include "cpu/x64/jit_avx512_core_bf16cvt.hpp"
 
 namespace dnnl {
 namespace impl {
@@ -204,7 +204,8 @@ private:
 
     std::unique_ptr<bf16_emulation_t> bf16_emu_;
 
-    nstl::vector<jit_uni_depthwise_injector_f32<avx512_core>*> depthwise_injectors;
+    nstl::vector<jit_uni_depthwise_injector_f32<avx512_core> *>
+            depthwise_injectors;
 
     inline void ch_loop_body(int ur_ch_blocks, int unroll_w);
     inline void unroll_width_body(int ur_ch_blocks);

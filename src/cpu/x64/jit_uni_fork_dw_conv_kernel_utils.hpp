@@ -24,9 +24,9 @@
 #include "common/c_types_map.hpp"
 #include "common/memory_tracking.hpp"
 
+#include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
 #include "cpu/x64/jit_generator.hpp"
 #include "cpu/x64/jit_primitive_conf.hpp"
-#include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
 
 #include "cpu/x64/jit_avx512_core_fork_bf16_dw_conv_kernel.hpp"
 #include "cpu/x64/jit_uni_fork_dw_conv_kernel_f32.hpp"
@@ -39,7 +39,9 @@ namespace x64 {
 template <cpu_isa_t isa, data_type_t kernel_dt>
 struct jit_uni_fork_dw_conv_fwd_kernel {
 
-    jit_uni_fork_dw_conv_fwd_kernel(const jit_conv_conf_t &ajcp, const memory_desc_t &dst_md, const primitive_attr_t &attr) : ker_(nullptr) {
+    jit_uni_fork_dw_conv_fwd_kernel(const jit_conv_conf_t &ajcp,
+            const memory_desc_t &dst_md, const primitive_attr_t &attr)
+        : ker_(nullptr) {
         ker_ = new jit_kernel_t(ajcp, dst_md, attr);
     }
 
@@ -75,17 +77,25 @@ bool jit_uni_fork_dw_conv_fwd_kernel<isa, kernel_dt>::post_ops_ok(
         bool ok = true;
 
         for (int i = 0; i < p.len(); i++) {
-            ok = ok && utils::one_of(p.entry_[i].kind, primitive_kind::sum, primitive_kind::binary, primitive_kind::eltwise, primitive_kind::depthwise, primitive_kind::quantization);
+            ok = ok
+                    && utils::one_of(p.entry_[i].kind, primitive_kind::sum,
+                            primitive_kind::binary, primitive_kind::eltwise,
+                            primitive_kind::depthwise,
+                            primitive_kind::quantization);
         }
         return ok;
     };
-    auto contain = [&](dnnl::impl::primitive_kind_t kind) { return p.find(kind) != -1; };
-    auto position = [&](dnnl::impl::primitive_kind_t kind) { return p.find(kind); };
-    auto count = [&](dnnl::impl::primitive_kind_t kind) { return p.count(kind); };
+    auto contain = [&](dnnl::impl::primitive_kind_t kind) {
+        return p.find(kind) != -1;
+    };
+    auto position
+            = [&](dnnl::impl::primitive_kind_t kind) { return p.find(kind); };
+    auto count
+            = [&](dnnl::impl::primitive_kind_t kind) { return p.count(kind); };
 
-    return all_post_ops_supported() &&
-           count(primitive_kind::sum) <= 1 &&
-           IMPLICATION(contain(primitive_kind::sum), position(primitive_kind::sum) == 0);
+    return all_post_ops_supported() && count(primitive_kind::sum) <= 1
+            && IMPLICATION(contain(primitive_kind::sum),
+                    position(primitive_kind::sum) == 0);
 }
 
 template <cpu_isa_t isa, data_type_t kernel_dt>
@@ -105,12 +115,12 @@ status_t jit_uni_fork_dw_conv_fwd_kernel<isa, kernel_dt>::init_conf(
 
     const int ndims = src_d.ndims();
 
-    const auto blocked_tag = one_of(isa, avx512_core) ?
-                             pick(ndims - 3, nCw16c, nChw16c, nCdhw16c) :
-                             pick(ndims - 3, nCw8c, nChw8c, nCdhw8c);
-    const auto wei_tag = one_of(isa, avx512_core) ?
-                         pick(ndims - 3, Goiw16g, Goihw16g, Goidhw16g) :
-                         pick(ndims - 3, Goiw8g, Goihw8g, Goidhw8g);
+    const auto blocked_tag = one_of(isa, avx512_core)
+            ? pick(ndims - 3, nCw16c, nChw16c, nCdhw16c)
+            : pick(ndims - 3, nCw8c, nChw8c, nCdhw8c);
+    const auto wei_tag = one_of(isa, avx512_core)
+            ? pick(ndims - 3, Goiw16g, Goihw16g, Goidhw16g)
+            : pick(ndims - 3, Goiw8g, Goihw8g, Goidhw8g);
     const auto nxc_tag = pick(ndims - 3, nwc, nhwc, ndhwc);
 
     jcp.with_bias = cd.bias_desc.format_kind != format_kind::undef;
@@ -199,27 +209,21 @@ status_t jit_uni_fork_dw_conv_fwd_kernel<isa, kernel_dt>::init_conf(
 
     jcp.loop_order = loop_ngcw;
 
-    if (is_data_layout_nxc) {
-        jcp.loop_order = loop_nhwcg;
-    }
+    if (is_data_layout_nxc) { jcp.loop_order = loop_nhwcg; }
 
-    if (!post_ops_ok(jcp, attr))
-            return status::unimplemented;
+    if (!post_ops_ok(jcp, attr)) return status::unimplemented;
 
     const auto &p = attr.post_ops_;
     jcp.with_sum = p.find(primitive_kind::sum) != -1;
     const int eltwise_ind = p.find(primitive_kind::eltwise);
     jcp.with_eltwise = eltwise_ind != -1;
-    if (jcp.with_eltwise)
-        jcp.eltwise = p.entry_[eltwise_ind].eltwise;
+    if (jcp.with_eltwise) jcp.eltwise = p.entry_[eltwise_ind].eltwise;
 
     jcp.post_ops = p;
 
-    bool ok_to_pad_channels = true
-        && !is_data_layout_nxc
-        && jcp.oc == jcp.ngroups
-        && jcp.ic == jcp.ngroups
-        && one_of(isa, avx512_core, avx512_core, avx2);
+    bool ok_to_pad_channels = true && !is_data_layout_nxc
+            && jcp.oc == jcp.ngroups && jcp.ic == jcp.ngroups
+            && one_of(isa, avx512_core, avx512_core, avx2);
     if (ok_to_pad_channels) {
         jcp.oc = rnd_up(jcp.oc, simd_w);
         jcp.ic = rnd_up(jcp.oc, simd_w);
@@ -227,28 +231,29 @@ status_t jit_uni_fork_dw_conv_fwd_kernel<isa, kernel_dt>::init_conf(
     }
 
     bool args_ok = true && jcp.oc == jcp.ngroups && jcp.ic == jcp.ngroups
-                   && IMPLICATION(!is_data_layout_nxc, jcp.ngroups % simd_w == 0)
-                   && jcp.wei_tag == wei_tag
-                   && data_tag != format_tag::undef && jcp.ic <= src_d.padded_dims()[1]
-                   && jcp.oc <= dst_d.padded_dims()[1]
-                   && jcp.ngroups <= weights_d.padded_dims()[0];
+            && IMPLICATION(!is_data_layout_nxc, jcp.ngroups % simd_w == 0)
+            && jcp.wei_tag == wei_tag && data_tag != format_tag::undef
+            && jcp.ic <= src_d.padded_dims()[1]
+            && jcp.oc <= dst_d.padded_dims()[1]
+            && jcp.ngroups <= weights_d.padded_dims()[0];
     if (!args_ok) return status::unimplemented;
 
     jcp.typesize_out = jcp.dst_dt == data_type::bf16 ? sizeof(bfloat16_t)
                                                      : sizeof(float);
-    jcp.typesize_in = src_d.data_type() == data_type::bf16
-            ? sizeof(bfloat16_t)
-            : sizeof(float);
+    jcp.typesize_in = src_d.data_type() == data_type::bf16 ? sizeof(bfloat16_t)
+                                                           : sizeof(float);
 
-    jcp.ur_w = is_bf16 ? (isa_has_bf16(jcp.isa) ? 6 : 4)
-                       : isa == avx512_core ? 6 : isa == avx2 ? 4 : 3;
+    jcp.ur_w = is_bf16           ? (isa_has_bf16(jcp.isa) ? 6 : 4)
+            : isa == avx512_core ? 6
+            : isa == avx2        ? 4
+                                 : 3;
 
     jcp.ch_block = simd_w;
     jcp.nb_ch = div_up(jcp.oc, jcp.ch_block);
-    jcp.nb_ch_blocking
-            = one_of(isa, avx512_core, avx512_core) ? 4 : isa == avx2 ? 3 : 2;
-    if (jcp.nb_ch < jcp.nb_ch_blocking)
-        jcp.nb_ch_blocking = jcp.nb_ch;
+    jcp.nb_ch_blocking = one_of(isa, avx512_core, avx512_core) ? 4
+            : isa == avx2                                      ? 3
+                                                               : 2;
+    if (jcp.nb_ch < jcp.nb_ch_blocking) jcp.nb_ch_blocking = jcp.nb_ch;
 
     jcp.bia_dt = jcp.with_bias ? cd.bias_desc.data_type : data_type::undef;
 
@@ -273,7 +278,8 @@ template struct jit_uni_fork_dw_conv_fwd_kernel<sse41, data_type::f32>;
 template <cpu_isa_t isa, data_type_t kernel_dt>
 struct jit_uni_fork_dw_conv_bwd_data_kernel {
 
-    jit_uni_fork_dw_conv_bwd_data_kernel(const jit_conv_conf_t &ajcp, const primitive_attr_t &attr)
+    jit_uni_fork_dw_conv_bwd_data_kernel(
+            const jit_conv_conf_t &ajcp, const primitive_attr_t &attr)
         : ker_(nullptr) {
         ker_ = new jit_kernel_t(ajcp, attr);
     }
@@ -286,7 +292,8 @@ struct jit_uni_fork_dw_conv_bwd_data_kernel {
     static status_t init_conf(jit_conv_conf_t &jcp,
             const convolution_desc_t &cd, const memory_desc_wrapper &diff_src_d,
             const memory_desc_wrapper &weights_d,
-            const memory_desc_wrapper &diff_dst_d, const primitive_attr_t &attr);
+            const memory_desc_wrapper &diff_dst_d,
+            const primitive_attr_t &attr);
 
     static void init_scratchpad(memory_tracking::registrar_t &scratchpad,
             const jit_conv_conf_t &jcp);
@@ -304,16 +311,18 @@ private:
 };
 
 template <cpu_isa_t isa, data_type_t kernel_dt>
-bool jit_uni_fork_dw_conv_bwd_data_kernel<isa, kernel_dt>::post_ops_ok(const primitive_attr_t &attr) {
+bool jit_uni_fork_dw_conv_bwd_data_kernel<isa, kernel_dt>::post_ops_ok(
+        const primitive_attr_t &attr) {
     const auto &p = attr.post_ops_;
-    if (p.len() > 1)
-        return false;
+    if (p.len() > 1) return false;
 
     auto all_post_ops_supported = [&]() {
         bool ok = true;
 
         for (int i = 0; i < p.len(); i++) {
-            ok = ok && utils::one_of(p.entry_[i].kind, primitive_kind::depthwise);
+            ok = ok
+                    && utils::one_of(
+                            p.entry_[i].kind, primitive_kind::depthwise);
         }
         return ok;
     };
@@ -371,8 +380,7 @@ status_t jit_uni_fork_dw_conv_bwd_data_kernel<isa, kernel_dt>::init_conf(
     jcp.ihp = jcp.ih + jcp.t_pad + jcp.b_pad;
     jcp.iwp = jcp.iw + jcp.l_pad + jcp.r_pad;
 
-    if (!post_ops_ok(attr))
-        return status::unimplemented;
+    if (!post_ops_ok(attr)) return status::unimplemented;
 
     jcp.post_ops = attr.post_ops_;
 
@@ -406,13 +414,16 @@ status_t jit_uni_fork_dw_conv_bwd_data_kernel<isa, kernel_dt>::init_conf(
     jcp.typesize_out = types::data_type_size(diff_src_d.data_type());
     jcp.typesize_in = types::data_type_size(diff_dst_d.data_type());
 
-    jcp.ur_w = is_bf16 ? (isa_has_bf16(jcp.isa) ? 6 : 4)
-                       : isa == avx512_core ? 6 : isa == avx2 ? 4 : 3;
+    jcp.ur_w = is_bf16           ? (isa_has_bf16(jcp.isa) ? 6 : 4)
+            : isa == avx512_core ? 6
+            : isa == avx2        ? 4
+                                 : 3;
 
     jcp.ch_block = simd_w;
     jcp.nb_ch = jcp.ic / jcp.ch_block;
-    jcp.nb_ch_blocking
-            = one_of(isa, avx512_core, avx512_core) ? 4 : isa == avx2 ? 3 : 2;
+    jcp.nb_ch_blocking = one_of(isa, avx512_core, avx512_core) ? 4
+            : isa == avx2                                      ? 3
+                                                               : 2;
     if (jcp.nb_ch < jcp.nb_ch_blocking) jcp.nb_ch_blocking = jcp.nb_ch;
 
     return status::success;
@@ -425,8 +436,10 @@ void jit_uni_fork_dw_conv_bwd_data_kernel<isa, kernel_dt>::init_scratchpad(
     UNUSED(jcp);
 }
 
-template struct jit_uni_fork_dw_conv_bwd_data_kernel<avx512_core, data_type::bf16>;
-template struct jit_uni_fork_dw_conv_bwd_data_kernel<avx512_core, data_type::f32>;
+template struct jit_uni_fork_dw_conv_bwd_data_kernel<avx512_core,
+        data_type::bf16>;
+template struct jit_uni_fork_dw_conv_bwd_data_kernel<avx512_core,
+        data_type::f32>;
 template struct jit_uni_fork_dw_conv_bwd_data_kernel<avx2, data_type::f32>;
 template struct jit_uni_fork_dw_conv_bwd_data_kernel<sse41, data_type::f32>;
 

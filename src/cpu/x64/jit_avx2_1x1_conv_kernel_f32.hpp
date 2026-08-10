@@ -87,7 +87,8 @@ private:
 
     reg64_t reg_oc_off = load_loop_iter;
     reg64_t reg_d_weights = aux_reg_bcast_data;
-    reg64_t reg_d_bias = reduce_loop_iter; // todo: [AV] check, conflict with out_off_oprnd (r15)
+    reg64_t reg_d_bias
+            = reduce_loop_iter; // todo: [AV] check, conflict with out_off_oprnd (r15)
     ymm_t ymm_d_weights = Xbyak::Ymm(14);
     ymm_t ymm_d_bias = Xbyak::Ymm(15);
 

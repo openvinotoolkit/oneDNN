@@ -18,9 +18,9 @@
 #define CPU_X64_JIT_UNI_FORK_SOFTMAX_KERNEL_F32_HPP
 
 #include <cfloat>
+#include "cpu/x64/jit_avx512_core_bf16cvt.hpp"
 #include "jit_generator.hpp"
 #include "jit_primitive_conf.hpp"
-#include "cpu/x64/jit_avx512_core_bf16cvt.hpp"
 
 namespace dnnl {
 namespace impl {
@@ -32,17 +32,15 @@ using namespace Xbyak;
 template <cpu_isa_t isa>
 struct jit_uni_fork_softmax_kernel_f32 : public jit_generator_t {
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_uni_softmax_kernel_f32)
-    using Vmm = typename utils::conditional3<isa == sse41, Xmm,
-            isa == avx2, Ymm, Zmm>::type;
+    using Vmm = typename utils::conditional3<isa == sse41, Xmm, isa == avx2,
+            Ymm, Zmm>::type;
 
     jit_uni_fork_softmax_kernel_f32(jit_softmax_conf_t ajpp);
 
     jit_softmax_conf_t jpp;
 
-    static status_t init_conf(jit_softmax_conf_t &jpp,
-                       const softmax_desc_t &pd,
-                       const memory_desc_wrapper &src_d,
-                       const memory_desc_wrapper &dst_d);
+    static status_t init_conf(jit_softmax_conf_t &jpp, const softmax_desc_t &pd,
+            const memory_desc_wrapper &src_d, const memory_desc_wrapper &dst_d);
 
     void prepare_table();
     void simd_expf(const Vmm &vmm_src);
@@ -58,43 +56,44 @@ struct jit_uni_fork_softmax_kernel_f32 : public jit_generator_t {
 
     void dense_loop(int ou_block);
     void generate_dense();
+
 private:
     const int simd_w = cpu_isa_traits_t<isa>::vlen / sizeof(float);
     const int vlen = cpu_isa_traits_t<isa>::vlen;
 
-    Reg64 reg_work_amount   = rax;
-    Reg64 reg_src_base_ptr  = rbx;
-    Reg64 reg_dst_base_ptr  = rsi;
-    Reg64 reg_src_ptr       = r8;
-    Reg64 reg_dst_ptr       = r9;
-    Reg64 reg_channels      = r12;
-    Reg64 reg_ch_work       = r13;
-    Reg64 reg_min           = rdx;
-    Reg64 imm_addr64        = r14;
-    Reg64 bf16_emu_gpr      = r15;
+    Reg64 reg_work_amount = rax;
+    Reg64 reg_src_base_ptr = rbx;
+    Reg64 reg_dst_base_ptr = rsi;
+    Reg64 reg_src_ptr = r8;
+    Reg64 reg_dst_ptr = r9;
+    Reg64 reg_channels = r12;
+    Reg64 reg_ch_work = r13;
+    Reg64 reg_min = rdx;
+    Reg64 imm_addr64 = r14;
+    Reg64 bf16_emu_gpr = r15;
 
-    Vmm vmm_aux0            = Vmm(0);
-    Vmm vmm_aux1            = Vmm(1);
-    Vmm vmm_aux2            = Vmm(2);
-    Xmm xmm_aux0            = Xmm(0);
-    Xmm xmm_aux1            = Xmm(1);
-    Xmm xmm_aux2            = Xmm(2);
+    Vmm vmm_aux0 = Vmm(0);
+    Vmm vmm_aux1 = Vmm(1);
+    Vmm vmm_aux2 = Vmm(2);
+    Xmm xmm_aux0 = Xmm(0);
+    Xmm xmm_aux1 = Xmm(1);
+    Xmm xmm_aux2 = Xmm(2);
 
-    Xmm xmm_float_min       = Xmm(3);
-    Xmm xmm_one             = Xmm(4);
-    Vmm vmm_one             = Vmm(4);
+    Xmm xmm_float_min = Xmm(3);
+    Xmm xmm_one = Xmm(4);
+    Vmm vmm_one = Vmm(4);
 
-    Xmm xmm_max             = Xmm(5);
-    Xmm xmm_denom           = Xmm(6);
-    Xmm xmm_src             = Xmm(7);
+    Xmm xmm_max = Xmm(5);
+    Xmm xmm_denom = Xmm(6);
+    Xmm xmm_src = Xmm(7);
 
-    Zmm bf16_emu_zmm_1      = Zmm(27);
-    Zmm bf16_emu_zmm_2      = Zmm(28);
-    Zmm bf16_emu_zmm_3      = Zmm(29);
-    Zmm bf16_emu_zmm_4      = Zmm(30);
-    Zmm bf16_emu_zmm_5      = Zmm(31);
+    Zmm bf16_emu_zmm_1 = Zmm(27);
+    Zmm bf16_emu_zmm_2 = Zmm(28);
+    Zmm bf16_emu_zmm_3 = Zmm(29);
+    Zmm bf16_emu_zmm_4 = Zmm(30);
+    Zmm bf16_emu_zmm_5 = Zmm(31);
 
-    Opmask k_mask_tmp       = Opmask(2);
+    Opmask k_mask_tmp = Opmask(2);
 
     unsigned char _cmp_gt_os = isa == avx512_core ? 14 : 6;
 
@@ -124,9 +123,9 @@ private:
     void generate() override;
 };
 
-}
-}
-}
-}
+} // namespace x64
+} // namespace cpu
+} // namespace impl
+} // namespace dnnl
 
 #endif

@@ -2838,12 +2838,14 @@ status_t jit_blk_reorder_t::pd_t::create(reorder_pd_t **reorder_pd,
     if (prb.ndims > 1) {
         int batch_idx = prb.nodes[0].is > prb.nodes[1].is ? 0 : 1;
         int channel_idx = batch_idx == 0 ? 1 : 0;
-        batch_strided_input =
-                (ptrdiff_t) prb.nodes[channel_idx].n * prb.nodes[channel_idx].is < prb.nodes[batch_idx].is;
+        batch_strided_input = (ptrdiff_t)prb.nodes[channel_idx].n
+                        * prb.nodes[channel_idx].is
+                < prb.nodes[batch_idx].is;
         batch_idx = prb.nodes[0].os > prb.nodes[1].os ? 0 : 1;
         channel_idx = batch_idx == 0 ? 1 : 0;
-        batch_strided_output =
-                (ptrdiff_t) prb.nodes[channel_idx].n * prb.nodes[channel_idx].is < prb.nodes[batch_idx].is;
+        batch_strided_output = (ptrdiff_t)prb.nodes[channel_idx].n
+                        * prb.nodes[channel_idx].is
+                < prb.nodes[batch_idx].is;
     }
 
     prb_tile_normalize(prb);

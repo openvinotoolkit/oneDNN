@@ -422,7 +422,7 @@ struct jit_conv_args_t {
     size_t last_oc_block = 0;
 
     size_t oc_off;
-    //Used for holding oc offset like GP registers. Used when lack of regisers. 
+    //Used for holding oc offset like GP registers. Used when lack of regisers.
     size_t dummy_oc_off;
     size_t ic_off;
     size_t oc_off_prf;
@@ -1075,8 +1075,8 @@ struct jit_softmax_conf_t {
 };
 
 struct jit_softmax_call_s {
-    const uint8_t* src;
-    uint8_t* dst;
+    const uint8_t *src;
+    uint8_t *dst;
 
     size_t channels;
     size_t work;
