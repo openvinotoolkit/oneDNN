@@ -66,7 +66,7 @@ void jit_sse41_convolution_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
         auto padded_bias = scratchpad.get<data_t>(key_conv_padded_bias);
         utils::array_copy(padded_bias, bias, kernel_->jcp.oc_without_padding);
         utils::array_set(padded_bias + kernel_->jcp.oc_without_padding, 0.f,
-                         kernel_->jcp.oc - kernel_->jcp.oc_without_padding);
+                kernel_->jcp.oc - kernel_->jcp.oc_without_padding);
         bias = padded_bias;
     }
 
@@ -126,7 +126,8 @@ void jit_sse41_convolution_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
                         par_conv.flags |= FLAG_IC_FIRST;
                     }
 
-                    if ((jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise || jcp.with_quantization)
+                    if ((jcp.with_eltwise || jcp.with_binary
+                                || jcp.with_depthwise || jcp.with_quantization)
                             && icb + 1 == jcp.nb_ic) {
                         par_conv.flags |= FLAG_IC_LAST;
                     }
@@ -143,7 +144,9 @@ void jit_sse41_convolution_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
                     par_conv.post_ops_binary_rhs_arg_vec
                             = post_ops_binary_rhs_arg_vec.data();
                     par_conv.dst_orig = dst;
-                    par_conv.oc_off = _oc * (is_dst_layout_nxc ? 1 : jcp.oc_block) * sizeof(float);
+                    par_conv.oc_off = _oc
+                            * (is_dst_layout_nxc ? 1 : jcp.oc_block)
+                            * sizeof(float);
 
                     (*kernel_)(&par_conv);
                 }

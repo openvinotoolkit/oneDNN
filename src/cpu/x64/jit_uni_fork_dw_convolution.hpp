@@ -17,7 +17,6 @@
 #ifndef CPU_X64_JIT_UNI_FORK_DW_CONVOLUTION_HPP
 #define CPU_X64_JIT_UNI_FORK_DW_CONVOLUTION_HPP
 
-
 #include "common/c_types_map.hpp"
 #include "common/memory_tracking.hpp"
 #include "common/primitive.hpp"
@@ -34,27 +33,29 @@ template <cpu_isa_t isa, data_type_t src_type, data_type_t dst_type = src_type>
 struct jit_uni_fork_dw_convolution_fwd_t : public primitive_t {
     struct pd_t : public cpu_convolution_fwd_pd_t {
         pd_t(const op_desc_t *adesc, const primitive_attr_t *attr,
-             const typename pd_t::base_class *hint_fwd_pd)
-                : cpu_convolution_fwd_pd_t(adesc, attr, hint_fwd_pd), jcp_() {}
+                const typename pd_t::base_class *hint_fwd_pd)
+            : cpu_convolution_fwd_pd_t(adesc, attr, hint_fwd_pd), jcp_() {}
 
         DECLARE_COMMON_PD_T(JIT_IMPL_NAME_HELPER("jit_dw:", jcp_.isa, ""),
-                            jit_uni_fork_dw_convolution_fwd_t);
+                jit_uni_fork_dw_convolution_fwd_t);
 
         status_t init(engine_t *engine) {
-            bool ok = true
-                && is_fwd()
-                && set_default_alg_kind(alg_kind::convolution_direct)
-                && expect_data_types(src_type, src_type,
-                        data_type::undef, dst_type, data_type::f32)
-                && IMPLICATION(this->with_bias(), utils::one_of(
-                        this->desc()->bias_desc.data_type, data_type::f32,
-                        data_type::bf16))
-                && attr()->has_default_values(primitive_attr_t::skip_mask_t::post_ops, dst_type)
-                && !has_zero_dim_memory();
+            bool ok = true && is_fwd()
+                    && set_default_alg_kind(alg_kind::convolution_direct)
+                    && expect_data_types(src_type, src_type, data_type::undef,
+                            dst_type, data_type::f32)
+                    && IMPLICATION(this->with_bias(),
+                            utils::one_of(this->desc()->bias_desc.data_type,
+                                    data_type::f32, data_type::bf16))
+                    && attr()->has_default_values(
+                            primitive_attr_t::skip_mask_t::post_ops, dst_type)
+                    && !has_zero_dim_memory();
             if (!ok) return status::unimplemented;
 
-            status_t status = jit_uni_fork_dw_conv_fwd_kernel<isa, src_type>::init_conf(jcp_,
-                        *desc(), src_md_, weights_md_, bias_md_, dst_md_, *attr());
+            status_t status
+                    = jit_uni_fork_dw_conv_fwd_kernel<isa, src_type>::init_conf(
+                            jcp_, *desc(), src_md_, weights_md_, bias_md_,
+                            dst_md_, *attr());
             if (status != status::success) return status;
 
             auto scratchpad = scratchpad_registry().registrar();
@@ -76,7 +77,8 @@ struct jit_uni_fork_dw_convolution_fwd_t : public primitive_t {
 
     status_t init(engine_t *engine) override {
         CHECK(safe_ptr_assign(kernel_,
-                              new jit_uni_fork_dw_conv_fwd_kernel<isa, src_type>(pd()->jcp_, *pd()->dst_md(0), *pd()->attr())));
+                new jit_uni_fork_dw_conv_fwd_kernel<isa, src_type>(
+                        pd()->jcp_, *pd()->dst_md(0), *pd()->attr())));
         return kernel_->create_kernel();
     }
 
@@ -92,12 +94,12 @@ private:
     std::unique_ptr<jit_uni_fork_dw_conv_fwd_kernel<isa, src_type>> kernel_;
 };
 
-using jit_avx512_common_fork_dw_convolution_fwd_t =
-        jit_uni_fork_dw_convolution_fwd_t<avx512_core, data_type::f32>;
-using jit_avx2_fork_dw_convolution_fwd_t =
-        jit_uni_fork_dw_convolution_fwd_t<avx2, data_type::f32>;
-using jit_sse41_fork_dw_convolution_fwd_t =
-        jit_uni_fork_dw_convolution_fwd_t<sse41, data_type::f32>;
+using jit_avx512_common_fork_dw_convolution_fwd_t
+        = jit_uni_fork_dw_convolution_fwd_t<avx512_core, data_type::f32>;
+using jit_avx2_fork_dw_convolution_fwd_t
+        = jit_uni_fork_dw_convolution_fwd_t<avx2, data_type::f32>;
+using jit_sse41_fork_dw_convolution_fwd_t
+        = jit_uni_fork_dw_convolution_fwd_t<sse41, data_type::f32>;
 
 template <cpu_isa_t isa, data_type_t diff_dst_type,
         data_type_t diff_src_type = diff_dst_type>
@@ -115,8 +117,7 @@ struct jit_uni_fork_dw_convolution_bwd_data_t : public primitive_t {
                     && set_default_alg_kind(alg_kind::convolution_direct)
                     && expect_data_types(diff_src_type, diff_dst_type,
                             data_type::undef, diff_dst_type, data_type::f32)
-                    && !has_zero_dim_memory()
-                    && set_default_formats();
+                    && !has_zero_dim_memory() && set_default_formats();
 
             if (!ok) return status::unimplemented;
 
@@ -149,7 +150,8 @@ struct jit_uni_fork_dw_convolution_bwd_data_t : public primitive_t {
         }
     };
 
-    jit_uni_fork_dw_convolution_bwd_data_t(const pd_t *apd) : primitive_t(apd) {}
+    jit_uni_fork_dw_convolution_bwd_data_t(const pd_t *apd)
+        : primitive_t(apd) {}
 
     typedef typename prec_traits_t<diff_src_type>::type diff_src_data_t;
     typedef typename prec_traits_t<diff_dst_type>::type diff_dst_data_t;
@@ -175,16 +177,16 @@ private:
             kernel_;
 };
 
-using jit_avx512_common_fork_dw_convolution_bwd_data_t =
-    jit_uni_fork_dw_convolution_bwd_data_t<avx512_core, data_type::f32>;
-using jit_avx2_fork_dw_convolution_bwd_data_t =
-    jit_uni_fork_dw_convolution_bwd_data_t<avx2, data_type::f32>;
-using jit_sse41_fork_dw_convolution_bwd_data_t =
-    jit_uni_fork_dw_convolution_bwd_data_t<sse41, data_type::f32>;
+using jit_avx512_common_fork_dw_convolution_bwd_data_t
+        = jit_uni_fork_dw_convolution_bwd_data_t<avx512_core, data_type::f32>;
+using jit_avx2_fork_dw_convolution_bwd_data_t
+        = jit_uni_fork_dw_convolution_bwd_data_t<avx2, data_type::f32>;
+using jit_sse41_fork_dw_convolution_bwd_data_t
+        = jit_uni_fork_dw_convolution_bwd_data_t<sse41, data_type::f32>;
 
-}
-}
-}
-}
+} // namespace x64
+} // namespace cpu
+} // namespace impl
+} // namespace dnnl
 
 #endif

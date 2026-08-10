@@ -124,4 +124,3 @@ const impl_list_item_t *get_pooling_impl_list(const pooling_desc_t *desc) {
 } // namespace cpu
 } // namespace impl
 } // namespace dnnl
-

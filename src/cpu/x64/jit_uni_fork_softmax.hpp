@@ -39,8 +39,7 @@ struct jit_uni_fork_softmax_fwd_t : public primitive_t {
     struct pd_t : public cpu_softmax_fwd_pd_t {
         using cpu_softmax_fwd_pd_t::cpu_softmax_fwd_pd_t;
 
-        DECLARE_COMMON_PD_T(
-                JIT_IMPL_NAME_HELPER("jit:", isa, ""),
+        DECLARE_COMMON_PD_T(JIT_IMPL_NAME_HELPER("jit:", isa, ""),
                 jit_uni_fork_softmax_fwd_t<isa>);
 
         status_t init(engine_t *engine) {
@@ -52,25 +51,26 @@ struct jit_uni_fork_softmax_fwd_t : public primitive_t {
             auto dims = desc_.src_desc.dims;
             auto axis = desc_.softmax_axis;
 
-            size_t inner_size = utils::array_product(dims + axis + 1, ndims - axis - 1);
+            size_t inner_size
+                    = utils::array_product(dims + axis + 1, ndims - axis - 1);
 
-            format_tag_t dat_tag = utils::pick(ndims - 3, format_tag::ncw, format_tag::nchw, format_tag::ncdhw);
+            format_tag_t dat_tag = utils::pick(ndims - 3, format_tag::ncw,
+                    format_tag::nchw, format_tag::ncdhw);
 
             // TODO: disabled because of failed test (case: for axis == 0, batch == 2). Needs to be debugged.
-            if (ndims == 3)
-                return status::unimplemented;
+            if (ndims == 3) return status::unimplemented;
 
             using namespace data_type;
             bool ok = src_d == dst_d && mayiuse(isa) && is_fwd()
-                      && !has_zero_dim_memory()
-                      && utils::one_of(data_type, f32, bf16)
-                      && attr()->has_default_values()
-                      && src_d.is_dense(true)
-                      && src_d.matches_one_of_tag(dat_tag) == dat_tag
-                      && inner_size > 1;
+                    && !has_zero_dim_memory()
+                    && utils::one_of(data_type, f32, bf16)
+                    && attr()->has_default_values() && src_d.is_dense(true)
+                    && src_d.matches_one_of_tag(dat_tag) == dat_tag
+                    && inner_size > 1;
             if (!ok) return status::unimplemented;
 
-            return jit_uni_fork_softmax_kernel_f32<isa>::init_conf(jpp_, desc_, src_md(), dst_md());
+            return jit_uni_fork_softmax_kernel_f32<isa>::init_conf(
+                    jpp_, desc_, src_md(), dst_md());
         }
         jit_softmax_conf_t jpp_;
     };
@@ -78,7 +78,8 @@ struct jit_uni_fork_softmax_fwd_t : public primitive_t {
     jit_uni_fork_softmax_fwd_t(const pd_t *apd);
 
     status_t init(engine_t *engine) override {
-        CHECK(safe_ptr_assign(kernel_, new jit_uni_fork_softmax_kernel_f32<isa>(pd()->jpp_)));
+        CHECK(safe_ptr_assign(
+                kernel_, new jit_uni_fork_softmax_kernel_f32<isa>(pd()->jpp_)));
         return kernel_->create_kernel();
     }
 
@@ -89,9 +90,9 @@ private:
     std::unique_ptr<jit_uni_fork_softmax_kernel_f32<isa>> kernel_;
 };
 
-}
-}
-}
-}
+} // namespace x64
+} // namespace cpu
+} // namespace impl
+} // namespace dnnl
 
 #endif

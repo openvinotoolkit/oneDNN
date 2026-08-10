@@ -762,7 +762,8 @@ std::ostream &operator<<(std::ostream &ss, const primitive_attr_t *attr) {
     const auto &legacy_input_zp = attr->input_zero_points_;
     if (!legacy_input_zp.has_default_values()) {
         ss << "attr-legacy-input-zero-points:";
-        ss << ":" << get_val_str(legacy_input_zp.mask_) << ":" << get_val_str(legacy_input_zp.count_);
+        ss << ":" << get_val_str(legacy_input_zp.mask_) << ":"
+           << get_val_str(legacy_input_zp.count_);
         ss << " ";
     }
     const post_ops_t &po = attr->post_ops_;
@@ -838,7 +839,8 @@ std::ostream &operator<<(std::ostream &ss, const primitive_attr_t *attr) {
                     ss << delim << dw.alg;
                 } break;
                 case primitive_kind::quantization: {
-                    const post_ops_t::entry_t::quantization_t &qt = e.quantization;
+                    const post_ops_t::entry_t::quantization_t &qt
+                            = e.quantization;
                     ss << delim << qt.alg;
                 } break;
                 default: assert(!"unsupported post op primitive kind!"); break;

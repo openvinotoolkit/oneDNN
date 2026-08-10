@@ -516,4 +516,3 @@ const impl_list_item_t *get_inner_product_impl_list(
 } // namespace cpu
 } // namespace impl
 } // namespace dnnl
-

@@ -171,10 +171,10 @@ struct primitive_desc_t : public c_compatible {
         using types::is_zero_md;
 
         if ((arg & (DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_SRC))
-            && !attr()->input_zero_points_.has_default_values())
+                && !attr()->input_zero_points_.has_default_values())
             return arg_usage_t::input;
         if ((arg & (DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_WEIGHTS))
-            && !attr()->weights_zero_points_.has_default_values())
+                && !attr()->weights_zero_points_.has_default_values())
             return arg_usage_t::input;
         if ((arg & (DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_DST))
                 && !attr()->output_compensations_.has_default_values()
@@ -184,8 +184,8 @@ struct primitive_desc_t : public c_compatible {
         if (arg & DNNL_ARG_ATTR_ZERO_POINTS) {
             int zp_arg = arg & ~DNNL_ARG_ATTR_ZERO_POINTS;
             return !attr()->zero_points_.has_default_values(zp_arg)
-                ? arg_usage_t::input
-                : arg_usage_t::unused;
+                    ? arg_usage_t::input
+                    : arg_usage_t::unused;
         }
         if (arg & DNNL_ARG_ATTR_PRECOMPUTED_REDUCTIONS) {
             int pr_arg = arg & ~DNNL_ARG_ATTR_PRECOMPUTED_REDUCTIONS;

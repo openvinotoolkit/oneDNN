@@ -49,9 +49,10 @@
                     "Scales buffer for arg %d is missing", (arg)); \
             const auto scales_d \
                     = ctx.memory_mdw(DNNL_ARG_ATTR_SCALES | (arg)); \
-            VCHECK_ATTR( \
-                    utils::one_of(scales_d.data_type(), data_type::f32, data_type::e8m0) \
-                    && (scales_d.ndims() == 1 || scales_d.ndims() == 2), \
+            VCHECK_ATTR(utils::one_of(scales_d.data_type(), data_type::f32, \
+                                data_type::e8m0) \
+                            && (scales_d.ndims() == 1 \
+                                    || scales_d.ndims() == 2), \
                     "Unsupported scales data type"); \
             if (scales_d.dims()[0] == 1) { \
                 if (utils::one_of((arg), DNNL_ARG_DST, \
@@ -86,9 +87,10 @@
                     "Zero points buffer for arg %d is missing", (arg)); \
             const auto zero_points_d \
                     = ctx.memory_mdw(DNNL_ARG_ATTR_ZERO_POINTS | (arg)); \
-            VCHECK_ATTR(utils::one_of(zero_points_d.data_type(), \
-                                data_type::s32, data_type::s8, data_type::u8, \
-                                data_type::s4, data_type::u4, data_type::u2, data_type::f32), \
+            VCHECK_ATTR( \
+                    utils::one_of(zero_points_d.data_type(), data_type::s32, \
+                            data_type::s8, data_type::u8, data_type::s4, \
+                            data_type::u4, data_type::u2, data_type::f32), \
                     VERBOSE_INVALID_DATATYPE, "zero points"); \
         } \
     } \
@@ -131,15 +133,19 @@
 #define DEFINE_INPUT_ZERO_POINTS_BUFFER(input_zero_points_ptr, jcp) \
     const uint8_t *input_zero_points_ptr = nullptr; \
     if (jcp.with_input_zp) { \
-        input_zero_points_ptr = CTX_IN_MEM(const uint8_t *, DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_SRC); \
-        if (input_zero_points_ptr == nullptr) return status::invalid_arguments; \
+        input_zero_points_ptr = CTX_IN_MEM( \
+                const uint8_t *, DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_SRC); \
+        if (input_zero_points_ptr == nullptr) \
+            return status::invalid_arguments; \
     }
 
 #define DEFINE_OUTPUT_COMPENSATION_BUFFER(output_compensation_ptr, jcp) \
     const int32_t *output_compensation_ptr = nullptr; \
     if (jcp.with_input_zp) { \
-        output_compensation_ptr = CTX_IN_MEM(const int32_t *, DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_DST); \
-        if (output_compensation_ptr == nullptr) return status::invalid_arguments; \
+        output_compensation_ptr = CTX_IN_MEM( \
+                const int32_t *, DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_DST); \
+        if (output_compensation_ptr == nullptr) \
+            return status::invalid_arguments; \
     }
 
 #define ASSIGN_INPUT_SCALE_VALUE(scale, mem_arg) \

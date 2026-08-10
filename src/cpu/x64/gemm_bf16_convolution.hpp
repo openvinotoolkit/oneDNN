@@ -25,12 +25,12 @@
 #include "cpu/cpu_engine.hpp"
 #include "cpu/gemm/gemm.hpp"
 #include "cpu/gemm_convolution_utils.hpp"
+#include "cpu/ref_depthwise_injector.hpp"
 #include "cpu/x64/cpu_reducer.hpp"
+#include "cpu/x64/injectors/jit_uni_binary_injector.hpp"
+#include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
 #include "cpu/x64/injectors/jit_uni_postops_injector.hpp"
 #include "cpu/x64/jit_avx512_core_bf16cvt.hpp"
-#include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
-#include "cpu/x64/injectors/jit_uni_binary_injector.hpp"
-#include "cpu/ref_depthwise_injector.hpp"
 
 namespace dnnl {
 namespace impl {
@@ -70,8 +70,7 @@ struct gemm_bf16_convolution_fwd_t : public primitive_t {
                                    primitive_attr_t::skip_mask_t::post_ops,
                                    dst_data_type),
                     VERBOSE_UNSUPPORTED_ATTR);
-            VDISPATCH_CONV(post_ops_ok(),
-                    VERBOSE_UNSUPPORTED_ATTR);
+            VDISPATCH_CONV(post_ops_ok(), VERBOSE_UNSUPPORTED_ATTR);
 
             auto scratchpad = scratchpad_registry().registrar();
 
@@ -103,18 +102,28 @@ struct gemm_bf16_convolution_fwd_t : public primitive_t {
                 bool ok = true;
 
                 for (int i = 0; i < po.len(); i++) {
-                    ok = ok && utils::one_of(po.entry_[i].kind, primitive_kind::sum, primitive_kind::binary, primitive_kind::eltwise, primitive_kind::depthwise);
+                    ok = ok
+                            && utils::one_of(po.entry_[i].kind,
+                                    primitive_kind::sum, primitive_kind::binary,
+                                    primitive_kind::eltwise,
+                                    primitive_kind::depthwise);
                 }
                 return ok;
             };
 
-            auto contain = [&](dnnl::impl::primitive_kind_t kind) { return po.find(kind) != -1; };
-            auto position = [&](dnnl::impl::primitive_kind_t kind) { return po.find(kind); };
-            auto count = [&](dnnl::impl::primitive_kind_t kind) { return po.count(kind); };
+            auto contain = [&](dnnl::impl::primitive_kind_t kind) {
+                return po.find(kind) != -1;
+            };
+            auto position = [&](dnnl::impl::primitive_kind_t kind) {
+                return po.find(kind);
+            };
+            auto count = [&](dnnl::impl::primitive_kind_t kind) {
+                return po.count(kind);
+            };
 
-            return all_post_ops_supported() &&
-                   count(primitive_kind::sum) <= 1 &&
-                   IMPLICATION(contain(primitive_kind::sum), position(primitive_kind::sum) == 0);
+            return all_post_ops_supported() && count(primitive_kind::sum) <= 1
+                    && IMPLICATION(contain(primitive_kind::sum),
+                            position(primitive_kind::sum) == 0);
 
             return false;
         }
@@ -171,15 +180,14 @@ private:
         }
 
         void operator()(dst_data_t *dst, const acc_data_t *acc,
-                const acc_data_t *bias, float sum_scale, size_t oc_work, size_t g_offset,
-                const void *post_ops_binary_rhs_arg_vec, const void *dst_orig,
-                const size_t g_oc_offset);
+                const acc_data_t *bias, float sum_scale, size_t oc_work,
+                size_t g_offset, const void *post_ops_binary_rhs_arg_vec,
+                const void *dst_orig, const size_t g_oc_offset);
         void operator()(dst_data_t *dst, const acc_data_t *acc,
-                const acc_data_t *bias,
-                size_t g_offset, size_t start_oc, float sum_scale, size_t dst_str,
-                size_t acc_str, size_t sp_len, size_t oc,
-                const void *post_ops_binary_rhs_arg_vec, const void *dst_orig,
-                const size_t g_oc_offset);
+                const acc_data_t *bias, size_t g_offset, size_t start_oc,
+                float sum_scale, size_t dst_str, size_t acc_str, size_t sp_len,
+                size_t oc, const void *post_ops_binary_rhs_arg_vec,
+                const void *dst_orig, const size_t g_oc_offset);
 
     private:
         struct ker_args_t {
@@ -242,8 +250,9 @@ private:
         size_t vlen_;
         cpu_isa_t isa_;
         std::unique_ptr<bf16_emulation_t> bf16_emu_;
-        const primitive_attr_t* attr_;
-        nstl::vector<jit_uni_eltwise_injector_t<avx512_core>*> jit_eltwise_injectors_;
+        const primitive_attr_t *attr_;
+        nstl::vector<jit_uni_eltwise_injector_t<avx512_core> *>
+                jit_eltwise_injectors_;
         std::unique_ptr<binary_injector::jit_uni_binary_injector_t<avx512_core>>
                 jit_binary_injector_;
 
@@ -298,8 +307,7 @@ struct gemm_bf16_convolution_bwd_data_t : public primitive_t {
                     VERBOSE_BAD_ALGORITHM);
             VDISPATCH_CONV(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
             VDISPATCH_CONV(mayiuse(avx512_core), VERBOSE_UNSUPPORTED_ISA);
-            VDISPATCH_CONV(
-                    is_supported_post_ops(), VERBOSE_UNSUPPORTED_ATTR);
+            VDISPATCH_CONV(is_supported_post_ops(), VERBOSE_UNSUPPORTED_ATTR);
 
             auto scratchpad = scratchpad_registry().registrar();
 
@@ -315,14 +323,15 @@ struct gemm_bf16_convolution_bwd_data_t : public primitive_t {
     protected:
         virtual bool is_supported_post_ops() const {
             const auto &p = this->attr()->post_ops_;
-            if (p.len() > 1)
-                return false;
+            if (p.len() > 1) return false;
 
             auto all_post_ops_supported = [&]() {
                 bool ok = true;
 
                 for (int i = 0; i < p.len(); i++) {
-                    ok = ok && utils::one_of(p.entry_[i].kind, primitive_kind::depthwise);
+                    ok = ok
+                            && utils::one_of(p.entry_[i].kind,
+                                    primitive_kind::depthwise);
                 }
                 return ok;
             };
@@ -331,12 +340,13 @@ struct gemm_bf16_convolution_bwd_data_t : public primitive_t {
         }
     };
 
-    gemm_bf16_convolution_bwd_data_t(const pd_t* apd) : primitive_t(apd) {
-        const auto& post_ops = pd()->attr()->post_ops_;
+    gemm_bf16_convolution_bwd_data_t(const pd_t *apd) : primitive_t(apd) {
+        const auto &post_ops = pd()->attr()->post_ops_;
         for (int i = 0; i < post_ops.len(); i++) {
-            auto& post_op = post_ops.entry_[i];
+            auto &post_op = post_ops.entry_[i];
             if (post_op.is_depthwise()) {
-                depthwise_injectors.push_back(new ref_depthwise_scalar_fwd_t(post_op.depthwise.alg));
+                depthwise_injectors.push_back(
+                        new ref_depthwise_scalar_fwd_t(post_op.depthwise.alg));
             }
         }
     }
@@ -365,11 +375,11 @@ private:
             diff_src_data_t *diff_src_base, const wei_data_t *wei_base,
             const diff_dst_data_t *diff_dst_base,
             const memory_tracking::grantor_t &scratchpad,
-            const std::vector<const void *>& post_ops_binary_rhs_arg_vec) const;
+            const std::vector<const void *> &post_ops_binary_rhs_arg_vec) const;
 
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 
-    nstl::vector<ref_depthwise_scalar_fwd_t*> depthwise_injectors;
+    nstl::vector<ref_depthwise_scalar_fwd_t *> depthwise_injectors;
 };
 
 template <data_type_t diff_wei_data_type>

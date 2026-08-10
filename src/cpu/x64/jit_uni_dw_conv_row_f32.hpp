@@ -31,11 +31,11 @@
 #include "common/type_helpers.hpp"
 #include "common/utils.hpp"
 
+#include "cpu/x64/injectors/jit_uni_depthwise_injector.hpp"
+#include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
+#include "cpu/x64/injectors/jit_uni_quantization_injector.hpp"
 #include "cpu/x64/jit_generator.hpp"
 #include "jit_primitive_conf.hpp"
-#include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
-#include "cpu/x64/injectors/jit_uni_depthwise_injector.hpp"
-#include "cpu/x64/injectors/jit_uni_quantization_injector.hpp"
 
 namespace dnnl {
 namespace impl {
@@ -43,11 +43,15 @@ namespace cpu {
 namespace x64 {
 
 template <cpu_isa_t isa>
-struct jit_uni_dw_conv_row_f32: public jit_generator_t {
+struct jit_uni_dw_conv_row_f32 : public jit_generator_t {
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_uni_dw_conv_row_f32)
 
-    jit_uni_dw_conv_row_f32(jit_conv_conf_t ajcp, const primitive_attr_t &attr, int ow_stride)
-            : jit_generator_t(jit_name()), jcp(ajcp), attr_(attr), ow_stride_(ow_stride) {}
+    jit_uni_dw_conv_row_f32(
+            jit_conv_conf_t ajcp, const primitive_attr_t &attr, int ow_stride)
+        : jit_generator_t(jit_name())
+        , jcp(ajcp)
+        , attr_(attr)
+        , ow_stride_(ow_stride) {}
 
     ~jit_uni_dw_conv_row_f32() {
         for (auto inj : eltwise_injectors)
@@ -63,9 +67,9 @@ struct jit_uni_dw_conv_row_f32: public jit_generator_t {
         quantization_injectors.clear();
     }
 
-    static bool post_ops_ok(jit_conv_conf_t &jcp,
-                            const primitive_attr_t &attr);
-    static status_t init_conf(jit_1x1_conv_conf_t &jcp, jit_conv_conf_t &jcp_dw, const primitive_attr_t &attr);
+    static bool post_ops_ok(jit_conv_conf_t &jcp, const primitive_attr_t &attr);
+    static status_t init_conf(jit_1x1_conv_conf_t &jcp, jit_conv_conf_t &jcp_dw,
+            const primitive_attr_t &attr);
 
     jit_conv_conf_t jcp;
     const primitive_attr_t &attr_;
@@ -78,8 +82,9 @@ private:
     using reg32_t = const Xbyak::Reg32;
     using reg16_t = const Xbyak::Reg16;
     using reg8_t = const Xbyak::Reg8;
-    const Xbyak::AddressFrame &vmmword = (isa == sse41)
-        ? xword : (isa == avx2) ? yword : zword;
+    const Xbyak::AddressFrame &vmmword = (isa == sse41) ? xword
+            : (isa == avx2)                             ? yword
+                                                        : zword;
     const int vlen = cpu_isa_traits_t<isa>::vlen;
 
     // dw convolution
@@ -136,17 +141,20 @@ private:
 
     inline void clear_vmm_regs(int ur_w);
     inline void apply_filter(int ur_w, int kw_size);
-    inline void cvt2ps(data_type_t type_in, Vmm vmm_in, const Xbyak::Operand &op, bool scalar_load);
+    inline void cvt2ps(data_type_t type_in, Vmm vmm_in,
+            const Xbyak::Operand &op, bool scalar_load);
     inline void apply_postprocessing(int ur_w, int oc_step);
-    inline void store_dst_typed(const Xbyak::Address &op, Vmm vmm_dst, bool scalar_store);
+    inline void store_dst_typed(
+            const Xbyak::Address &op, Vmm vmm_dst, bool scalar_store);
     inline void store_dst(int ur_w, int oc_step);
     inline void loop_body(int oc_step);
 
     void generate() override;
 
-    nstl::vector<jit_uni_eltwise_injector_t<isa>*> eltwise_injectors;
-    nstl::vector<jit_uni_depthwise_injector_f32<isa>*> depthwise_injectors;
-    nstl::vector<jit_uni_quantization_injector_f32<isa>*> quantization_injectors;
+    nstl::vector<jit_uni_eltwise_injector_t<isa> *> eltwise_injectors;
+    nstl::vector<jit_uni_depthwise_injector_f32<isa> *> depthwise_injectors;
+    nstl::vector<jit_uni_quantization_injector_f32<isa> *>
+            quantization_injectors;
 };
 
 } // namespace x64

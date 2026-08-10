@@ -49,7 +49,8 @@ jit_avx512_core_x8s8s32x_deconv_fwd_kernel_t<Vmm>::
     , attr_(attr)
     , postops_injector_(nullptr) {
 
-    if (jcp.with_eltwise || jcp.with_binary || jcp.with_sum || jcp.with_depthwise || jcp.with_quantization) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_sum
+            || jcp.with_depthwise || jcp.with_quantization) {
         const std::size_t tail_size = jcp.is_depthwise
                 ? jcp.ngroups % jcp.ch_block
                 : jcp.oc_without_padding % jcp.oc_block;
@@ -74,7 +75,9 @@ jit_avx512_core_x8s8s32x_deconv_fwd_kernel_t<Vmm>::
             vmm_d_bias = Vmm(27);
         }
 
-        const quantization_injector::static_params_t qsp {vmm_d_weights.getIdx(), vmm_d_bias.getIdx(), reg_d_weights, reg_d_bias};
+        const quantization_injector::static_params_t qsp {
+                vmm_d_weights.getIdx(), vmm_d_bias.getIdx(), reg_d_weights,
+                reg_d_bias};
 
         postops_injector_ = utils::make_unique<
                 injector::jit_uni_postops_injector_t<avx512_core>>(
@@ -185,8 +188,8 @@ status_t jit_avx512_core_x8s8s32x_deconv_fwd_kernel_vmm_t::init_conf(
         CHECK_BOOL(memory_desc_init_by_tag(want_wei_md, wei_tag));
 
         if (jcp.signed_input && !jcp.is_depthwise) {
-            want_wei_md.extra.flags = 0
-                    | memory_extra_flags::compensation_conv_s8s8;
+            want_wei_md.extra.flags
+                    = 0 | memory_extra_flags::compensation_conv_s8s8;
             want_wei_md.extra.compensation_mask = (1 << 0)
                     + (with_groups && !jcp.is_depthwise ? (1 << 1) : 0);
             want_wei_md.extra.scale_adjust = 1.f;
@@ -325,9 +328,7 @@ status_t jit_avx512_core_x8s8s32x_deconv_fwd_kernel_vmm_t::init_conf(
 
     /* kernel blocking params */
     int max_regs = jcp.has_vnni ? 30 : 28;
-    if (jcp.with_depthwise || jcp.with_quantization) {
-        max_regs -= 2;
-    }
+    if (jcp.with_depthwise || jcp.with_quantization) { max_regs -= 2; }
 
     const int regs = max_regs;
     jcp.nb_ch_blocking = 1;
@@ -398,9 +399,9 @@ bool jit_avx512_core_x8s8s32x_deconv_fwd_kernel_vmm_t::post_ops_ok(
     static constexpr bool sum_at_pos_0_only = true;
     static constexpr bool sum_requires_scale_one = false;
 
-    return injector::post_ops_ok(
-            post_ops_ok_args_t(avx512_core, {eltwise, binary, sum, depthwise, quantization}, post_ops,
-                    &dst_d, sum_at_pos_0_only, sum_requires_scale_one));
+    return injector::post_ops_ok(post_ops_ok_args_t(avx512_core,
+            {eltwise, binary, sum, depthwise, quantization}, post_ops, &dst_d,
+            sum_at_pos_0_only, sum_requires_scale_one));
 }
 
 void jit_avx512_core_x8s8s32x_deconv_fwd_kernel_vmm_t::init_scratchpad(
@@ -1047,7 +1048,8 @@ void jit_avx512_core_x8s8s32x_deconv_fwd_kernel_t<Vmm>::store_output(
         }
     }
     /* Do post-ops */
-    if (jcp.with_eltwise || jcp.with_binary || jcp.with_sum || jcp.with_depthwise || jcp.with_quantization) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_sum
+            || jcp.with_depthwise || jcp.with_quantization) {
         const auto &p = attr_.post_ops_;
         const int sum_idx = p.find(primitive_kind::sum);
         const float *p_sum_scale
@@ -1107,14 +1109,17 @@ void jit_avx512_core_x8s8s32x_deconv_fwd_kernel_t<Vmm>::store_output(
         std::map<size_t, int> vmm_idx_off;
         for (int ocb = 0; ocb < jcp.nb_oc_blocking; ocb++) {
             for (int ur = 0; ur < ur_w; ur++) {
-                vmm_idx_off.insert({vmm_out(ur, ocb).getIdx(), ocb * jcp.oc_block * sizeof(float)});
+                vmm_idx_off.insert({vmm_out(ur, ocb).getIdx(),
+                        ocb * jcp.oc_block * sizeof(float)});
             }
         }
-        depthwise_injector::dynamic_params_t ddp {vmm_d_weights.getIdx(), vmm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
-                                                  ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off,
-                                                  this->rsp, base_post_ops_data_offset};
-        quantization_injector::dynamic_params_t qdp {ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, jcp.dst_dt,
-                                                     this->rsp, base_post_ops_data_offset};
+        depthwise_injector::dynamic_params_t ddp {vmm_d_weights.getIdx(),
+                vmm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
+                ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, this->rsp,
+                base_post_ops_data_offset};
+        quantization_injector::dynamic_params_t qdp {
+                ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, jcp.dst_dt,
+                this->rsp, base_post_ops_data_offset};
 
         const int nb_oc_block
                 = jcp.is_depthwise ? jcp.nb_ch_blocking : jcp.nb_oc_blocking;
@@ -1358,7 +1363,8 @@ void jit_avx512_core_x8s8s32x_deconv_fwd_kernel_t<Vmm>::generate() {
     preamble();
 
     if (postops_injector_)
-        postops_injector_->push_post_ops_data_on_stack(param1, GET_OFF(post_ops_binary_rhs_arg_vec), reg_src, reg_filt);
+        postops_injector_->push_post_ops_data_on_stack(param1,
+                GET_OFF(post_ops_binary_rhs_arg_vec), reg_src, reg_filt);
 
     if (zp::should_calculate_deconv_zp_src_pad_str_comp(jcp)) {
         sub(rsp, reserved_stack_size_);
@@ -1467,8 +1473,7 @@ void jit_avx512_core_x8s8s32x_deconv_fwd_kernel_t<Vmm>::generate() {
         base_post_ops_data_offset -= reserved_stack_size_;
     }
 
-    if (postops_injector_)
-        postops_injector_->reset_stack_pointer();
+    if (postops_injector_) postops_injector_->reset_stack_pointer();
 
     postamble();
 

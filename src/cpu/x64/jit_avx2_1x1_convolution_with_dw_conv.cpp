@@ -40,9 +40,9 @@ using namespace dnnl::impl::memory_tracking::names;
 using namespace dnnl::impl::utils;
 
 #define data_blk_off(f, n, c, d, h, w) \
-((ndims == 3) ? (f).blk_off(n, c, w) \
-  : ((ndims == 4) ? (f).blk_off(n, c, h, w) \
-                  : (f).blk_off(n, c, d, h, w)))
+    ((ndims == 3) ? (f).blk_off(n, c, w) \
+                  : ((ndims == 4) ? (f).blk_off(n, c, h, w) \
+                                  : (f).blk_off(n, c, d, h, w)))
 /* convolution forward */
 
 void jit_avx2_1x1_convolution_with_dw_conv_fwd_t::execute_forward(
@@ -62,7 +62,9 @@ void jit_avx2_1x1_convolution_with_dw_conv_fwd_t::execute_forward(
 
     const auto post_ops_binary_rhs_arg_vec
             = binary_injector::prepare_binary_args(jcp.post_ops, ctx);
-    const auto post_ops_binary_rhs_arg_vec_dw = binary_injector::prepare_binary_args(jcp_dw.post_ops, ctx, jcp.post_ops.entry_.size() + 1);
+    const auto post_ops_binary_rhs_arg_vec_dw
+            = binary_injector::prepare_binary_args(
+                    jcp_dw.post_ops, ctx, jcp.post_ops.entry_.size() + 1);
 
     const memory_desc_wrapper src_d(pd()->src_md());
     const memory_desc_wrapper dst_d(pd()->dst_md());
@@ -71,12 +73,14 @@ void jit_avx2_1x1_convolution_with_dw_conv_fwd_t::execute_forward(
     auto scratchpad = ctx.get_scratchpad_grantor();
 
     auto rtus_space = pd()->rtus_.reduce_src_
-                      ? scratchpad.get<data_t>(key_conv_rtus_space)
-                      : nullptr;
+            ? scratchpad.get<data_t>(key_conv_rtus_space)
+            : nullptr;
 
     const int MB = pd()->MB();
 
-    int ocb_work = jcp.with_dw_conv ? utils::div_up(jcp.nb_load, jcp.nb_load_blocking) : 1;
+    int ocb_work = jcp.with_dw_conv
+            ? utils::div_up(jcp.nb_load, jcp.nb_load_blocking)
+            : 1;
     const int work_amount = MB * jcp.ngroups * ocb_work * jcp.nb_bcast;
 
     auto step = [](int default_step, int remaining, int tail_step) {
@@ -88,8 +92,10 @@ void jit_avx2_1x1_convolution_with_dw_conv_fwd_t::execute_forward(
         // TODO (Roma): remove this restriction
         assert(jcp.stride_w == 1 && jcp.stride_h == 1);
 
-        auto compute_block_1x1 = [&](float* ws_p, int n, int g, int oh, int ow, int ih, int iw, int os, int os_block, int bcast_step, int ocb, int load_step,
-                                     int num_rows) {
+        auto compute_block_1x1
+                = [&](float *ws_p, int n, int g, int oh, int ow, int ih, int iw,
+                          int os, int os_block, int bcast_step, int ocb,
+                          int load_step, int num_rows) {
             auto rp = rtus_driver_t<avx2>::call_params_t();
             auto p = jit_1x1_conv_args_t();
 
@@ -98,35 +104,44 @@ void jit_avx2_1x1_convolution_with_dw_conv_fwd_t::execute_forward(
 
                 if ((oh + h) < 0 || (oh + h) >= jcp.ih) {
                     for (int chb = ocb; chb < ocb + load_step; chb++) {
-                        memset(ws_p + (((oh + h) + 1) % jcp_dw.kh) * jcp.ow * jcp.oc_block +
-                               (chb - ocb) * jcp_dw.kh * jcp.ow * jcp.oc_block, 0, jcp.ow * jcp.oc_block * sizeof(float));
+                        memset(ws_p
+                                        + (((oh + h) + 1) % jcp_dw.kh) * jcp.ow
+                                                * jcp.oc_block
+                                        + (chb - ocb) * jcp_dw.kh * jcp.ow
+                                                * jcp.oc_block,
+                                0, jcp.ow * jcp.oc_block * sizeof(float));
                     }
                 } else {
                     const int _ocb = g * jcp.nb_load + ocb;
 
                     rp.iw_start = iw;
-                    p.bcast_dim = this_block_size(os, jcp.os, bcast_step * os_block);
+                    p.bcast_dim = this_block_size(
+                            os, jcp.os, bcast_step * os_block);
 
                     rp.os = p.bcast_dim;
-                    p.load_dim = this_block_size(ocb * jcp.oc_block, jcp.oc, load_step * jcp.oc_block);
+                    p.load_dim = this_block_size(ocb * jcp.oc_block, jcp.oc,
+                            load_step * jcp.oc_block);
 
-                    p.output_data = &ws_p[(((oh + h) + 1) % jcp_dw.kh) * jcp.ow * jcp.oc_block];
+                    p.output_data = &ws_p[(((oh + h) + 1) % jcp_dw.kh) * jcp.ow
+                            * jcp.oc_block];
 
                     p.bias_data = &bias[_ocb * jcp.oc_block];
 
-                    for (int icb = 0; icb < jcp.nb_reduce; icb += jcp.nb_reduce_blocking) {
+                    for (int icb = 0; icb < jcp.nb_reduce;
+                            icb += jcp.nb_reduce_blocking) {
                         p.first_last_flag = 0
-                                            | (icb == 0 ? FLAG_REDUCE_FIRST : 0)
-                                            | (icb + jcp.nb_reduce_blocking >= jcp.nb_reduce
-                                               ? FLAG_REDUCE_LAST : 0);
+                                | (icb == 0 ? FLAG_REDUCE_FIRST : 0)
+                                | (icb + jcp.nb_reduce_blocking >= jcp.nb_reduce
+                                                ? FLAG_REDUCE_LAST
+                                                : 0);
 
-                        p.reduce_dim = this_block_size(icb * jcp.ic_block, jcp.ic,
-                                                       jcp.nb_reduce_blocking * jcp.ic_block);
+                        p.reduce_dim = this_block_size(icb * jcp.ic_block,
+                                jcp.ic, jcp.nb_reduce_blocking * jcp.ic_block);
                         rp.icb = p.reduce_dim / jcp.reduce_block;
 
                         p.load_data = &weights[pd()->with_groups()
-                                               ? weights_d.blk_off(g, ocb, icb)
-                                               : weights_d.blk_off(ocb, icb)];
+                                        ? weights_d.blk_off(g, ocb, icb)
+                                        : weights_d.blk_off(ocb, icb)];
 
                         const int _icb = g * jcp.nb_reduce + icb;
                         if (pd()->rtus_.reduce_src_) {
@@ -145,7 +160,8 @@ void jit_avx2_1x1_convolution_with_dw_conv_fwd_t::execute_forward(
                         }
 
                         p.oc_off = _ocb * jcp.oc_block * sizeof(float);
-                        p.post_ops_binary_rhs_arg_vec = post_ops_binary_rhs_arg_vec.data();
+                        p.post_ops_binary_rhs_arg_vec
+                                = post_ops_binary_rhs_arg_vec.data();
 
                         (*kernel_old_)(&p);
                     }
@@ -153,28 +169,40 @@ void jit_avx2_1x1_convolution_with_dw_conv_fwd_t::execute_forward(
             }
         };
 
-        auto compute_row_dw = [&](const float* ws_p, int n, int ocb, int load_step, int dst_idx) {
-
+        auto compute_row_dw = [&](const float *ws_p, int n, int ocb,
+                                      int load_step, int dst_idx) {
             for (int chb = ocb; chb < ocb + load_step; chb++) {
                 auto par_conv_dw = jit_conv_args_t();
 
-                par_conv_dw.src_row0 = &ws_p[(((dst_idx+1) - 1) % jcp_dw.kh) * jcp_dw.iw * jcp_dw.ch_block +
-                                             (chb - ocb) * jcp_dw.kh * jcp_dw.iw * jcp_dw.ch_block];
-                par_conv_dw.src_row1 = &ws_p[(((dst_idx+1) - 0) % jcp_dw.kh) * jcp_dw.iw * jcp_dw.ch_block +
-                                             (chb - ocb) * jcp_dw.kh * jcp_dw.iw * jcp_dw.ch_block];
-                par_conv_dw.src_row2 = &ws_p[(((dst_idx+1) + 1) % jcp_dw.kh) * jcp_dw.iw * jcp_dw.ch_block +
-                                             (chb - ocb) * jcp_dw.kh * jcp_dw.iw * jcp_dw.ch_block];
+                par_conv_dw.src_row0 = &ws_p[(((dst_idx + 1) - 1) % jcp_dw.kh)
+                                * jcp_dw.iw * jcp_dw.ch_block
+                        + (chb - ocb) * jcp_dw.kh * jcp_dw.iw
+                                * jcp_dw.ch_block];
+                par_conv_dw.src_row1 = &ws_p[(((dst_idx + 1) - 0) % jcp_dw.kh)
+                                * jcp_dw.iw * jcp_dw.ch_block
+                        + (chb - ocb) * jcp_dw.kh * jcp_dw.iw
+                                * jcp_dw.ch_block];
+                par_conv_dw.src_row2 = &ws_p[(((dst_idx + 1) + 1) % jcp_dw.kh)
+                                * jcp_dw.iw * jcp_dw.ch_block
+                        + (chb - ocb) * jcp_dw.kh * jcp_dw.iw
+                                * jcp_dw.ch_block];
 
-                par_conv_dw.dst = &dst[n*jcp_dw.oc*jcp_dw.oh*jcp_dw.ow + chb*jcp_dw.ch_block*jcp_dw.oh*jcp_dw.ow +
-                                       dst_idx/jcp_dw.stride_h*jcp_dw.ow*jcp_dw.ch_block];
+                par_conv_dw.dst = &dst[n * jcp_dw.oc * jcp_dw.oh * jcp_dw.ow
+                        + chb * jcp_dw.ch_block * jcp_dw.oh * jcp_dw.ow
+                        + dst_idx / jcp_dw.stride_h * jcp_dw.ow
+                                * jcp_dw.ch_block];
 
                 par_conv_dw.kh_padding = jcp_dw.kh;
-                par_conv_dw.filt = &weights_dw[chb * jcp_dw.kh * jcp_dw.kw * jcp_dw.ch_block];
+                par_conv_dw.filt = &weights_dw[chb * jcp_dw.kh * jcp_dw.kw
+                        * jcp_dw.ch_block];
                 par_conv_dw.bias = &bias_dw[chb * jcp_dw.ch_block];
                 par_conv_dw.ur_w = (size_t)(jcp_dw.ow);
-                par_conv_dw.oc_work = nstl::min((chb + 1) * jcp_dw.ch_block, (int)jcp_dw.oc) - chb*jcp_dw.ch_block;
+                par_conv_dw.oc_work
+                        = nstl::min((chb + 1) * jcp_dw.ch_block, (int)jcp_dw.oc)
+                        - chb * jcp_dw.ch_block;
                 par_conv_dw.oc_off = chb * jcp_dw.ch_block * sizeof(float);
-                par_conv_dw.post_ops_binary_rhs_arg_vec = post_ops_binary_rhs_arg_vec_dw.data();
+                par_conv_dw.post_ops_binary_rhs_arg_vec
+                        = post_ops_binary_rhs_arg_vec_dw.data();
 
                 (*kernel_dw_)(&par_conv_dw);
             }
@@ -182,20 +210,21 @@ void jit_avx2_1x1_convolution_with_dw_conv_fwd_t::execute_forward(
 
         assert(jcp.stride_w == 1 && jcp.stride_h == 1);
 
-        int start{0}, end{0};
+        int start {0}, end {0};
         balance211(work_amount, nthr, ithr, start, end);
 
         auto dw_conv_buffer = scratchpad.get<data_t>(key_dw_conv_buffer);
-        size_t dw_conv_buffer_size_ = (size_t)jcp_dw.kh * jcp_dw.iw * jcp_dw.ch_block * (jcp.oc / jcp.oc_block);
+        size_t dw_conv_buffer_size_ = (size_t)jcp_dw.kh * jcp_dw.iw
+                * jcp_dw.ch_block * (jcp.oc / jcp.oc_block);
         auto pbuf = dw_conv_buffer + ithr * dw_conv_buffer_size_;
 
         const int os_block = jcp.iw;
 
         int iwork = start;
         while (iwork < end) {
-            int n{0}, g{0}, ocbb{0}, osb{0};
+            int n {0}, g {0}, ocbb {0}, osb {0};
             nd_iterator_init(iwork, n, MB, g, jcp.ngroups, ocbb, ocb_work, osb,
-                             jcp.nb_bcast);
+                    jcp.nb_bcast);
             int bcast_step = 1;
 
             const int os = osb * os_block;
@@ -207,15 +236,17 @@ void jit_avx2_1x1_convolution_with_dw_conv_fwd_t::execute_forward(
 
             int ocb = ocbb * jcp.nb_load_blocking;
 
-            const int load_step = step(jcp.nb_load_blocking,
-                                       jcp.nb_load - ocb, jcp.nb_load_blocking_max);
+            const int load_step = step(jcp.nb_load_blocking, jcp.nb_load - ocb,
+                    jcp.nb_load_blocking_max);
 
             if (iwork == start || oh == 0) {
                 bcast_step = nstl::min(1, end - iwork);
-                compute_block_1x1(pbuf, n, g, oh - 1, ow, ih, iw, os, os_block, bcast_step, ocb, load_step, bcast_step + 2);
+                compute_block_1x1(pbuf, n, g, oh - 1, ow, ih, iw, os, os_block,
+                        bcast_step, ocb, load_step, bcast_step + 2);
             } else {
                 bcast_step = nstl::min(1, end - iwork);
-                compute_block_1x1(pbuf, n, g, oh + 1, ow, ih, iw, os, os_block, bcast_step, ocb, load_step, bcast_step);
+                compute_block_1x1(pbuf, n, g, oh + 1, ow, ih, iw, os, os_block,
+                        bcast_step, ocb, load_step, bcast_step);
             }
 
             if ((oh % jcp_dw.stride_h == 0)) {
@@ -230,13 +261,13 @@ void jit_avx2_1x1_convolution_with_dw_conv_fwd_t::execute_forward(
         auto padded_bias = scratchpad.get<data_t>(key_conv_padded_bias);
         utils::array_copy(padded_bias, bias, jcp.oc_without_padding);
         utils::array_set(padded_bias + jcp.oc_without_padding, 0.f,
-                         jcp.oc - jcp.oc_without_padding);
+                jcp.oc - jcp.oc_without_padding);
         bias = padded_bias;
 
         auto dw_padded_bias = scratchpad.get<data_t>(key_dw_conv_padded_bias);
         utils::array_copy(dw_padded_bias, bias_dw, jcp.oc_without_padding);
         utils::array_set(dw_padded_bias + jcp.oc_without_padding, 0.f,
-                         jcp.oc - jcp.oc_without_padding);
+                jcp.oc - jcp.oc_without_padding);
         bias_dw = dw_padded_bias;
     }
 

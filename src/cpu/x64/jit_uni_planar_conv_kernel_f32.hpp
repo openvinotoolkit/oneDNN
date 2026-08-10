@@ -20,11 +20,11 @@
 #include "common/c_types_map.hpp"
 #include "common/memory_tracking.hpp"
 
+#include "cpu/x64/injectors/jit_uni_depthwise_injector.hpp"
+#include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
+#include "cpu/x64/injectors/jit_uni_quantization_injector.hpp"
 #include "cpu/x64/jit_generator.hpp"
 #include "cpu/x64/jit_primitive_conf.hpp"
-#include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
-#include "cpu/x64/injectors/jit_uni_depthwise_injector.hpp"
-#include "cpu/x64/injectors/jit_uni_quantization_injector.hpp"
 
 namespace dnnl {
 namespace impl {
@@ -32,13 +32,14 @@ namespace cpu {
 namespace x64 {
 
 template <cpu_isa_t isa>
-struct jit_uni_planar_conv_fwd_kernel_f32: public jit_generator_t {
-    jit_uni_planar_conv_fwd_kernel_f32(jit_conv_conf_t ajcp,
-            const primitive_attr_t &attr): jit_generator_t(jit_name()), jcp(ajcp), attr_(attr) {}
+struct jit_uni_planar_conv_fwd_kernel_f32 : public jit_generator_t {
+    jit_uni_planar_conv_fwd_kernel_f32(
+            jit_conv_conf_t ajcp, const primitive_attr_t &attr)
+        : jit_generator_t(jit_name()), jcp(ajcp), attr_(attr) {}
 
     ~jit_uni_planar_conv_fwd_kernel_f32() {
         for (auto inj : eltwise_injectors)
-           delete inj;
+            delete inj;
         eltwise_injectors.clear();
 
         for (auto inj : depthwise_injectors)
@@ -48,8 +49,7 @@ struct jit_uni_planar_conv_fwd_kernel_f32: public jit_generator_t {
 
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_uni_planar_conv_fwd_kernel_f32)
 
-    static bool post_ops_ok(jit_conv_conf_t &jcp,
-            const primitive_attr_t &attr);
+    static bool post_ops_ok(jit_conv_conf_t &jcp, const primitive_attr_t &attr);
     static status_t init_conf(jit_conv_conf_t &jcp,
             const convolution_desc_t &cd, memory_desc_t &src_md,
             memory_desc_t &weights_md, memory_desc_t &dst_md,
@@ -64,8 +64,9 @@ private:
             isa == avx2, Xbyak::Ymm, Xbyak::Zmm>::type;
     using reg64_t = const Xbyak::Reg64;
     using reg32_t = const Xbyak::Reg32;
-    const Xbyak::AddressFrame &vmmword = (isa == sse41)
-        ? xword : (isa == avx2) ? yword : zword;
+    const Xbyak::AddressFrame &vmmword = (isa == sse41) ? xword
+            : (isa == avx2)                             ? yword
+                                                        : zword;
 
     reg64_t reg_input = r8;
     reg64_t reg_kernel = r9;
@@ -107,8 +108,8 @@ private:
     Xbyak::Xmm xmm_tmp = Xbyak::Xmm(15);
     Xbyak::Xmm xmm_src = Xbyak::Xmm(14);
 
-    nstl::vector<jit_uni_eltwise_injector_t<isa>*> eltwise_injectors;
-    nstl::vector<jit_uni_depthwise_injector_f32<isa>*> depthwise_injectors;
+    nstl::vector<jit_uni_eltwise_injector_t<isa> *> eltwise_injectors;
+    nstl::vector<jit_uni_depthwise_injector_f32<isa> *> depthwise_injectors;
 
     inline void load_src(int ur_h, int ur_w);
     inline void filter(int ur_h);
@@ -127,9 +128,9 @@ private:
     void generate() override;
 };
 
-}
-}
-}
-}
+} // namespace x64
+} // namespace cpu
+} // namespace impl
+} // namespace dnnl
 
 #endif

@@ -21,8 +21,8 @@
 #include "cpu/ref_softmax.hpp"
 
 #if DNNL_X64
-#include "cpu/x64/jit_uni_softmax.hpp"
 #include "cpu/x64/jit_uni_fork_softmax.hpp"
+#include "cpu/x64/jit_uni_softmax.hpp"
 using namespace dnnl::impl::cpu::x64;
 #elif DNNL_AARCH64
 #include "cpu/aarch64/jit_uni_softmax.hpp"

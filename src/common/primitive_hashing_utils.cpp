@@ -50,7 +50,7 @@ size_t get_post_op_hash(size_t seed, const post_ops_t &post_ops) {
                 seed = hash_combine(
                         seed, static_cast<size_t>(entry.depthwise_conv.wei_dt));
                 seed = hash_combine(seed,
-                                    static_cast<size_t>(entry.depthwise_conv.bias_dt));
+                        static_cast<size_t>(entry.depthwise_conv.bias_dt));
                 seed = hash_combine(
                         seed, static_cast<size_t>(entry.depthwise_conv.dst_dt));
                 break;
@@ -65,14 +65,20 @@ size_t get_post_op_hash(size_t seed, const post_ops_t &post_ops) {
                         seed, static_cast<size_t>(entry.prelu.mask));
                 break;
             case primitive_kind::depthwise:
-                seed = hash_combine(seed, static_cast<size_t>(entry.depthwise.alg));
-                seed = get_array_hash(seed, entry.depthwise.offset, entry.depthwise.fields_count);
+                seed = hash_combine(
+                        seed, static_cast<size_t>(entry.depthwise.alg));
+                seed = get_array_hash(seed, entry.depthwise.offset,
+                        entry.depthwise.fields_count);
                 break;
             case primitive_kind::quantization:
-                seed = hash_combine(seed, static_cast<size_t>(entry.quantization.alg));
-                seed = get_array_hash(seed, entry.quantization.per_channel, entry.quantization.fields_count);
-                seed = get_array_hash(seed, entry.quantization.all_default, entry.quantization.fields_count);
-                seed = get_array_hash(seed, entry.quantization.offset, entry.quantization.fields_count);
+                seed = hash_combine(
+                        seed, static_cast<size_t>(entry.quantization.alg));
+                seed = get_array_hash(seed, entry.quantization.per_channel,
+                        entry.quantization.fields_count);
+                seed = get_array_hash(seed, entry.quantization.all_default,
+                        entry.quantization.fields_count);
+                seed = get_array_hash(seed, entry.quantization.offset,
+                        entry.quantization.fields_count);
                 break;
             default: assert(!"unknown post_op");
         }

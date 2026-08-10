@@ -61,7 +61,8 @@ jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::
     , jcp(ajcp)
     , attr_(attr)
     , postops_injector_(nullptr) {
-    if (jcp.with_eltwise || jcp.with_binary || jcp.with_sum || jcp.with_depthwise || jcp.with_quantization) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_sum
+            || jcp.with_depthwise || jcp.with_quantization) {
         using namespace binary_injector;
         static constexpr bool preserve_gpr = true;
         static constexpr bool preserve_vmm = false;
@@ -85,12 +86,15 @@ jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::
 
         quantization_injector::static_params_t quantization_static_params;
         int max_ur_w = nstl::max(jcp.ur_w, jcp.ur_w_tail);
-        int nb_oc_block = jcp.is_depthwise ? jcp.nb_ch_blocking : jcp.nb_oc_blocking;
+        int nb_oc_block
+                = jcp.is_depthwise ? jcp.nb_ch_blocking : jcp.nb_oc_blocking;
         int last_accum_idx = vmm_out(max_ur_w - 1, nb_oc_block - 1).getIdx();
         if (last_accum_idx >= 30)
-            quantization_static_params = {zmm_d_weights.getIdx(), zmm_d_weights.getIdx(), reg_d_weights, reg_d_bias};
+            quantization_static_params = {zmm_d_weights.getIdx(),
+                    zmm_d_weights.getIdx(), reg_d_weights, reg_d_bias};
         else
-            quantization_static_params = {zmm_d_weights.getIdx(), zmm_d_bias.getIdx(), reg_d_weights, reg_d_bias};
+            quantization_static_params = {zmm_d_weights.getIdx(),
+                    zmm_d_bias.getIdx(), reg_d_weights, reg_d_bias};
 
         postops_injector_ = utils::make_unique<
                 injector::jit_uni_postops_injector_t<avx512_core>>(
@@ -214,20 +218,23 @@ template <typename Vmm>
 void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::apply_postops(int ur_w,
         bool last_oc_block_flag, const int nb_oc_block, const int oc_block,
         const float *p_sum_scale, const int32_t *p_sum_zp) {
-    if (jcp.with_eltwise || jcp.with_binary || jcp.with_sum || jcp.with_depthwise || jcp.with_quantization) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_sum
+            || jcp.with_depthwise || jcp.with_quantization) {
         std::map<size_t, int> vmm_idx_off;
-        iterate(nb_oc_block, ur_w,
-                [&](const bool, const int k, const int j) {
-                    vmm_idx_off.insert({vmm_out_idx(j, k), k * oc_block * sizeof(float)});
-                });
-        depthwise_injector::dynamic_params_t ddp {zmm_d_weights.getIdx(), zmm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
-                                                  ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off,
-                                                  this->rsp, base_post_ops_data_offset};
-        quantization_injector::dynamic_params_t qdp {ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, jcp.dst_dt,
-                                                     this->rsp, base_post_ops_data_offset};
+        iterate(nb_oc_block, ur_w, [&](const bool, const int k, const int j) {
+            vmm_idx_off.insert(
+                    {vmm_out_idx(j, k), k * oc_block * sizeof(float)});
+        });
+        depthwise_injector::dynamic_params_t ddp {zmm_d_weights.getIdx(),
+                zmm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
+                ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, this->rsp,
+                base_post_ops_data_offset};
+        quantization_injector::dynamic_params_t qdp {
+                ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, jcp.dst_dt,
+                this->rsp, base_post_ops_data_offset};
 
         apply_sum(ur_w, last_oc_block_flag, nb_oc_block, oc_block, p_sum_scale,
-                  p_sum_zp);
+                p_sum_zp);
 
         injector_utils::vmm_index_set_t vmm_idxs;
         if (jcp.with_binary) {
@@ -248,7 +255,8 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::apply_postops(int ur_w,
                 if (mask_flag) rhs_arg_params.vmm_tail_idx_.emplace(vmm_idx);
             });
 
-            postops_injector_->compute_vector_range(vmm_idxs, rhs_arg_params, ddp, qdp);
+            postops_injector_->compute_vector_range(
+                    vmm_idxs, rhs_arg_params, ddp, qdp);
         } else {
             iterate(nb_oc_block, ur_w,
                     [&](const bool, const int k, const int j) {
@@ -318,7 +326,8 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::store_output(
             /* add comp in s32 to avoid loss of precision
                when convert s32 to f32 in integer(2^24)
                TODO: do the same to bias */
-            if (jcp.signed_input || jcp.with_input_zp) vpaddd(vmm, vmm, vmm_comp);
+            if (jcp.signed_input || jcp.with_input_zp)
+                vpaddd(vmm, vmm, vmm_comp);
             if (jcp.src_zero_point) vpaddd(vmm, vmm, vmm_zp);
             vcvtdq2ps(vmm, vmm);
 
@@ -487,7 +496,8 @@ template <>
 void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Zmm>::compute_ker_dw(int ur_w,
         int pad_l, int pad_r, ic_block_t last_ic_block_flag, bool h_padded) {
 
-    const bool compute_kernel = IMPLICATION(h_padded, jcp.signed_input || jcp.with_input_zp);
+    const bool compute_kernel
+            = IMPLICATION(h_padded, jcp.signed_input || jcp.with_input_zp);
 
     if (jcp.src_zero_point) {
         push(aux_reg_ker_d);
@@ -513,7 +523,8 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Zmm>::compute_ker_dw(int ur_w,
     };
 
     auto kernel_offset = [this](int ci, int ki) {
-        return jcp.typesize_in * ((ci * jcp.kd * jcp.kh * jcp.kw + ki) * jcp.ch_block);
+        return jcp.typesize_in
+                * ((ci * jcp.kd * jcp.kh * jcp.kw + ki) * jcp.ch_block);
     };
 
     auto compute = [this](Zmm vreg_acc, Zmm vreg_wei, Zmm vreg_src) {
@@ -543,14 +554,19 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Zmm>::compute_ker_dw(int ur_w,
         }
     }
 
-    if (jcp.signed_input || jcp.with_input_zp) vmovups(zmm_shifted_zero, vmm_shift);
+    if (jcp.signed_input || jcp.with_input_zp)
+        vmovups(zmm_shifted_zero, vmm_shift);
 
     for (int ci = 0; ci < jcp.nb_ch_blocking; ci++) {
-        if (jcp.with_input_zp && (h_padded || get_ow_start(0, pad_l) != 0 || get_ow_end(ur_w, jcp.kw-1, pad_r) != ur_w)) {
+        if (jcp.with_input_zp
+                && (h_padded || get_ow_start(0, pad_l) != 0
+                        || get_ow_end(ur_w, jcp.kw - 1, pad_r) != ur_w)) {
             if (jcp.is_fast_depthwise) {
-                vbroadcasti32x4(zmm_shifted_zero, ptr[reg_input_zp + ci * jcp.ch_block]);
+                vbroadcasti32x4(zmm_shifted_zero,
+                        ptr[reg_input_zp + ci * jcp.ch_block]);
             } else {
-                vpmovzxbd(zmm_shifted_zero, ptr[reg_input_zp + ci * jcp.ch_block]);
+                vpmovzxbd(zmm_shifted_zero,
+                        ptr[reg_input_zp + ci * jcp.ch_block]);
             }
         }
 
@@ -597,8 +613,11 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Zmm>::compute_ker_dw(int ur_w,
                 } else {
                     const Zmm r_zmm_src
                             = mask_flag ? zmm_src | ktail_mask : zmm_src;
-                    int start_ = (jcp.signed_input || jcp.with_input_zp) ? 0 : oi_start;
-                    int end_ = (jcp.signed_input || jcp.with_input_zp) ? ur_w : oi_end;
+                    int start_ = (jcp.signed_input || jcp.with_input_zp)
+                            ? 0
+                            : oi_start;
+                    int end_ = (jcp.signed_input || jcp.with_input_zp) ? ur_w
+                                                                       : oi_end;
                     for (int oi = start_; oi < end_; oi++) {
                         if (oi >= oi_start && oi < oi_end) {
                             if (jcp.is_resrc_depthwise) {
@@ -622,7 +641,7 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Zmm>::compute_ker_dw(int ur_w,
                             }
                             compute(zmm_out(oi, ci), zmm_wei, zmm_src);
                         } else {
-                            assert(jcp.signed_input|| jcp.with_input_zp);
+                            assert(jcp.signed_input || jcp.with_input_zp);
                             compute(zmm_out(oi, ci), zmm_wei, zmm_shifted_zero);
                         }
                     }
@@ -662,9 +681,11 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::compute_ker(int ur_w,
     if (jcp.is_depthwise)
         return compute_ker_dw(ur_w, pad_l, pad_r, last_ic_block_flag, h_padded);
 
-    const bool compute_kernel = IMPLICATION(h_padded, jcp.signed_input || jcp.with_input_zp);
+    const bool compute_kernel
+            = IMPLICATION(h_padded, jcp.signed_input || jcp.with_input_zp);
 
-    assert(IMPLICATION(h_padded, jcp.src_zero_point || jcp.signed_input || jcp.with_input_zp));
+    assert(IMPLICATION(h_padded,
+            jcp.src_zero_point || jcp.signed_input || jcp.with_input_zp));
 
     if (jcp.src_zero_point) {
         push(aux_reg_ker_d);
@@ -718,7 +739,9 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::compute_ker(int ur_w,
             for (int ic = 0; ic < icb; ic++) {
                 if (h_padded) {
                     if (jcp.with_input_zp)
-                        uni_vpbroadcastd(vmm_shift, ptr[reg_input_zp + ic_sub_step * ic * sizeof(uint8_t)]);
+                        uni_vpbroadcastd(vmm_shift,
+                                ptr[reg_input_zp
+                                        + ic_sub_step * ic * sizeof(uint8_t)]);
 
                     // fill padded area with shifted value in first iteration
                     if (ic == 0) {
@@ -747,9 +770,13 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::compute_ker(int ur_w,
                         } else {
                             // fill padded area with shifted value in
                             // first iteration
-                            if ((jcp.signed_input || jcp.with_input_zp) && ic == 0) {
+                            if ((jcp.signed_input || jcp.with_input_zp)
+                                    && ic == 0) {
                                 if (jcp.with_input_zp)
-                                    uni_vpbroadcastd(vmm_shift, ptr[reg_input_zp + 4 * ic * sizeof(uint8_t)]);
+                                    uni_vpbroadcastd(vmm_shift,
+                                            ptr[reg_input_zp
+                                                    + 4 * ic
+                                                            * sizeof(uint8_t)]);
 
                                 Vmm inp = vmm_inp(jj, nb_oc_block);
                                 vmovups(inp, vmm_shift);
@@ -850,8 +877,10 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::kh_loop(
         }
 
         mov(reg_ki, ptr[param1 + GET_OFF(kd_padding)]);
-        if ((jcp.signed_input || jcp.src_zero_point || jcp.with_input_zp) || (jcp.dilate_d >= jcp.id)
-                || (!(jcp.signed_input || jcp.src_zero_point || jcp.with_input_zp)
+        if ((jcp.signed_input || jcp.src_zero_point || jcp.with_input_zp)
+                || (jcp.dilate_d >= jcp.id)
+                || (!(jcp.signed_input || jcp.src_zero_point
+                            || jcp.with_input_zp)
                         && (jcp.kd - 1) * (jcp.dilate_d + 1)
                                 < nstl::max(jcp.f_pad, jcp.back_pad))) {
             cmp(reg_ki, 0);
@@ -869,7 +898,8 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::kh_loop(
         mov(aux_reg_ker, reg_ker);
     }
 
-    if ((jcp.signed_input || jcp.src_zero_point || jcp.with_input_zp) && jcp.ndims > 3) {
+    if ((jcp.signed_input || jcp.src_zero_point || jcp.with_input_zp)
+            && jcp.ndims > 3) {
         mov(reg_overflow, ptr[param1 + GET_OFF(t_overflow)]);
         cmp(reg_overflow, 0);
         je(no_t_overflow_label, T_NEAR);
@@ -885,7 +915,8 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::kh_loop(
         L(no_t_overflow_label);
     }
     mov(reg_kj, ptr[param1 + GET_OFF(kh_padding)]);
-    if (jcp.signed_input || jcp.src_zero_point || jcp.with_input_zp || (jcp.dilate_h >= jcp.ih)
+    if (jcp.signed_input || jcp.src_zero_point || jcp.with_input_zp
+            || (jcp.dilate_h >= jcp.ih)
             || (!(jcp.signed_input || jcp.src_zero_point || jcp.with_input_zp)
                     && (jcp.kh - 1) * (jcp.dilate_h + 1)
                             < nstl::max(jcp.t_pad, jcp.b_pad))) {
@@ -911,7 +942,8 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::kh_loop(
         jg(kh_label, T_NEAR);
     }
     L(skip_kh_loop);
-    if ((jcp.signed_input || jcp.src_zero_point || jcp.with_input_zp) && jcp.ndims > 3) {
+    if ((jcp.signed_input || jcp.src_zero_point || jcp.with_input_zp)
+            && jcp.ndims > 3) {
         mov(reg_overflow, ptr[param1 + GET_OFF(b_overflow)]);
         cmp(reg_overflow, 0);
         je(no_b_overflow_label, T_NEAR);
@@ -974,8 +1006,7 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::icb_loop(
     // IC loop
     Label icb_label;
     mov(reg_icb, jcp.nb_ic);
-    if (jcp.with_input_zp)
-        mov(reg_input_zp, ptr[param1 + GET_OFF(input_zp)]);
+    if (jcp.with_input_zp) mov(reg_input_zp, ptr[param1 + GET_OFF(input_zp)]);
 
     L(icb_label);
     const bool do_icb_loop
@@ -1010,8 +1041,7 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::icb_loop(
                 * jcp.ic_block;
         add(reg_inp, jcp.typesize_in * inp_step);
         safe_add(reg_ker, jcp.typesize_in * ker_step, reg_ker_long_offt);
-        if (jcp.with_input_zp)
-            add(reg_input_zp, sizeof(uint8_t) * inp_step);
+        if (jcp.with_input_zp) add(reg_input_zp, sizeof(uint8_t) * inp_step);
 
         dec(reg_icb);
         cmp(reg_icb, 0);
@@ -1061,9 +1091,11 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::generate() {
     preamble();
 
     if (postops_injector_)
-        postops_injector_->push_post_ops_data_on_stack(this->param1, GET_OFF(post_ops_binary_rhs_arg_vec), reg_inp, reg_out);
+        postops_injector_->push_post_ops_data_on_stack(this->param1,
+                GET_OFF(post_ops_binary_rhs_arg_vec), reg_inp, reg_out);
 
-    bool with_quantization = attr_.post_ops_.find(primitive_kind::quantization) != -1;
+    bool with_quantization
+            = attr_.post_ops_.find(primitive_kind::quantization) != -1;
 
     if (jcp.is_depthwise) {
         bool is_zero_point = jcp.src_zero_point || jcp.dst_zero_point;
@@ -1071,7 +1103,8 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::generate() {
         if (!jcp.is_resrc_depthwise) zmm_src = Zmm(++idx);
         if (!jcp.has_vnni) zmm_tmp = Zmm(++idx);
         if (jcp.is_fast_depthwise) zmm_permute = Zmm(++idx);
-        if (jcp.signed_input || jcp.with_input_zp) zmm_shifted_zero = Zmm(++idx);
+        if (jcp.signed_input || jcp.with_input_zp)
+            zmm_shifted_zero = Zmm(++idx);
         // due to extra register used for shifts and compensations
         // and/or saturation, we increment by one more
         if (jcp.signed_input || jcp.with_input_zp || jcp.need_saturation) ++idx;
@@ -1431,8 +1464,7 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::generate() {
     L(done_compute);
     assert(ow_block_jmp_table.size() == static_cast<size_t>(label_cntr));
 
-    if (postops_injector_)
-        postops_injector_->reset_stack_pointer();
+    if (postops_injector_) postops_injector_->reset_stack_pointer();
 
     postamble();
 
@@ -1546,7 +1578,8 @@ status_t jit_avx512_core_x8s8s32x_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
     jcp.with_weights_zp = !attr.weights_zero_points_.has_default_values();
 
     if (jcp.with_input_zp) {
-        if (attr.input_zero_points_.count_ != 1 && attr.input_zero_points_.count_ != jcp.ic * jcp.ngroups)
+        if (attr.input_zero_points_.count_ != 1
+                && attr.input_zero_points_.count_ != jcp.ic * jcp.ngroups)
             return status::unimplemented;
 
         if (attr.output_compensations_.count_ != jcp.oc * jcp.ngroups)
@@ -1556,8 +1589,7 @@ status_t jit_avx512_core_x8s8s32x_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
     if (jcp.with_input_zp && jcp.is_depthwise && ndims == 5)
         return status::unimplemented;
 
-    if (jcp.with_weights_zp)
-        return status::unimplemented;
+    if (jcp.with_weights_zp) return status::unimplemented;
 
     if (jcp.is_depthwise) {
         jcp.ch_block = 16;
@@ -1618,14 +1650,15 @@ status_t jit_avx512_core_x8s8s32x_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
     jcp.is_resrc_depthwise = jcp.is_depthwise && jcp.stride_w < jcp.kw
             && jcp.kw < 4 && jcp.dilate_w == 0;
 
-    jcp.with_quantization = attr.post_ops_.find(primitive_kind::quantization) != -1;
+    jcp.with_quantization
+            = attr.post_ops_.find(primitive_kind::quantization) != -1;
 
     if (jcp.is_depthwise) {
         jcp.max_regs_ur = 31 - jcp.is_fast_depthwise - !jcp.is_resrc_depthwise
                 - (jcp.signed_input || jcp.with_input_zp) - (!jcp.has_vnni)
-                - (jcp.signed_input || jcp.with_input_zp || jcp.need_saturation) // both alias
-                - (bf16_req_extra_regs ? 4 : 0)
-                - jcp.with_quantization;
+                - (jcp.signed_input || jcp.with_input_zp
+                        || jcp.need_saturation) // both alias
+                - (bf16_req_extra_regs ? 4 : 0) - jcp.with_quantization;
     } else {
         jcp.max_regs_ur = bf16_req_extra_regs ? 26 : jcp.has_vnni ? 31 : 28;
     }
@@ -1641,8 +1674,9 @@ status_t jit_avx512_core_x8s8s32x_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
         format_tag_t wei_tag;
         if (jcp.ic_block == 16 || jcp.ch_block == 16) {
             if (is_3d) {
-                wei_tag = with_groups ? jcp.is_depthwise ? Goidhw16g : gOIdhw4i16o4i
-                                      : OIdhw4i16o4i;
+                wei_tag = with_groups
+                        ? jcp.is_depthwise ? Goidhw16g : gOIdhw4i16o4i
+                        : OIdhw4i16o4i;
             } else if (is_1d) {
                 wei_tag = with_groups ? jcp.is_depthwise ? Goiw16g : gOIw4i16o4i
                                       : OIw4i16o4i;
@@ -1725,8 +1759,7 @@ status_t jit_avx512_core_x8s8s32x_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
 
     const int sum_ind = post_ops.find(primitive_kind::sum);
     jcp.with_sum = sum_ind != -1;
-    if (jcp.with_sum)
-        jcp.sum_dt = post_ops.get_sum_dt(jcp.dst_dt);
+    if (jcp.with_sum) jcp.sum_dt = post_ops.get_sum_dt(jcp.dst_dt);
 
     jcp.with_depthwise = post_ops.find(primitive_kind::depthwise) != -1;
 
@@ -1737,8 +1770,9 @@ status_t jit_avx512_core_x8s8s32x_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
     static constexpr bool sum_requires_scale_one = false;
     static constexpr bool sum_requires_zp_zero = false;
     bool post_ops_ok_ = post_ops_ok(post_ops_ok_args_t(avx512_core,
-            {eltwise, binary, sum, depthwise, quantization}, jcp.post_ops, &dst_d, sum_at_pos_0_only,
-            sum_requires_scale_one, sum_requires_zp_zero));
+            {eltwise, binary, sum, depthwise, quantization}, jcp.post_ops,
+            &dst_d, sum_at_pos_0_only, sum_requires_scale_one,
+            sum_requires_zp_zero));
     // temporary workaround that skips avx512 implementation for ternary
     // post-ops with scalar broadcasting to avoid register collisions.
     post_ops_ok_ = post_ops_ok_

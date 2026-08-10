@@ -20,12 +20,12 @@
 #include "common/c_types_map.hpp"
 #include "common/memory_tracking.hpp"
 
-#include "cpu/x64/jit_generator.hpp"
-#include "cpu/x64/jit_primitive_conf.hpp"
-#include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
 #include "cpu/x64/injectors/jit_uni_binary_injector.hpp"
 #include "cpu/x64/injectors/jit_uni_depthwise_injector.hpp"
+#include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
 #include "cpu/x64/injectors/jit_uni_quantization_injector.hpp"
+#include "cpu/x64/jit_generator.hpp"
+#include "cpu/x64/jit_primitive_conf.hpp"
 
 namespace dnnl {
 namespace impl {
@@ -36,9 +36,12 @@ template <cpu_isa_t isa>
 struct jit_uni_fork_dw_conv_fwd_kernel_f32 : public jit_generator_t {
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_uni_fork_dw_conv_fwd_kernel_f32)
 
-    jit_uni_fork_dw_conv_fwd_kernel_f32(const jit_conv_conf_t &ajcp, const memory_desc_t &dst_md, const primitive_attr_t &attr)
-            : jit_generator_t(jit_name()), jcp(ajcp), attr_(attr), dst_md_(dst_md) {
-    }
+    jit_uni_fork_dw_conv_fwd_kernel_f32(const jit_conv_conf_t &ajcp,
+            const memory_desc_t &dst_md, const primitive_attr_t &attr)
+        : jit_generator_t(jit_name())
+        , jcp(ajcp)
+        , attr_(attr)
+        , dst_md_(dst_md) {}
 
     ~jit_uni_fork_dw_conv_fwd_kernel_f32() {
         for (auto inj : eltwise_injectors)
@@ -60,11 +63,12 @@ struct jit_uni_fork_dw_conv_fwd_kernel_f32 : public jit_generator_t {
 
 private:
     using Vmm = typename utils::conditional3<isa == sse41, Xbyak::Xmm,
-        isa == avx2, Xbyak::Ymm, Xbyak::Zmm>::type;
+            isa == avx2, Xbyak::Ymm, Xbyak::Zmm>::type;
     using mask_t = const Xbyak::Opmask;
     using reg64_t = const Xbyak::Reg64;
-    const Xbyak::AddressFrame &vmmword = (isa == sse41)
-        ? xword : (isa == avx2) ? yword : zword;
+    const Xbyak::AddressFrame &vmmword = (isa == sse41) ? xword
+            : (isa == avx2)                             ? yword
+                                                        : zword;
     const int vlen = cpu_isa_traits_t<isa>::vlen;
 
     // dw convolution
@@ -107,17 +111,18 @@ private:
 
     inline bool is_src_layout_nxc() {
         return utils::one_of(jcp.src_tag, format_tag::ndhwc, format_tag::nhwc,
-                             format_tag::nwc);
+                format_tag::nwc);
     }
     inline bool is_dst_layout_nxc() {
         return utils::one_of(jcp.dst_tag, format_tag::ndhwc, format_tag::nhwc,
-                             format_tag::nwc);
+                format_tag::nwc);
     }
 
     inline void load_src(int ur_ch_blocks, int ur_w, bool is_ch_tail);
     inline void compute_loop(int ur_w, int ur_ch_blocks);
     inline void apply_filter(int ur_ch_blocks, int ur_w, bool is_ch_tail);
-    inline void apply_filter_unrolled(int ur_ch_blocks, int ur_w, bool is_ch_tail);
+    inline void apply_filter_unrolled(
+            int ur_ch_blocks, int ur_w, bool is_ch_tail);
     inline void apply_postprocess(int ur_ch_blocks, int ur_w, bool is_ch_tail);
     inline void store_dst(int ur_ch_blocks, int ur_w, bool is_ch_tail);
     inline void loop_body(int ur_ch_blocks);
@@ -125,24 +130,27 @@ private:
     void load_tail(
             Vmm &vmm, const Xbyak::Reg64 &reg, int64_t offset, int load_size);
     void add_tail_from_mem(Vmm &vmm_acc, Vmm &vmm_tmp, const Xbyak::Reg64 &reg,
-                           int64_t offset, int load_size);
+            int64_t offset, int load_size);
     void store_tail(
             Vmm &vmm, const Xbyak::Reg64 &reg, int64_t offset, int store_size);
 
     void generate() override;
 
-    nstl::vector<jit_uni_eltwise_injector_t<isa>*> eltwise_injectors;
-    nstl::vector<jit_uni_depthwise_injector_f32<isa>*> depthwise_injectors;
-    nstl::vector<jit_uni_quantization_injector_f32<isa>*> quantization_injectors;
-    std::unique_ptr<binary_injector::jit_uni_binary_injector_t<isa>> binary_injector;
+    nstl::vector<jit_uni_eltwise_injector_t<isa> *> eltwise_injectors;
+    nstl::vector<jit_uni_depthwise_injector_f32<isa> *> depthwise_injectors;
+    nstl::vector<jit_uni_quantization_injector_f32<isa> *>
+            quantization_injectors;
+    std::unique_ptr<binary_injector::jit_uni_binary_injector_t<isa>>
+            binary_injector;
 };
 
 template <cpu_isa_t isa>
-struct jit_uni_fork_dw_conv_bwd_data_kernel_f32: public jit_generator_t {
+struct jit_uni_fork_dw_conv_bwd_data_kernel_f32 : public jit_generator_t {
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_uni_fork_dw_conv_bwd_data_kernel_f32)
 
-    jit_uni_fork_dw_conv_bwd_data_kernel_f32(const jit_conv_conf_t &ajcp, const primitive_attr_t &attr)
-            : jit_generator_t(jit_name()), jcp(ajcp), attr_(attr) {}
+    jit_uni_fork_dw_conv_bwd_data_kernel_f32(
+            const jit_conv_conf_t &ajcp, const primitive_attr_t &attr)
+        : jit_generator_t(jit_name()), jcp(ajcp), attr_(attr) {}
 
     ~jit_uni_fork_dw_conv_bwd_data_kernel_f32() {
         for (auto inj : depthwise_injectors)
@@ -155,28 +163,28 @@ struct jit_uni_fork_dw_conv_bwd_data_kernel_f32: public jit_generator_t {
 
 private:
     using Vmm = typename utils::conditional3<isa == sse41, Xbyak::Xmm,
-        isa == avx2, Xbyak::Ymm, Xbyak::Zmm>::type;
+            isa == avx2, Xbyak::Ymm, Xbyak::Zmm>::type;
     using reg64_t = const Xbyak::Reg64;
 
     inline Vmm get_ker_reg(int idx) { return Vmm(idx + 0); }
     inline Vmm get_src_reg(int idx) { return Vmm(idx + 1); }
     inline Vmm get_acc_reg(int idx) { return Vmm(idx + 4); }
 
-    reg64_t reg_ddst       = rax;
-    reg64_t aux_reg_ddst   = r8;
+    reg64_t reg_ddst = rax;
+    reg64_t aux_reg_ddst = r8;
     reg64_t aux1_reg_ddst = abi_not_param1;
-    reg64_t reg_kernel     = rdx;
+    reg64_t reg_kernel = rdx;
     reg64_t aux_reg_kernel = r10;
     reg64_t aux1_reg_kernel = rbp;
-    reg64_t reg_dsrc       = rsi;
+    reg64_t reg_dsrc = rsi;
 
     reg64_t reg_ur_str_w = r9;
     reg64_t reg_ch_blocks = rbx;
 
     reg64_t iter_kh = r11;
     reg64_t iter_kw = r12;
-    reg64_t reg_kh  = r13;
-    reg64_t reg_kw  = r14;
+    reg64_t reg_kh = r13;
+    reg64_t reg_kw = r14;
 
     reg64_t reg_d_weights = r15;
     reg64_t reg_d_bias = iter_kh;
@@ -189,12 +197,12 @@ private:
 
     void generate() override;
 
-    nstl::vector<jit_uni_depthwise_injector_f32<isa>*> depthwise_injectors;
+    nstl::vector<jit_uni_depthwise_injector_f32<isa> *> depthwise_injectors;
 };
 
-}
-}
-}
-}
+} // namespace x64
+} // namespace cpu
+} // namespace impl
+} // namespace dnnl
 
 #endif

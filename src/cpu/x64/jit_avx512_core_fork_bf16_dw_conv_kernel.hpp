@@ -20,13 +20,13 @@
 #include "common/c_types_map.hpp"
 #include "common/memory_tracking.hpp"
 
+#include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
 #include "cpu/x64/jit_generator.hpp"
 #include "cpu/x64/jit_primitive_conf.hpp"
-#include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
 
-#include "cpu/x64/jit_avx512_core_bf16cvt.hpp"
-#include "cpu/x64/injectors/jit_uni_depthwise_injector.hpp"
 #include "cpu/x64/injectors/jit_uni_binary_injector.hpp"
+#include "cpu/x64/injectors/jit_uni_depthwise_injector.hpp"
+#include "cpu/x64/jit_avx512_core_bf16cvt.hpp"
 
 namespace dnnl {
 namespace impl {
@@ -36,8 +36,13 @@ namespace x64 {
 struct jit_avx512_fork_dw_conv_fwd_kernel_bf16 : public jit_generator_t {
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_avx512_fork_dw_conv_fwd_kernel_bf16)
 
-    jit_avx512_fork_dw_conv_fwd_kernel_bf16(const jit_conv_conf_t &ajcp, const memory_desc_t &dst_md, const primitive_attr_t& attr)
-        : jit_generator_t(jit_name()), jcp(ajcp), attr_(attr), bf16_emu_(nullptr), dst_md_(dst_md) {
+    jit_avx512_fork_dw_conv_fwd_kernel_bf16(const jit_conv_conf_t &ajcp,
+            const memory_desc_t &dst_md, const primitive_attr_t &attr)
+        : jit_generator_t(jit_name())
+        , jcp(ajcp)
+        , attr_(attr)
+        , bf16_emu_(nullptr)
+        , dst_md_(dst_md) {
         if (!isa_has_bf16(jcp.isa))
             bf16_emu_ = new bf16_emulation_t(this, bf16_emu_reserv_1,
                     bf16_emu_reserv_2, bf16_emu_reserv_3, bf16_emu_reserv_4,
@@ -57,7 +62,7 @@ struct jit_avx512_fork_dw_conv_fwd_kernel_bf16 : public jit_generator_t {
     }
 
     jit_conv_conf_t jcp;
-    const primitive_attr_t& attr_;
+    const primitive_attr_t &attr_;
 
 private:
     using reg64_t = const Xbyak::Reg64;
@@ -65,7 +70,7 @@ private:
     const Xbyak::AddressFrame &vmmword = zword;
 
     const int acc_idx_start = 2;
-    inline int get_max_regs() { return isa_has_bf16(jcp.isa) ? 30 : 25; };
+    inline int get_max_regs() { return isa_has_bf16(jcp.isa) ? 30 : 25; }
 
     // dw convolution
     reg64_t reg_input = r8;
@@ -114,24 +119,28 @@ private:
 
     inline bool is_src_layout_nxc() {
         return utils::one_of(jcp.src_tag, format_tag::ndhwc, format_tag::nhwc,
-                             format_tag::nwc);
+                format_tag::nwc);
     }
 
     inline bool is_dst_layout_nxc() {
         return utils::one_of(jcp.dst_tag, format_tag::ndhwc, format_tag::nhwc,
-                             format_tag::nwc);
+                format_tag::nwc);
     }
 
     inline void load_src(int ur_ch_blocks, int ur_w, bool last_ch_block_flag);
     inline void compute_loop(int ur_w, int ur_ch_blocks);
-    inline void apply_filter(int ur_ch_blocks, int ur_w, bool last_ch_block_flag);
-    inline void apply_filter_unrolled(int ur_ch_blocks, int ur_w, bool last_ch_block_flag);
-    inline void apply_postprocess(int ur_ch_blocks, int ur_w, bool last_ch_block_flag);
+    inline void apply_filter(
+            int ur_ch_blocks, int ur_w, bool last_ch_block_flag);
+    inline void apply_filter_unrolled(
+            int ur_ch_blocks, int ur_w, bool last_ch_block_flag);
+    inline void apply_postprocess(
+            int ur_ch_blocks, int ur_w, bool last_ch_block_flag);
     inline void store_dst(int ur_ch_blocks, int ur_w, bool last_ch_block_flag);
     inline void loop_ow(int ur_ch_blocks);
 
-    nstl::vector<jit_uni_eltwise_injector_t<avx512_core>*> eltwise_injectors;
-    nstl::vector<jit_uni_depthwise_injector_f32<avx512_core>*> depthwise_injectors;
+    nstl::vector<jit_uni_eltwise_injector_t<avx512_core> *> eltwise_injectors;
+    nstl::vector<jit_uni_depthwise_injector_f32<avx512_core> *>
+            depthwise_injectors;
     std::unique_ptr<binary_injector::jit_uni_binary_injector_t<avx512_core>>
             binary_injector;
 
@@ -144,7 +153,8 @@ private:
 struct jit_avx512_fork_dw_conv_bwd_data_kernel_bf16 : public jit_generator_t {
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_avx512_fork_dw_conv_bwd_data_kernel_bf16)
 
-    jit_avx512_fork_dw_conv_bwd_data_kernel_bf16(const jit_conv_conf_t &ajcp, const primitive_attr_t&)
+    jit_avx512_fork_dw_conv_bwd_data_kernel_bf16(
+            const jit_conv_conf_t &ajcp, const primitive_attr_t &)
         : jit_generator_t(jit_name()), jcp(ajcp), bf16_emu_(nullptr) {
 
         if (!isa_has_bf16(jcp.isa))
@@ -161,7 +171,7 @@ private:
     using reg64_t = const Xbyak::Reg64;
 
     const int acc_idx_start = 2;
-    inline int get_max_regs() { return isa_has_bf16(jcp.isa) ? 30 : 25; };
+    inline int get_max_regs() { return isa_has_bf16(jcp.isa) ? 30 : 25; }
 
     Xbyak::Zmm zmm_ker_reg = Xbyak::Zmm(0);
     Xbyak::Zmm zmm_dst_reg = Xbyak::Zmm(1);
@@ -204,9 +214,9 @@ private:
     void generate() override;
 };
 
-}
-}
-}
-}
+} // namespace x64
+} // namespace cpu
+} // namespace impl
+} // namespace dnnl
 
 #endif

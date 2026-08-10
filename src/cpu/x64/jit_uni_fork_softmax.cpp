@@ -14,8 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#include "common/dnnl_thread.hpp"
 #include "cpu/x64/jit_uni_fork_softmax.hpp"
+#include "common/dnnl_thread.hpp"
 
 namespace dnnl {
 namespace impl {
@@ -26,18 +26,19 @@ using namespace utils;
 
 template <cpu_isa_t isa>
 jit_uni_fork_softmax_fwd_t<isa>::jit_uni_fork_softmax_fwd_t(const pd_t *apd)
-        : primitive_t(apd) {}
+    : primitive_t(apd) {}
 
 template <cpu_isa_t isa>
 status_t jit_uni_fork_softmax_fwd_t<isa>::execute(const exec_ctx_t &ctx) const {
-    auto src = CTX_IN_MEM(const uint8_t*, DNNL_ARG_SRC);
-    auto dst = CTX_OUT_MEM(uint8_t*, DNNL_ARG_DST);
+    auto src = CTX_IN_MEM(const uint8_t *, DNNL_ARG_SRC);
+    auto dst = CTX_OUT_MEM(uint8_t *, DNNL_ARG_DST);
 
     const memory_desc_wrapper data_d(pd()->src_md());
 
     const auto &jpp = pd()->jpp_;
 
-    size_t outer_size = utils::array_product(pd()->src_md()->dims, pd()->desc()->softmax_axis);
+    size_t outer_size = utils::array_product(
+            pd()->src_md()->dims, pd()->desc()->softmax_axis);
 
     size_t dim = jpp.channels * jpp.inner_size;
 
@@ -45,11 +46,11 @@ status_t jit_uni_fork_softmax_fwd_t<isa>::execute(const exec_ctx_t &ctx) const {
         const size_t work_amount = outer_size;
 
         auto ker = [&](const int ithr, const int nthr) {
-            size_t start{0}, end{0};
+            size_t start {0}, end {0};
 
             balance211(work_amount, nthr, ithr, start, end);
 
-            size_t ou{0};
+            size_t ou {0};
             nd_iterator_init(start, ou, outer_size);
 
             for (size_t iwork = start; iwork < end; ++iwork) {
@@ -72,15 +73,16 @@ status_t jit_uni_fork_softmax_fwd_t<isa>::execute(const exec_ctx_t &ctx) const {
         const size_t work_amount = ou_blocks;
 
         auto ker = [&](const int ithr, const int nthr) {
-            size_t start{0}, end{0};
+            size_t start {0}, end {0};
 
             balance211(work_amount, nthr, ithr, start, end);
 
-            size_t oub{0};
+            size_t oub {0};
             nd_iterator_init(start, oub, ou_blocks);
 
             for (size_t iwork = start; iwork < end; ++iwork) {
-                size_t work = nstl::min(jpp.outer_block, outer_size - oub * jpp.outer_block);
+                size_t work = nstl::min(
+                        jpp.outer_block, outer_size - oub * jpp.outer_block);
 
                 auto args = jit_softmax_call_s();
                 args.channels = jpp.channels;
@@ -105,7 +107,7 @@ template struct jit_uni_fork_softmax_fwd_t<sse41>;
 template struct jit_uni_fork_softmax_fwd_t<avx2>;
 template struct jit_uni_fork_softmax_fwd_t<avx512_core>;
 
-}
-}
-}
-}
+} // namespace x64
+} // namespace cpu
+} // namespace impl
+} // namespace dnnl

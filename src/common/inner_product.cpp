@@ -114,9 +114,13 @@ status_t ip_attr_check(const inner_product_desc_t &desc, const engine_t *engine,
     if (attr == nullptr) return status::success;
     const data_type_t src_dt = desc.src_desc.data_type;
     const data_type_t wei_dt = desc.weights_desc.data_type;
-    bool is_weight_compression = (one_of(src_dt, data_type::f32, data_type::bf16) &&
-                                  one_of(wei_dt, data_type::u8, data_type::s8, data_type::nf4, data_type::s4, data_type::u4, data_type::f4_e2m1, data_type::u2)) ||
-                                 (one_of(src_dt, data_type::f32) && one_of(wei_dt, data_type::f16, data_type::bf16));
+    bool is_weight_compression
+            = (one_of(src_dt, data_type::f32, data_type::bf16)
+                      && one_of(wei_dt, data_type::u8, data_type::s8,
+                              data_type::nf4, data_type::s4, data_type::u4,
+                              data_type::f4_e2m1, data_type::u2))
+            || (one_of(src_dt, data_type::f32)
+                    && one_of(wei_dt, data_type::f16, data_type::bf16));
     auto attr_mask = smask_t::none;
     // From oneDNN 3.5, those checks must be skipped if wei_decomp is enabled
     // reference from src/plugins/intel_cpu/thirdparty/onednn/src/common/matmul.cpp:L62
@@ -145,12 +149,14 @@ status_t ip_attr_check(const inner_product_desc_t &desc, const engine_t *engine,
                             data_type::s32);
 
         if (engine->kind() == engine_kind::cpu)
-            is_int8 |= one_of(wei_dt, data_type::u8, data_type::s8, data_type::nf4, data_type::s4, data_type::u4, data_type::f4_e2m1, data_type::u2);
-        if (is_int8) fwd_attr_mask |= smask_t::scales | smask_t::zero_points | smask_t::src_dyn_quant_params;
+            is_int8 |= one_of(wei_dt, data_type::u8, data_type::s8,
+                    data_type::nf4, data_type::s4, data_type::u4,
+                    data_type::f4_e2m1, data_type::u2);
+        if (is_int8)
+            fwd_attr_mask |= smask_t::scales | smask_t::zero_points
+                    | smask_t::src_dyn_quant_params;
 
-        if (is_weight_compression) {
-            fwd_attr_mask |= attr_mask;
-        }
+        if (is_weight_compression) { fwd_attr_mask |= attr_mask; }
         VCHECK_IP_UNIMPL(attr->has_default_values(fwd_attr_mask, dst_dt),
                 VERBOSE_UNSUPPORTED_ATTR);
 

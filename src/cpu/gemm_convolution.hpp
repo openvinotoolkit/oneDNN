@@ -105,13 +105,19 @@ struct gemm_convolution_fwd_t : public primitive_t {
                 }
                 return true;
             };
-            auto contain = [&](dnnl::impl::primitive_kind_t kind) { return po.find(kind) != -1; };
-            auto position = [&](dnnl::impl::primitive_kind_t kind) { return po.find(kind); };
-            auto count = [&](dnnl::impl::primitive_kind_t kind) { return po.count(kind); };
+            auto contain = [&](dnnl::impl::primitive_kind_t kind) {
+                return po.find(kind) != -1;
+            };
+            auto position = [&](dnnl::impl::primitive_kind_t kind) {
+                return po.find(kind);
+            };
+            auto count = [&](dnnl::impl::primitive_kind_t kind) {
+                return po.count(kind);
+            };
 
-            return all_post_ops_supported() &&
-                   count(primitive_kind::sum) <= 1 &&
-                   IMPLICATION(contain(primitive_kind::sum), position(primitive_kind::sum) == 0);
+            return all_post_ops_supported() && count(primitive_kind::sum) <= 1
+                    && IMPLICATION(contain(primitive_kind::sum),
+                            position(primitive_kind::sum) == 0);
         }
     };
 
@@ -128,7 +134,8 @@ struct gemm_convolution_fwd_t : public primitive_t {
         bool has_post_ops = post_ops.len() > 0;
         postops_in_ip_ = has_bias || has_post_ops;
 
-        CHECK(safe_ptr_assign(pp_kernel_, pp_kernel_t::create(pd(), pd()->jcp_)));
+        CHECK(safe_ptr_assign(
+                pp_kernel_, pp_kernel_t::create(pd(), pd()->jcp_)));
         return (pp_kernel_) ? pp_kernel_->create_kernel() : status::success;
     }
 
@@ -146,7 +153,7 @@ private:
             const int nthr, const data_t *src_base, const data_t *wei_base,
             const data_t *bia_base, data_t *dst_base,
             const memory_tracking::grantor_t &scratchpad,
-            const std::vector<const void *>& post_ops_binary_rhs_arg_vec) const;
+            const std::vector<const void *> &post_ops_binary_rhs_arg_vec) const;
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 
     using pp_kernel_t = gemm_convolution_utils::pp_kernel_t;
@@ -174,8 +181,7 @@ struct gemm_convolution_bwd_data_t : public primitive_t {
             VDISPATCH_CONV(set_default_alg_kind(alg_kind::convolution_direct),
                     VERBOSE_BAD_ALGORITHM);
             VDISPATCH_CONV(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
-            VDISPATCH_CONV(
-                    is_supported_post_ops(), VERBOSE_UNSUPPORTED_ATTR);
+            VDISPATCH_CONV(is_supported_post_ops(), VERBOSE_UNSUPPORTED_ATTR);
 
             auto scratchpad = scratchpad_registry().registrar();
 
@@ -191,14 +197,15 @@ struct gemm_convolution_bwd_data_t : public primitive_t {
     protected:
         virtual bool is_supported_post_ops() const {
             const auto &p = this->attr()->post_ops_;
-            if (p.len() > 1)
-                return false;
+            if (p.len() > 1) return false;
 
             auto all_post_ops_supported = [&]() {
                 bool ok = true;
 
                 for (int i = 0; i < p.len(); i++) {
-                    ok = ok && utils::one_of(p.entry_[i].kind, primitive_kind::depthwise);
+                    ok = ok
+                            && utils::one_of(p.entry_[i].kind,
+                                    primitive_kind::depthwise);
                 }
                 return ok;
             };
@@ -207,13 +214,13 @@ struct gemm_convolution_bwd_data_t : public primitive_t {
         }
     };
 
-
     gemm_convolution_bwd_data_t(const pd_t *apd) : primitive_t(apd) {
         const auto &post_ops = pd()->attr()->post_ops_;
         for (int i = 0; i < post_ops.len(); i++) {
             auto &post_op = post_ops.entry_[i];
             if (post_op.is_depthwise()) {
-                depthwise_injectors.push_back(new ref_depthwise_scalar_fwd_t(post_op.depthwise.alg));
+                depthwise_injectors.push_back(
+                        new ref_depthwise_scalar_fwd_t(post_op.depthwise.alg));
             }
         }
     }
@@ -239,11 +246,11 @@ private:
             const data_t *diff_dst_base, const data_t *wei_base,
             const data_t *bia_base, data_t *diff_src_base,
             const memory_tracking::grantor_t &scratchpad,
-            const std::vector<const void *>& post_ops_binary_rhs_arg_vec) const;
+            const std::vector<const void *> &post_ops_binary_rhs_arg_vec) const;
 
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 
-    nstl::vector<ref_depthwise_scalar_fwd_t*> depthwise_injectors;
+    nstl::vector<ref_depthwise_scalar_fwd_t *> depthwise_injectors;
 };
 
 struct gemm_convolution_bwd_weights_t : public primitive_t {

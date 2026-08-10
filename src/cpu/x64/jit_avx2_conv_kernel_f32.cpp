@@ -54,7 +54,8 @@ jit_avx2_conv_fwd_kernel_f32_t::jit_avx2_conv_fwd_kernel_f32_t(
         const jit_conv_conf_t &ajcp, const primitive_attr_t &attr,
         const memory_desc_t &dst_md)
     : jit_generator_t(jit_name(), avx2), jcp(ajcp), attr_(attr) {
-    if (jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise || jcp.with_quantization) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise
+            || jcp.with_quantization) {
         using namespace binary_injector;
         static constexpr bool preserve_gpr = true;
         static constexpr bool preserve_vmm = false;
@@ -68,8 +69,9 @@ jit_avx2_conv_fwd_kernel_f32_t::jit_avx2_conv_fwd_kernel_f32_t(
                 memory_desc_wrapper(dst_md), tail_size,
                 use_exact_tail_scalar_bcast};
         static_params_t static_params {this->param1, rhs_arg_static_params};
-        quantization_injector::static_params_t quantization_static_params
-                {ymm_d_weights.getIdx(), ymm_d_bias.getIdx(), reg_d_weights, reg_d_bias};
+        quantization_injector::static_params_t quantization_static_params {
+                ymm_d_weights.getIdx(), ymm_d_bias.getIdx(), reg_d_weights,
+                reg_d_bias};
 
         postops_injector_ = utils::make_unique<
                 injector::jit_uni_postops_injector_t<avx2>>(
@@ -213,20 +215,24 @@ void iterate(const int load_loop_blk, const int ur, const F &f) {
 
 void jit_avx2_conv_fwd_kernel_f32_t::apply_postops(
         const int oc_blocks, const int ur_w, const int oc_tail) {
-    if (jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise || jcp.with_quantization) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise
+            || jcp.with_quantization) {
         Label regular_store;
         test(reg_ci_flag, FLAG_IC_LAST);
         je(regular_store, T_NEAR);
 
         std::map<size_t, int> vmm_idx_off;
         iterate(oc_blocks, ur_w, [&](const bool, const int i, const int j) {
-            vmm_idx_off.insert({get_ymm_idx(ur_w, i, j), i * jcp.oc_block * sizeof(float)});
+            vmm_idx_off.insert({get_ymm_idx(ur_w, i, j),
+                    i * jcp.oc_block * sizeof(float)});
         });
-        depthwise_injector::dynamic_params_t ddp {ymm_d_weights.getIdx(), ymm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
-                                                  ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off,
-                                                  this->rsp, base_post_ops_data_offset};
-        quantization_injector::dynamic_params_t qdp {ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, jcp.dst_dt,
-                                                     this->rsp, base_post_ops_data_offset};
+        depthwise_injector::dynamic_params_t ddp {ymm_d_weights.getIdx(),
+                ymm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
+                ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, this->rsp,
+                base_post_ops_data_offset};
+        quantization_injector::dynamic_params_t qdp {
+                ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, jcp.dst_dt,
+                this->rsp, base_post_ops_data_offset};
 
         injector_utils::vmm_index_set_t vmm_idxs;
         if (jcp.with_binary) {
@@ -258,14 +264,16 @@ void jit_avx2_conv_fwd_kernel_f32_t::apply_postops(
                 jmp(postops_done, T_NEAR);
                 L(postops_no_tail);
             }
-            postops_injector_->compute_vector_range(vmm_idxs, rhs_arg_params, ddp, qdp);
+            postops_injector_->compute_vector_range(
+                    vmm_idxs, rhs_arg_params, ddp, qdp);
             L(postops_done);
 
         } else {
             iterate(oc_blocks, ur_w, [&](const bool, const int i, const int j) {
                 vmm_idxs.emplace(get_ymm_idx(ur_w, i, j));
             });
-            postops_injector_->compute_vector_range(vmm_idxs, binary_injector::rhs_arg_dynamic_params_t(), ddp, qdp);
+            postops_injector_->compute_vector_range(vmm_idxs,
+                    binary_injector::rhs_arg_dynamic_params_t(), ddp, qdp);
         }
         L(regular_store);
     }
@@ -559,7 +567,8 @@ void jit_avx2_conv_fwd_kernel_f32_t::generate() {
     this->preamble();
 
     if (postops_injector_)
-        postops_injector_->push_post_ops_data_on_stack(this->param1, GET_OFF(post_ops_binary_rhs_arg_vec), reg_input, reg_output);
+        postops_injector_->push_post_ops_data_on_stack(this->param1,
+                GET_OFF(post_ops_binary_rhs_arg_vec), reg_input, reg_output);
 
     mov(reg_input, ptr[this->param1 + GET_OFF(src)]);
     mov(reg_output, ptr[this->param1 + GET_OFF(dst)]);
@@ -597,8 +606,7 @@ void jit_avx2_conv_fwd_kernel_f32_t::generate() {
         solve_common(nb_oc_tail);
     }
 
-    if (postops_injector_)
-        postops_injector_->reset_stack_pointer();
+    if (postops_injector_) postops_injector_->reset_stack_pointer();
 
     this->postamble();
 
@@ -728,7 +736,8 @@ status_t jit_avx2_conv_fwd_kernel_f32_t::init_conf(jit_conv_conf_t &jcp,
         if (mimo) jcp.ic = rnd_up(jcp.ic, simd_w);
     }
 
-    if (jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise || jcp.with_quantization)
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise
+            || jcp.with_quantization)
         VDISPATCH_CONV_IC(mayiuse(avx2), VERBOSE_UNSUPPORTED_FEATURE,
                 "eltwise and binary post-ops not implemented on isa");
 
@@ -737,8 +746,9 @@ status_t jit_avx2_conv_fwd_kernel_f32_t::init_conf(jit_conv_conf_t &jcp,
     static constexpr bool sum_requires_scale_one = true;
     static constexpr bool sum_requires_zp_zero = true;
     bool post_ops_ok_ = post_ops_ok(post_ops_ok_args_t(jcp.isa,
-            {eltwise, binary, sum, depthwise, quantization}, jcp.post_ops, &dst_d, sum_at_pos_0_only,
-            sum_requires_scale_one, sum_requires_zp_zero));
+            {eltwise, binary, sum, depthwise, quantization}, jcp.post_ops,
+            &dst_d, sum_at_pos_0_only, sum_requires_scale_one,
+            sum_requires_zp_zero));
     // temporary workaround that skips avx512 implementation for ternary
     // post-ops with scalar broadcasting to avoid register collisions.
     post_ops_ok_ = post_ops_ok_
@@ -1051,16 +1061,22 @@ void jit_avx2_conv_bwd_data_kernel_f32_t::compute_loop(
                 depthwise_inj_idx = 0;
                 base_post_ops_data_offset += reg64_size;
                 push(reg_d_weights);
-                mov(reg_d_weights, ptr[this->rsp + base_post_ops_data_offset + post_ops_data_offset]);
+                mov(reg_d_weights,
+                        ptr[this->rsp + base_post_ops_data_offset
+                                + post_ops_data_offset]);
                 add(reg_d_weights, ptr[this->param1 + GET_OFF(ic_off)]);
                 add(reg_d_weights, jcp.ic_block * ii * sizeof(float));
 
                 for (int kk = 0; kk < p.len(); kk++) {
-                    auto& post_op = p.entry_[kk];
+                    auto &post_op = p.entry_[kk];
                     if (post_op.is_depthwise()) {
-                        depthwise_injectors[depthwise_inj_idx]->compute_vector_range(
-                                ur_w * ii, ur_w * ii + ur_w, reg_d_weights, reg_d_weights, false, true);
-                        post_ops_data_offset += depthwise_injectors[depthwise_inj_idx]->memoryStep();
+                        depthwise_injectors[depthwise_inj_idx]
+                                ->compute_vector_range(ur_w * ii,
+                                        ur_w * ii + ur_w, reg_d_weights,
+                                        reg_d_weights, false, true);
+                        post_ops_data_offset
+                                += depthwise_injectors[depthwise_inj_idx]
+                                           ->memoryStep();
                         depthwise_inj_idx++;
                     }
                 }
@@ -1086,23 +1102,27 @@ void jit_avx2_conv_bwd_data_kernel_f32_t::compute_loop(
         depthwise_inj_idx = 0;
         post_ops_data_offset = 0;
         for (int i = 0; i < p.len(); i++) {
-            auto& post_op = p.entry_[i];
+            auto &post_op = p.entry_[i];
             if (post_op.is_depthwise()) {
                 base_post_ops_data_offset += reg64_size;
                 push(reg_d_weights);
 
-                mov(reg_d_weights, ptr[this->rsp + base_post_ops_data_offset + post_ops_data_offset]);
+                mov(reg_d_weights,
+                        ptr[this->rsp + base_post_ops_data_offset
+                                + post_ops_data_offset]);
                 add(reg_d_weights, ptr[this->param1 + GET_OFF(ic_off)]);
                 for (int ii = 0; ii < nb_ic_block; ii++) {
-                    depthwise_injectors[depthwise_inj_idx]->compute_vector_range(
-                            ur_w * ii, ur_w * ii + ur_w, reg_d_weights, reg_d_weights);
+                    depthwise_injectors[depthwise_inj_idx]
+                            ->compute_vector_range(ur_w * ii, ur_w * ii + ur_w,
+                                    reg_d_weights, reg_d_weights);
 
                     add(reg_d_weights, jcp.ic_block * sizeof(float));
                 }
                 pop(reg_d_weights);
                 base_post_ops_data_offset -= reg64_size;
 
-                post_ops_data_offset += depthwise_injectors[depthwise_inj_idx]->memoryStep();
+                post_ops_data_offset
+                        += depthwise_injectors[depthwise_inj_idx]->memoryStep();
                 depthwise_inj_idx++;
             }
         }
@@ -1143,10 +1163,8 @@ void jit_avx2_conv_bwd_data_kernel_f32_t::generate() {
     for (int i = 0; i < p.len(); i++) {
         auto &post_op = p.entry_[i];
         if (post_op.is_depthwise()) {
-            depthwise_injectors.push_back(new jit_uni_depthwise_injector_f32<avx2>(
-                    this,
-                    post_op
-            ));
+            depthwise_injectors.push_back(
+                    new jit_uni_depthwise_injector_f32<avx2>(this, post_op));
         }
     }
 
@@ -1238,16 +1256,18 @@ void jit_avx2_conv_bwd_data_kernel_f32_t::generate() {
     this->postamble();
 }
 
-bool jit_avx2_conv_bwd_data_kernel_f32_t::post_ops_ok(const jit_conv_conf_t& jcp) {
+bool jit_avx2_conv_bwd_data_kernel_f32_t::post_ops_ok(
+        const jit_conv_conf_t &jcp) {
     const auto &p = jcp.post_ops;
-    if (p.len() > 1)
-        return false;
+    if (p.len() > 1) return false;
 
     auto all_post_ops_supported = [&]() {
         bool ok = true;
 
         for (int i = 0; i < p.len(); i++) {
-            ok = ok && utils::one_of(p.entry_[i].kind, primitive_kind::depthwise);
+            ok = ok
+                    && utils::one_of(
+                            p.entry_[i].kind, primitive_kind::depthwise);
         }
         return ok;
     };
@@ -1313,16 +1333,13 @@ status_t jit_avx2_conv_bwd_data_kernel_f32_t::init_conf(jit_conv_conf_t &jcp,
 
     const int simd_w = 8;
 
-    if (!post_ops_ok(jcp))
-        return status::unimplemented;
+    if (!post_ops_ok(jcp)) return status::unimplemented;
 
     const auto &p = jcp.post_ops;
     if (!mayiuse(avx2)) {
         for (int i = 0; i < p.len(); i++) {
             auto &post_op = p.entry_[i];
-            if (post_op.is_depthwise()) {
-                return status::unimplemented;
-            }
+            if (post_op.is_depthwise()) { return status::unimplemented; }
         }
     }
     jcp.post_ops = p;

@@ -166,7 +166,7 @@ struct jit_avx2_conv_bwd_data_kernel_f32_t : public jit_generator_t {
         depthwise_injectors.clear();
     }
 
-    static bool post_ops_ok(const jit_conv_conf_t& jcp);
+    static bool post_ops_ok(const jit_conv_conf_t &jcp);
     static status_t init_conf(jit_conv_conf_t &jcp,
             const convolution_desc_t &cd, const memory_desc_wrapper &diff_src_d,
             const memory_desc_wrapper &weights_d,
@@ -206,7 +206,7 @@ private:
     int base_post_ops_data_offset = 0;
     constexpr static int reg64_size = 8;
 
-    nstl::vector<jit_uni_depthwise_injector_f32<avx2>*> depthwise_injectors;
+    nstl::vector<jit_uni_depthwise_injector_f32<avx2> *> depthwise_injectors;
 
     inline void compute_loop(int ur_w, int l_overflow, int r_overflow);
 

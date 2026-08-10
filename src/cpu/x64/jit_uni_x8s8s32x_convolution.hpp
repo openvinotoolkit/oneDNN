@@ -62,13 +62,12 @@ struct jit_uni_x8s8s32x_convolution_fwd_t : public primitive_t {
             VDISPATCH_CONV(set_default_alg_kind(alg_kind::convolution_direct),
                     VERBOSE_BAD_ALGORITHM);
             VDISPATCH_CONV(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
-            VDISPATCH_CONV(
-                    attr()->has_default_values(smask_t::scales
-                                    | smask_t::zero_points | smask_t::post_ops
-                                    | smask_t::sum_dt
-                                    | smask_t::input_zero_points
-                                    | smask_t::output_compensations,
-                            dst_md(0)->data_type),
+            VDISPATCH_CONV(attr()->has_default_values(smask_t::scales
+                                           | smask_t::zero_points
+                                           | smask_t::post_ops | smask_t::sum_dt
+                                           | smask_t::input_zero_points
+                                           | smask_t::output_compensations,
+                                   dst_md(0)->data_type),
                     VERBOSE_UNSUPPORTED_ATTR);
             VDISPATCH_CONV(attr()->post_ops_.check_sum_consistency(
                                    dst_md(0)->data_type, /* is_int8 */ true),

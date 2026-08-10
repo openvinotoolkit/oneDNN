@@ -53,34 +53,37 @@ struct jit_avx2_1x1_convolution_with_dw_conv_fwd_t : public primitive_t {
     //              (maybe...)!
     struct pd_t : public cpu_convolution_fwd_pd_t {
         pd_t(const op_desc_t *adesc, const primitive_attr_t *attr,
-             const typename pd_t::base_class *hint_fwd_pd)
-                : cpu_convolution_fwd_pd_t(adesc, attr, hint_fwd_pd)
-                , jcp_(), jcp_dw_(), rtus_() {}
+                const typename pd_t::base_class *hint_fwd_pd)
+            : cpu_convolution_fwd_pd_t(adesc, attr, hint_fwd_pd)
+            , jcp_()
+            , jcp_dw_()
+            , rtus_() {}
 
         pd_t(const pd_t &other) : cpu_convolution_fwd_pd_t(other) {
             if (copy(other) != status::success) is_initialized_ = false;
         }
 
-        DECLARE_COMMON_PD_T(JIT_IMPL_NAME_HELPER("jit_1x1_with_dw_conv:", avx2, ""),
-                            jit_avx2_1x1_convolution_with_dw_conv_fwd_t);
+        DECLARE_COMMON_PD_T(
+                JIT_IMPL_NAME_HELPER("jit_1x1_with_dw_conv:", avx2, ""),
+                jit_avx2_1x1_convolution_with_dw_conv_fwd_t);
 
         status_t init(engine_t *engine) {
             using namespace prop_kind;
             assert(engine->kind() == engine_kind::cpu);
-            bool ok = true
-                      && this->set_default_formats()
-                      && utils::one_of(this->desc()->prop_kind, forward_training,
-                                       forward_inference)
-                      && utils::one_of(this->desc()->alg_kind,
-                                       alg_kind::convolution_auto,
-                                       alg_kind::convolution_direct)
-                      && !this->has_zero_dim_memory()
-                      && utils::everyone_is(data_type::f32,
-                                            this->desc()->src_desc.data_type,
-                                            this->desc()->weights_desc.data_type,
-                                            this->desc()->dst_desc.data_type)
-                      && IMPLICATION(this->with_bias(),
-                                     data_type::f32 == this->desc()->bias_desc.data_type);
+            bool ok = true && this->set_default_formats()
+                    && utils::one_of(this->desc()->prop_kind, forward_training,
+                            forward_inference)
+                    && utils::one_of(this->desc()->alg_kind,
+                            alg_kind::convolution_auto,
+                            alg_kind::convolution_direct)
+                    && !this->has_zero_dim_memory()
+                    && utils::everyone_is(data_type::f32,
+                            this->desc()->src_desc.data_type,
+                            this->desc()->weights_desc.data_type,
+                            this->desc()->dst_desc.data_type)
+                    && IMPLICATION(this->with_bias(),
+                            data_type::f32
+                                    == this->desc()->bias_desc.data_type);
             if (!ok) return status::unimplemented;
 
             const convolution_desc_t *conv_d = this->desc();
@@ -92,14 +95,16 @@ struct jit_avx2_1x1_convolution_with_dw_conv_fwd_t : public primitive_t {
             if (sts_1x1 != status::success) return sts_1x1;
 
             if (jcp_.with_dw_conv) {
-                status_t sts_dw = jit_uni_dw_conv_row_f32<avx2>::init_conf(jcp_, jcp_dw_, *this->attr());
+                status_t sts_dw = jit_uni_dw_conv_row_f32<avx2>::init_conf(
+                        jcp_, jcp_dw_, *this->attr());
                 if (sts_dw != status::success) return sts_dw;
             } else {
                 return status::unimplemented;
             }
 
             auto scratchpad = scratchpad_registry().registrar();
-            jit_avx2_1x1_conv_kernel_f32_old::init_scratchpad(scratchpad, jcp_, jcp_dw_);
+            jit_avx2_1x1_conv_kernel_f32_old::init_scratchpad(
+                    scratchpad, jcp_, jcp_dw_);
 
             rtus_prepare_space_info(this, scratchpad, dnnl_get_max_threads());
 
@@ -120,8 +125,8 @@ struct jit_avx2_1x1_convolution_with_dw_conv_fwd_t : public primitive_t {
 
             auto dat_tag = utils::pick(ndims() - 3, nCw8c, nChw8c, nCdhw8c);
             auto wei_tag = with_groups()
-                           ? utils::pick(ndims() - 3, gOIw8i8o, gOIhw8i8o, gOIdhw8i8o)
-                           : utils::pick(ndims() - 3, OIw8i8o, OIhw8i8o, OIdhw8i8o);
+                    ? utils::pick(ndims() - 3, gOIw8i8o, gOIhw8i8o, gOIdhw8i8o)
+                    : utils::pick(ndims() - 3, OIw8i8o, OIhw8i8o, OIdhw8i8o);
 
             return set_default_formats_common(dat_tag, wei_tag, dat_tag);
         }
@@ -138,20 +143,21 @@ struct jit_avx2_1x1_convolution_with_dw_conv_fwd_t : public primitive_t {
     template <cpu_isa_t isa, typename conv_t>
     friend status_t init_rtus_driver(conv_t *self);
 
-    jit_avx2_1x1_convolution_with_dw_conv_fwd_t(const pd_t *apd) : primitive_t(apd),
-        kernel_old_(nullptr), rtus_driver_(nullptr) {
-        kernel_old_ = new jit_avx2_1x1_conv_kernel_f32_old(pd()->jcp_, pd()->jcp_dw_, *pd()->attr());
+    jit_avx2_1x1_convolution_with_dw_conv_fwd_t(const pd_t *apd)
+        : primitive_t(apd), kernel_old_(nullptr), rtus_driver_(nullptr) {
+        kernel_old_ = new jit_avx2_1x1_conv_kernel_f32_old(
+                pd()->jcp_, pd()->jcp_dw_, *pd()->attr());
         init_rtus_driver<avx2>(this);
 
         if (pd()->jcp_.with_dw_conv) {
-            kernel_dw_ = new jit_uni_dw_conv_row_f32<avx2>(pd()->jcp_dw_, *pd()->attr(), pd()->jcp_dw_.ch_block);
+            kernel_dw_ = new jit_uni_dw_conv_row_f32<avx2>(
+                    pd()->jcp_dw_, *pd()->attr(), pd()->jcp_dw_.ch_block);
         }
     }
 
     status_t init(engine_t *engine) override {
         CHECK(kernel_old_->create_kernel());
-        if (kernel_dw_)
-            CHECK(kernel_dw_->create_kernel());
+        if (kernel_dw_) CHECK(kernel_dw_->create_kernel());
         return status::success;
     }
 
@@ -175,7 +181,6 @@ private:
     jit_avx2_1x1_conv_kernel_f32_old *kernel_old_;
     jit_uni_dw_conv_row_f32<avx2> *kernel_dw_;
     rtus_driver_t<avx2> *rtus_driver_;
-
 };
 
 } // namespace x64

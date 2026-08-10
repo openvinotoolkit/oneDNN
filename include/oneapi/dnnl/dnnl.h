@@ -20,11 +20,11 @@
 #ifndef ONEAPI_DNNL_DNNL_H
 #define ONEAPI_DNNL_DNNL_H
 
+#include <stdbool.h>
 #include "oneapi/dnnl/dnnl_common.h"
 #include "oneapi/dnnl/dnnl_config.h"
 #include "oneapi/dnnl/dnnl_types.h"
 #include "oneapi/dnnl/dnnl_version.h"
-#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -459,7 +459,8 @@ dnnl_status_t DNNL_API dnnl_primitive_attr_set_scratchpad_mode(
 dnnl_status_t DNNL_API dnnl_primitive_attr_set_scales_mask(
         dnnl_primitive_attr_t attr, int arg, int mask);
 dnnl_status_t DNNL_API dnnl_primitive_attr_set_scales_dims(
-        dnnl_primitive_attr_t attr, int arg, const dnnl_dims_t dims, int ndims, dnnl_data_type_t data_type);
+        dnnl_primitive_attr_t attr, int arg, const dnnl_dims_t dims, int ndims,
+        dnnl_data_type_t data_type);
 
 /// Sets primitive attributes scaling factors for primitive operations for a
 /// given memory argument. The scaling factors must be passed at execution time
@@ -570,7 +571,8 @@ dnnl_status_t DNNL_API dnnl_primitive_attr_set_scales_v3(
 dnnl_status_t DNNL_API dnnl_primitive_attr_set_zero_points_mask(
         dnnl_primitive_attr_t attr, int arg, int mask);
 dnnl_status_t DNNL_API dnnl_primitive_attr_set_zero_points_dims(
-        dnnl_primitive_attr_t attr, int arg, const dnnl_dims_t dims, int ndims, dnnl_data_type_t data_type);
+        dnnl_primitive_attr_t attr, int arg, const dnnl_dims_t dims, int ndims,
+        dnnl_data_type_t data_type);
 
 /// Sets primitive attributes zero points for primitive operations for a given
 /// memory argument. The zero points must be passed at execution time
@@ -895,8 +897,9 @@ dnnl_status_t DNNL_API dnnl_post_ops_get_params_dw(
 /// @p weights and @p bias.
 ///
 /// The kind of this post operation is #dnnl_convolution.
-dnnl_status_t DNNL_API dnnl_post_ops_append_dw_conv(
-        dnnl_post_ops_t post_ops, int in_h, int in_w, int ker_h, int ker_w, int str_h, int str_w, dnnl_data_type_t in_dt);
+dnnl_status_t DNNL_API dnnl_post_ops_append_dw_conv(dnnl_post_ops_t post_ops,
+        int in_h, int in_w, int ker_h, int ker_w, int str_h, int str_w,
+        dnnl_data_type_t in_dt);
 
 /// Appends a binary post-op.
 ///
@@ -1022,17 +1025,17 @@ dnnl_status_t DNNL_API dnnl_post_ops_append_prelu(
 dnnl_status_t DNNL_API dnnl_post_ops_get_params_prelu(
         const_dnnl_post_ops_t post_ops, int index, int *mask);
 
-dnnl_status_t DNNL_API dnnl_post_ops_append_depthwise(
-        dnnl_post_ops_t post_ops, dnnl_alg_kind_t alg, size_t offset_size, const size_t* offset);
+dnnl_status_t DNNL_API dnnl_post_ops_append_depthwise(dnnl_post_ops_t post_ops,
+        dnnl_alg_kind_t alg, size_t offset_size, const size_t *offset);
 
 dnnl_status_t DNNL_API dnnl_post_ops_append_quantization(
-        dnnl_post_ops_t post_ops, dnnl_alg_kind_t alg,
-        size_t per_channel_size, const bool* per_channel,
-        size_t all_default_size, const bool* all_default,
-        size_t offset_size, const size_t* offset);
+        dnnl_post_ops_t post_ops, dnnl_alg_kind_t alg, size_t per_channel_size,
+        const bool *per_channel, size_t all_default_size,
+        const bool *all_default, size_t offset_size, const size_t *offset);
 
 dnnl_status_t DNNL_API dnnl_post_ops_append_binarization(
-        dnnl_post_ops_t post_ops, dnnl_alg_kind_t alg, const float* weights_data, const float* output_mask);
+        dnnl_post_ops_t post_ops, dnnl_alg_kind_t alg,
+        const float *weights_data, const float *output_mask);
 
 /// @} dnnl_api_attributes
 
@@ -1230,9 +1233,8 @@ dnnl_status_t DNNL_API dnnl_memory_desc_create_with_grouped_encoding(
 /// @returns #dnnl_success on success and a status describing the error
 ///     otherwise.
 dnnl_status_t DNNL_API dnnl_memory_desc_create_with_packed_encoding_v0(
-        dnnl_memory_desc_t *memory_desc,
-        dnnl_sparse_encoding_t encoding, int ndims,
-        const dnnl_dims_t dims, dnnl_data_type_t data_type);
+        dnnl_memory_desc_t *memory_desc, dnnl_sparse_encoding_t encoding,
+        int ndims, const dnnl_dims_t dims, dnnl_data_type_t data_type);
 
 /// Creates a memory descriptor for a scalar value that resides on the host.
 ///
@@ -3021,8 +3023,8 @@ dnnl_status_t DNNL_API dnnl_primitive_attr_get_rnn_weights_projection_qparams(
 
 dnnl_status_t DNNL_API dnnl_primitive_attr_set_src_dyn_quant_params(
         dnnl_primitive_attr_t attr, uint64_t group_size);
-dnnl_status_t DNNL_API  dnnl_primitive_attr_get_src_dyn_quant_params(
-        dnnl_primitive_attr_t attr, uint64_t* group_size);
+dnnl_status_t DNNL_API dnnl_primitive_attr_get_src_dyn_quant_params(
+        dnnl_primitive_attr_t attr, uint64_t *group_size);
 /// @} dnnl_api_attributes
 
 /// @addtogroup dnnl_api_rnn
