@@ -46,11 +46,17 @@ if  [[ ! -z "${REPORT_DIR}" ]]; then
     export GTEST_OUTPUT="${REPORT_DIR}/report/test_report.xml"
 fi
 
-CTEST_OPTS="${CTEST_OPTS} --verbose --output-on-failure"
+CTEST_OPTS=(--verbose --output-on-failure)
 
-echo "CTest options: ${CTEST_OPTS}"
+if [[ -n "${ONEDNN_SKIP_TESTS_REGEX:-}" ]]; then
+    CTEST_OPTS+=(-E "${ONEDNN_SKIP_TESTS_REGEX}")
+fi
+
+printf 'CTest options:'
+printf ' %q' "${CTEST_OPTS[@]}"
+printf '\n'
 cd "${BUILD_DIR}"
-ctest ${CTEST_OPTS}
+ctest "${CTEST_OPTS[@]}"
 result=$?
 
 echo "DONE"

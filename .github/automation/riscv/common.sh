@@ -19,25 +19,24 @@
 # *******************************************************************************
 
 # Common variables for RISC-V CI. Exports:
-# CC, CXX, OS, QEMU_PREFIX
+# CC, CXX, OS, CMAKE_TOOLCHAIN_FILE
 
 set -o errexit -o pipefail -o noclobber
 
 export OS=$(uname)
 
-# Num threads on system.
 if [[ "$OS" == "Linux" ]]; then
     export MP="-j$(nproc)"
 fi
 
-# Cross-compilation mode
 if [[ "$BUILD_TOOLSET" == "gcc" ]]; then
     export CC=riscv64-linux-gnu-gcc-${GCC_VERSION}
     export CXX=riscv64-linux-gnu-g++-${GCC_VERSION}
 fi
-export CMAKE_TOOLCHAIN_FILE="$(dirname "$(readlink -f "$0")")/../../../cmake/toolchains/riscv64.cmake"
 
-# Print every exported variable.
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
+export CMAKE_TOOLCHAIN_FILE="${SCRIPT_DIR}/../../../cmake/toolchains/riscv64.cmake"
+
 echo "Cross-compilation mode for RISC-V"
 echo "OS: $OS"
 echo "CC: $CC"
