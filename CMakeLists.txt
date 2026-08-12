@@ -56,6 +56,10 @@ set(PROJECT_VERSION "3.13.0")
 
 project(${PROJECT_NAME} VERSION "${PROJECT_VERSION}" LANGUAGES C CXX)
 
+if(NOT BUILD_SHARED_LIBS)
+    add_compile_definitions(${onednn_renamed_definitions})
+endif()
+
 if (NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
     message(WARNING "oneDNN officially supports 64 bit platforms only")
 endif()
