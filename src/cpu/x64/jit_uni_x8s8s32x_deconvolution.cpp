@@ -444,7 +444,7 @@ jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa,
 
     if (jcp_.with_eltwise || jcp_.with_binary || jcp_.with_sum
             || jcp_.with_depthwise || jcp_.with_quantization) {
-        const std::size_t tail_size = get_tail_size();
+                const int tail_size = static_cast<int>(get_tail_size());
 
         static constexpr bool preserve_gpr = true;
         static constexpr bool preserve_vmm = true;
