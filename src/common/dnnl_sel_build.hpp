@@ -14,7 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#pragma once
+#ifndef COMMON_DNNL_SEL_BUILD_HPP
+#define COMMON_DNNL_SEL_BUILD_HPP
 
 #define DNNL_MACRO_EXPAND(x) x
 
@@ -137,5 +138,7 @@ OV_CC_DOMAINS(DNNL)
     expr(type<t1, t2, t3, t4, t5, t6>)
 #define DNNL_PRIMITIVE_IMPL_9(expr, type, t1, t2, t3, t4, t5, t6, t7) \
     expr(type<t1, t2, t3, t4, t5, t6, t7>)
+
+#endif
 
 #endif

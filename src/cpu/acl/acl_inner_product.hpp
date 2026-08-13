@@ -14,8 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#ifndef CPU_ACL_INNER_PRODUCT_HPP
-#define CPU_ACL_INNER_PRODUCT_HPP
+#ifndef CPU_ACL_ACL_INNER_PRODUCT_HPP
+#define CPU_ACL_ACL_INNER_PRODUCT_HPP
 
 #include "cpu/acl/acl_post_ops.hpp"
 #include "cpu/acl/acl_utils.hpp"
@@ -80,4 +80,4 @@ private:
 } // namespace impl
 } // namespace dnnl
 
-#endif // CPU_ACL_INNER_PRODUCT_HPP
+#endif // CPU_ACL_ACL_INNER_PRODUCT_HPP

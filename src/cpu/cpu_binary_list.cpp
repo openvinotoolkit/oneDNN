@@ -30,7 +30,7 @@ using namespace dnnl::impl::cpu::aarch64;
 #include "cpu/rv64/jit_uni_binary.hpp"
 using namespace dnnl::impl::cpu::rv64;
 #endif
-#if DNNL_USE_ACL
+#if defined(DNNL_USE_ACL)
 #include "cpu/acl/acl_binary.hpp"
 using namespace dnnl::impl::cpu::acl;
 #endif

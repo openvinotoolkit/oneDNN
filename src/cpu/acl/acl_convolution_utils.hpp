@@ -14,8 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#ifndef CPU_ACL_CONVOLUTION_UTILS_HPP
-#define CPU_ACL_CONVOLUTION_UTILS_HPP
+#ifndef CPU_ACL_ACL_CONVOLUTION_UTILS_HPP
+#define CPU_ACL_ACL_CONVOLUTION_UTILS_HPP
 
 #include <map>
 #include "acl_post_ops.hpp"
@@ -239,4 +239,4 @@ status_t execute_forward_conv_acl(
 } // namespace impl
 } // namespace dnnl
 
-#endif // CPU_ACL_CONVOLUTION_UTILS_HPP
+#endif // CPU_ACL_ACL_CONVOLUTION_UTILS_HPP

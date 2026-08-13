@@ -14,8 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#ifndef CPU_ACL_UTILS_HPP
-#define CPU_ACL_UTILS_HPP
+#ifndef CPU_ACL_ACL_UTILS_HPP
+#define CPU_ACL_ACL_UTILS_HPP
 
 #include <mutex>
 
@@ -130,4 +130,4 @@ status_t reorder_to_weight_format(arm_compute::TensorInfo &info,
 } // namespace impl
 } // namespace dnnl
 
-#endif // CPU_ACL_UTILS_HPP
+#endif // CPU_ACL_ACL_UTILS_HPP

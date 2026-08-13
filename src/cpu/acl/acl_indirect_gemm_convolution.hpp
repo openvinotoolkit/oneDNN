@@ -14,8 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#ifndef CPU_ACL_INDIRECT_GEMM_CONVOLUTION_HPP
-#define CPU_ACL_INDIRECT_GEMM_CONVOLUTION_HPP
+#ifndef CPU_ACL_ACL_INDIRECT_GEMM_CONVOLUTION_HPP
+#define CPU_ACL_ACL_INDIRECT_GEMM_CONVOLUTION_HPP
 
 #include "cpu/cpu_convolution_pd.hpp"
 
@@ -66,4 +66,4 @@ private:
 } // namespace impl
 } // namespace dnnl
 
-#endif // CPU_ACL_INDIRECT_GEMM_CONVOLUTION_HPP
+#endif // CPU_ACL_ACL_INDIRECT_GEMM_CONVOLUTION_HPP

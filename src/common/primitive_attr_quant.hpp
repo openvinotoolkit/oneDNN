@@ -203,22 +203,22 @@ struct quant_entry_t : public c_compatible {
         }
 
         if (is_host_scalar_) {
-            CHECK(memory_desc_init_host_scalar(out_md, data_type_));
+            CHECK(memory_desc_init_host_scalar(out_md, get_data_type()));
             return status::success;
         }
 
         dims_t quant_dims {};
         const dims_t &in_dims = base_md.dims;
         int ndims = base_md.ndims;
-        utils::copy_dims_with_mask(quant_dims, in_dims, ndims, mask_,
+        utils::copy_dims_with_mask(quant_dims, in_dims, ndims, get_mask(),
                 /* fill_with_ones = */ true);
         if (!has_default_groups()) {
             quant_dims[ndims - 2] /= get_group(0);
             quant_dims[ndims - 1] /= get_group(1);
         }
 
-        CHECK(memory_desc_init_by_tag(
-                out_md, ndims, quant_dims, data_type_, get_abx_tag(ndims)));
+        CHECK(memory_desc_init_by_tag(out_md, ndims, quant_dims,
+                get_data_type(), get_abx_tag(ndims)));
         return status::success;
     }
 

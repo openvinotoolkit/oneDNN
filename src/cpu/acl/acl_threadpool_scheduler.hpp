@@ -14,8 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#ifndef CPU_ACL_THREADPOOL_SCHEDULER_HPP
-#define CPU_ACL_THREADPOOL_SCHEDULER_HPP
+#ifndef CPU_ACL_ACL_THREADPOOL_SCHEDULER_HPP
+#define CPU_ACL_ACL_THREADPOOL_SCHEDULER_HPP
 
 #include "oneapi/dnnl/dnnl_config.h"
 
@@ -66,4 +66,4 @@ private:
 
 #endif // DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_THREADPOOL
 
-#endif // CPU_ACL_THREADPOOL_SCHEDULER_HPP
+#endif // CPU_ACL_ACL_THREADPOOL_SCHEDULER_HPP

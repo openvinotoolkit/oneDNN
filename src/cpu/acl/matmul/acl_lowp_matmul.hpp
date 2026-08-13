@@ -14,8 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#ifndef ACL_LOWP_MATMUL_HPP
-#define ACL_LOWP_MATMUL_HPP
+#ifndef CPU_ACL_MATMUL_ACL_LOWP_MATMUL_HPP
+#define CPU_ACL_MATMUL_ACL_LOWP_MATMUL_HPP
 
 #include "arm_compute/runtime/experimental/operators/CpuDequantize.h"
 #include "arm_compute/runtime/experimental/operators/CpuGEMMLowp.h"
@@ -86,4 +86,4 @@ private:
 } // namespace impl
 } // namespace dnnl
 
-#endif // ACL_LOWP_MATMUL_HPP
+#endif // CPU_ACL_MATMUL_ACL_LOWP_MATMUL_HPP

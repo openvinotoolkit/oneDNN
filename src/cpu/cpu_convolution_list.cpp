@@ -70,7 +70,8 @@ using namespace dnnl::impl::cpu::x64;
 #include "cpu/aarch64/jit_uni_dw_convolution.hpp"
 using namespace dnnl::impl::cpu::aarch64;
 #endif
-#if DNNL_USE_ACL
+#if defined(DNNL_USE_ACL)
+#include "cpu/acl/acl_depthwise_convolution.hpp"
 #include "cpu/acl/acl_gemm_convolution.hpp"
 #include "cpu/acl/acl_indirect_gemm_convolution.hpp"
 #include "cpu/acl/acl_depthwise_convolution.hpp"
