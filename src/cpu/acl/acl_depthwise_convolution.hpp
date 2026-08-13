@@ -14,8 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#ifndef CPU_ACL_DEPTHWISE_CONVOLUTION_HPP
-#define CPU_ACL_DEPTHWISE_CONVOLUTION_HPP
+#ifndef CPU_ACL_ACL_DEPTHWISE_CONVOLUTION_HPP
+#define CPU_ACL_ACL_DEPTHWISE_CONVOLUTION_HPP
 
 #include "acl_convolution_utils.hpp"
 #include "arm_compute/runtime/experimental/operators/CpuDepthwiseConv2d.h"
@@ -62,4 +62,4 @@ private:
 } // namespace impl
 } // namespace dnnl
 
-#endif // CPU_ACL_DEPTHWISE_CONVOLUTION_HPP
+#endif // CPU_ACL_ACL_DEPTHWISE_CONVOLUTION_HPP

@@ -13,8 +13,8 @@
 * See the License for the specific language governing permissions and
 * limitations under the License.
 *******************************************************************************/
-#ifndef CPU_ACL_PRELU_HPP
-#define CPU_ACL_PRELU_HPP
+#ifndef CPU_ACL_ACL_PRELU_HPP
+#define CPU_ACL_ACL_PRELU_HPP
 
 #include "cpu/acl/acl_utils.hpp"
 #include "cpu/cpu_prelu_pd.hpp"
@@ -156,4 +156,4 @@ private:
 } // namespace impl
 } // namespace dnnl
 
-#endif // CPU_ACL_PRELU_HPP
+#endif // CPU_ACL_ACL_PRELU_HPP

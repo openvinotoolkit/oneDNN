@@ -103,9 +103,6 @@ const char *dnnl_sparse_encoding2str(dnnl_sparse_encoding_t v) {
     if (v == dnnl_csr) return "csr";
     if (v == dnnl_packed) return "packed";
     if (v == dnnl_coo) return "coo";
-#if DNNL_EXPERIMENTAL_GROUPED_MEMORY
-    if (v == dnnl_grouped) return "grouped";
-#endif
     assert(!"unknown sparse_encoding");
     return "unknown sparse_encoding";
 }
@@ -1933,11 +1930,11 @@ const char *dnnl_alg_kind2str(dnnl_alg_kind_t v) {
     if (v == dnnl_softmax_log) return "softmax_log";
     if (v == dnnl_depthwise_scale_shift) return "depthwise_scale_shift";
     if (v == dnnl_depthwise_prelu) return "depthwise_prelu";
-    if (v == dnnl_quantization_quantize_dequantize)
-        return "quantization_quantize_dequantize";
+    if (v == dnnl_quantization_quantize_dequantize) return "quantization_quantize_dequantize";
     if (v == dnnl_quantization_quantize) return "quantization_quantize";
     if (v == dnnl_binarization_depthwise) return "binarization_depthwise";
-    if (v == dnnl::impl::alg_kind::softmax_accurate_inf_as_zero) return "softmax_accurate_inf_as_zero";
+    if (v == dnnl::impl::alg_kind::softmax_accurate_inf_as_zero)
+        return "softmax_accurate_inf_as_zero";
     assert(!"unknown alg_kind");
     return "unknown alg_kind";
 }

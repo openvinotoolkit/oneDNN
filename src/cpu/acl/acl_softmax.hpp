@@ -14,8 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#ifndef CPU_ACL_SOFTMAX_HPP
-#define CPU_ACL_SOFTMAX_HPP
+#ifndef CPU_ACL_ACL_SOFTMAX_HPP
+#define CPU_ACL_ACL_SOFTMAX_HPP
 
 #include "cpu/cpu_softmax_pd.hpp"
 

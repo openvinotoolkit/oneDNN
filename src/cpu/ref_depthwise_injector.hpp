@@ -14,8 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#ifndef REF_DEPTHWISE_INJECTOR_HPP
-#define REF_DEPTHWISE_INJECTOR_HPP
+#ifndef CPU_REF_DEPTHWISE_INJECTOR_HPP
+#define CPU_REF_DEPTHWISE_INJECTOR_HPP
 
 #include "common/primitive.hpp"
 #include "common/primitive_attr.hpp"

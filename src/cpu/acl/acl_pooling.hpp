@@ -14,8 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#ifndef CPU_ACL_POOLING_HPP
-#define CPU_ACL_POOLING_HPP
+#ifndef CPU_ACL_ACL_POOLING_HPP
+#define CPU_ACL_ACL_POOLING_HPP
 
 #include "cpu/cpu_pooling_pd.hpp"
 
@@ -79,4 +79,4 @@ private:
 } // namespace impl
 } // namespace dnnl
 
-#endif // CPU_ACL_POOLING_HPP
+#endif // CPU_ACL_ACL_POOLING_HPP

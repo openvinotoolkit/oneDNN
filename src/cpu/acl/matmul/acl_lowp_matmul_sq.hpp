@@ -14,8 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#ifndef ACL_LOWP_MATMUL_SQ_HPP
-#define ACL_LOWP_MATMUL_SQ_HPP
+#ifndef CPU_ACL_MATMUL_ACL_LOWP_MATMUL_SQ_HPP
+#define CPU_ACL_MATMUL_ACL_LOWP_MATMUL_SQ_HPP
 
 #include <memory>
 
@@ -89,4 +89,4 @@ private:
 } // namespace impl
 } // namespace dnnl
 
-#endif // ACL_LOWP_MATMUL_SQ_HPP
+#endif // CPU_ACL_MATMUL_ACL_LOWP_MATMUL_SQ_HPP

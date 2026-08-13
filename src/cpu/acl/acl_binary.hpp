@@ -14,8 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#ifndef CPU_ACL_BINARY_HPP
-#define CPU_ACL_BINARY_HPP
+#ifndef CPU_ACL_ACL_BINARY_HPP
+#define CPU_ACL_ACL_BINARY_HPP
 
 #include "acl_utils.hpp"
 #include "cpu/cpu_binary_pd.hpp"

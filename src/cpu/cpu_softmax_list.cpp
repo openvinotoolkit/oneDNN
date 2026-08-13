@@ -28,7 +28,7 @@ using namespace dnnl::impl::cpu::x64;
 #include "cpu/aarch64/jit_uni_softmax.hpp"
 using namespace dnnl::impl::cpu::aarch64;
 #endif
-#if DNNL_USE_ACL
+#if defined(DNNL_USE_ACL)
 #include "cpu/acl/acl_softmax.hpp"
 using namespace dnnl::impl::cpu::acl;
 #endif

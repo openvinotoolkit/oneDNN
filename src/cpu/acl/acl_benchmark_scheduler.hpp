@@ -13,8 +13,8 @@
 * See the License for the specific language governing permissions and
 * limitations under the License.
 *******************************************************************************/
-#ifndef CPU_ACL_BENCHMARK_SCHEDULER_HPP
-#define CPU_ACL_BENCHMARK_SCHEDULER_HPP
+#ifndef CPU_ACL_ACL_BENCHMARK_SCHEDULER_HPP
+#define CPU_ACL_ACL_BENCHMARK_SCHEDULER_HPP
 
 #include "arm_compute/core/CPP/ICPPKernel.h"
 #include "arm_compute/runtime/IScheduler.h"
@@ -52,7 +52,7 @@ private:
     IScheduler &_real_scheduler;
 };
 
-#endif // CPU_ACL_BENCHMARK_SCHEDULER_HPP
+#endif // CPU_ACL_ACL_BENCHMARK_SCHEDULER_HPP
 
 } // namespace acl
 } // namespace cpu

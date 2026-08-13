@@ -14,8 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#ifndef CPU_ACL_DECONVOLUTION_HPP
-#define CPU_ACL_DECONVOLUTION_HPP
+#ifndef CPU_ACL_ACL_DECONVOLUTION_HPP
+#define CPU_ACL_ACL_DECONVOLUTION_HPP
 
 #include "cpu/aarch64/cpu_isa_traits.hpp"
 #include "cpu/acl/acl_post_ops.hpp"

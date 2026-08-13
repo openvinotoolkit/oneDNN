@@ -14,8 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#ifndef CPU_ACL_ELTWISE_HPP
-#define CPU_ACL_ELTWISE_HPP
+#ifndef CPU_ACL_ACL_ELTWISE_HPP
+#define CPU_ACL_ACL_ELTWISE_HPP
 
 #include <memory>
 #include "cpu/cpu_eltwise_pd.hpp"
@@ -76,4 +76,4 @@ private:
 } // namespace impl
 } // namespace dnnl
 
-#endif // CPU_ACL_ELTWISE_HPP
+#endif // CPU_ACL_ACL_ELTWISE_HPP
