@@ -14,8 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#ifndef CPU_ACL_GEMM_CONVOLUTION_HPP
-#define CPU_ACL_GEMM_CONVOLUTION_HPP
+#ifndef CPU_ACL_ACL_GEMM_CONVOLUTION_HPP
+#define CPU_ACL_ACL_GEMM_CONVOLUTION_HPP
 
 #include "common/memory_tracking.hpp"
 #include "cpu/cpu_convolution_pd.hpp"

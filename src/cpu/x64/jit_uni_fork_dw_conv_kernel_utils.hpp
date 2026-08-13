@@ -448,4 +448,4 @@ template struct jit_uni_fork_dw_conv_bwd_data_kernel<sse41, data_type::f32>;
 } // namespace impl
 } // namespace dnnl
 
-#endif /* CPU_X64_JIT_uni_fork_dw_CONV_KERNEL_UTILS_HPP */
+#endif // CPU_X64_JIT_UNI_FORK_DW_CONV_KERNEL_UTILS_HPP

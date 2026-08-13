@@ -3173,12 +3173,11 @@ struct memory : public handle<dnnl_memory_t> {
             reset(md);
         }
 
-        /// @fork
-        /// Copy constructor for memory::desc
+        /// @note OpenVINO fork copy constructor for memory::desc.
         /// Ensures deep copy (underlying C structure is copied as well)
         /// To preserve behavior of 2.x oneDNN versions
         ///
-        /// @param desc memory descriptor to copy.
+        /// @param adesc Memory descriptor to copy.
         desc(const memory::desc &adesc) {
             auto cdesc = adesc.get();
             dnnl_memory_desc_t cloned_md = nullptr;

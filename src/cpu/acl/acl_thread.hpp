@@ -14,8 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#ifndef CPU_ACL_THREAD_HPP
-#define CPU_ACL_THREAD_HPP
+#ifndef CPU_ACL_ACL_THREAD_HPP
+#define CPU_ACL_ACL_THREAD_HPP
 
 #include "common/dnnl_thread.hpp"
 #include "common/verbose.hpp"
@@ -54,4 +54,4 @@ void set_acl_threading();
 } // namespace impl
 } // namespace dnnl
 
-#endif // CPU_ACL_THREAD_HPP
+#endif // CPU_ACL_ACL_THREAD_HPP

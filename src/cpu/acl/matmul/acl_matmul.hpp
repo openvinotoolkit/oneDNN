@@ -14,8 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#ifndef CPU_AARCH64_MATMUL_ACL_MATMUL_HPP
-#define CPU_AARCH64_MATMUL_ACL_MATMUL_HPP
+#ifndef CPU_ACL_MATMUL_ACL_MATMUL_HPP
+#define CPU_ACL_MATMUL_ACL_MATMUL_HPP
 
 #include "cpu/acl/acl_post_ops.hpp"
 #include "cpu/acl/matmul/acl_matmul_utils.hpp"

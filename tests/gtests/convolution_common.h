@@ -19,8 +19,10 @@
 #include "oneapi/dnnl/dnnl.hpp"
 
 #define EXPAND_FORMATS(src, weights, bias, dst) \
-    {dnnl::memory::format_tag::src, dnnl::memory::format_tag::weights, \
-            dnnl::memory::format_tag::bias, dnnl::memory::format_tag::dst}
+    { \
+        dnnl::memory::format_tag::src, dnnl::memory::format_tag::weights, \
+                dnnl::memory::format_tag::bias, dnnl::memory::format_tag::dst \
+    }
 
 #define ALGORITHM dnnl::algorithm::convolution_direct
 

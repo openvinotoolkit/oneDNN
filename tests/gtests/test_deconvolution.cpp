@@ -575,8 +575,10 @@ using deconvolution_test_float = deconvolution_test_t<float>;
 TEST_P(deconvolution_test_float, TestDeconvolution) {}
 
 #define EXPAND_FORMATS(src, weights, bias, dst) \
-    {dnnl::memory::format_tag::src, dnnl::memory::format_tag::weights, \
-            dnnl::memory::format_tag::bias, dnnl::memory::format_tag::dst}
+    { \
+        dnnl::memory::format_tag::src, dnnl::memory::format_tag::weights, \
+                dnnl::memory::format_tag::bias, dnnl::memory::format_tag::dst \
+    }
 
 #define ALGORITHM dnnl::algorithm::deconvolution_direct
 

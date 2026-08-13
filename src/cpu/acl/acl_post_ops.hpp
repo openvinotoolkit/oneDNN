@@ -14,8 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
-#ifndef CPU_ACL_POST_OPS_HPP
-#define CPU_ACL_POST_OPS_HPP
+#ifndef CPU_ACL_ACL_POST_OPS_HPP
+#define CPU_ACL_ACL_POST_OPS_HPP
 
 #include "cpu/acl/acl_binary.hpp"
 #include "cpu/acl/acl_eltwise.hpp"
