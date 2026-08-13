@@ -21,9 +21,14 @@
 
 set -o errexit -o pipefail -o noclobber
 
-SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 OUTPUT_XML=$1
 OUTPUT_LOG=$2
+
+if [[ -z "${OUTPUT_XML}" || -z "${OUTPUT_LOG}" ]]; then
+    echo "Usage: $0 <output-xml> <output-log>" >&2
+    exit 2
+fi
 
 # Defines MP, CC, CXX and OS.
 source ${SCRIPT_DIR}/common.sh
@@ -33,6 +38,8 @@ if [[ "$ONEDNN_THREADING" == "SEQ" ]]; then
     export CTEST_PARALLEL_LEVEL=""
 fi
 
+CTEST_OPTS=(--no-tests=error --output-on-failure -E "$("${SCRIPT_DIR}"/skipped-tests.sh)" --output-junit "${OUTPUT_XML}")
+
 set -x
-ctest --no-tests=error --output-on-failure -E $("${SCRIPT_DIR}"/skipped-tests.sh) --output-junit ${OUTPUT_XML} | tee ${OUTPUT_LOG}
+ctest "${CTEST_OPTS[@]}" | tee "${OUTPUT_LOG}"
 set +x

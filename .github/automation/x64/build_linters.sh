@@ -1,64 +1,36 @@
-#===============================================================================
-# Copyright 2025 Intel Corporation
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-#===============================================================================
-
-# Build oneDNN for PR linter checks.
+# Build oneDNN for CPU-only PR linter checks.
 
 set -o errexit -o pipefail -o noclobber
 
-if [[ "$BUILD_TOOLSET" == "DPC++" ]]; then
-    . /opt/intel/oneapi/setvars.sh
-    export CC=icx
-    export CXX=icpx
-    export CPU_RUNTIME=SYCL
-    export GPU_RUNTIME=SYCL
-else
-    export CC=clang
-    export CXX=clang++
-    export CPU_RUNTIME=OMP
-    export GPU_RUNTIME=OCL
-fi
+export CC=clang
+export CXX=clang++
 
 if [[ "$ONEDNN_ACTION" == "configure" ]]; then
     if [[ "$GITHUB_JOB" == "pr-clang-tidy" ]]; then
-      set -x
-      cmake \
-          -Bbuild -S. \
-          -DCMAKE_BUILD_TYPE=debug \
-          -DONEDNN_BUILD_GRAPH=ON \
-          -DDNNL_EXPERIMENTAL=ON \
-          -DDNNL_EXPERIMENTAL_PROFILING=ON \
-          -DDNNL_EXPERIMENTAL_UKERNEL=ON \
-          -DDNNL_EXPERIMENTAL_GROUPED_MEMORY=ON \
-          -DONEDNN_EXPERIMENTAL_LOGGING=ON \
-          -DDNNL_CPU_RUNTIME=$CPU_RUNTIME \
-          -DDNNL_GPU_RUNTIME=$GPU_RUNTIME \
-          -DDNNL_WERROR=ON \
-          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-      set +x
+        set -x
+        cmake \
+            -Bbuild -S. \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DONEDNN_BUILD_GRAPH=OFF \
+            -DDNNL_EXPERIMENTAL=ON \
+            -DDNNL_EXPERIMENTAL_PROFILING=ON \
+            -DDNNL_EXPERIMENTAL_UKERNEL=ON \
+            -DDNNL_CPU_RUNTIME=OMP \
+            -DDNNL_GPU_RUNTIME=NONE \
+            -DDNNL_WERROR=ON \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+        set +x
     elif [[ "$GITHUB_JOB" == "pr-format-tags" ]]; then
-      set -x
-      cmake -B../build -S. -DONEDNN_BUILD_GRAPH=OFF -DDNNL_EXPERIMENTAL_GROUPED_MEMORY=ON
-      set +x
+        set -x
+        cmake -B../build -S. -DONEDNN_BUILD_GRAPH=OFF -DDNNL_EXPERIMENTAL_GROUPED_MEMORY=ON -DDNNL_GPU_RUNTIME=NONE
+        set +x
     else
-      echo "Unknown linter job: $GITHUB_JOB"
-      exit 1
+        echo "Unknown linter job: $GITHUB_JOB"
+        exit 1
     fi
 elif [[ "$ONEDNN_ACTION" == "build" ]]; then
     set -x
-    cmake --build build -j`nproc`
+    cmake --build build --parallel "$(getconf _NPROCESSORS_ONLN)"
     set +x
 else
     echo "Unknown action: $ONEDNN_ACTION"
