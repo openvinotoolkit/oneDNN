@@ -1069,7 +1069,7 @@ void jit_avx512_core_x8s8s32x_deconv_fwd_kernel_t<Vmm>::store_output(
                     const bool mask_flag
                             = last_oc_block == 1 && k == jcp.nb_oc_blocking - 1;
                     for (int j = 0; j < ur_w; j++) {
-                        int aux_output_offset = jcp.typesize_out
+                        dim_t aux_output_offset = jcp.typesize_out
                                 * (k * jcp.oc_block
                                         + j * jcp.oc_without_padding
                                                 * jcp.ngroups);
