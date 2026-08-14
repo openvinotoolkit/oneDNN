@@ -449,7 +449,7 @@ jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa,
         static constexpr bool preserve_gpr = true;
         static constexpr bool preserve_vmm = true;
         static constexpr bool use_exact_tail_scalar_bcast = false;
-        static constexpr size_t vmm_helper_idx = 15;
+        static constexpr int vmm_helper_idx = 15;
 
         const binary_injector::rhs_arg_static_params_t rhs_sp {vmm_helper_idx,
                 this->r14, this->r15, this->r13, preserve_gpr, preserve_vmm,

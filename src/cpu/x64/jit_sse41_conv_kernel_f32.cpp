@@ -47,10 +47,10 @@ jit_sse41_conv_fwd_kernel_f32_t::jit_sse41_conv_fwd_kernel_f32_t(
             || jcp.with_quantization) {
         static constexpr bool preserve_gpr = true;
         static constexpr bool preserve_vmm = false;
-        static constexpr size_t helper_vmm_idx = 15;
+        static constexpr int helper_vmm_idx = 15;
         // output channel tail need special compare to find it. Binary ops may ignore it:
         // only load more data and do the computation, although a little waste but worth it.
-        const size_t tail_size = 0;
+        const int tail_size = 0;
         static constexpr bool use_exact_tail_scalar_bcast = false;
 
         const binary_injector::rhs_arg_static_params_t rhs_arg_static_params {
