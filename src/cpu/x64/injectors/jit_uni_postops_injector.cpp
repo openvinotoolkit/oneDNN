@@ -26,8 +26,8 @@ namespace injector {
 #define VCHECK_PO_INJ_BOOL(cond, msg) \
     VCONDCHECK(primitive, create, check, postops_injector, cond, false, msg);
 
-size_t aux_vec_count(const post_ops_t &post_ops, cpu_isa_t isa, bool is_fwd) {
-    size_t res = 0;
+int aux_vec_count(const post_ops_t &post_ops, cpu_isa_t isa, bool is_fwd) {
+    int res = 0;
 #define CASE_ELTWISE_SUPERSET(_isa) \
     if (is_superset(isa, _isa)) { \
         res = nstl::max(res, \
@@ -323,31 +323,31 @@ jit_uni_postops_injector_t<isa, Vmm>::jit_uni_postops_injector_t(
 
 template <cpu_isa_t isa, typename Vmm>
 void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
-        size_t start_idx, size_t end_idx,
+    int start_idx, int end_idx,
         const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params) {
 
     injector_utils::vmm_index_set_t vmm_idxs;
-    for (size_t i = start_idx; i < end_idx; i++)
+    for (int i = start_idx; i < end_idx; i++)
         vmm_idxs.emplace(i);
     compute_vector_range(vmm_idxs, rhs_arg_params);
 }
 
 template <cpu_isa_t isa, typename Vmm>
 void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
-        size_t start_idx, size_t end_idx,
+    int start_idx, int end_idx,
         const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
         const depthwise_injector::dynamic_params_t &ddp,
         const quantization_injector::dynamic_params_t &qdp) {
 
     injector_utils::vmm_index_set_t vmm_idxs;
-    for (size_t i = start_idx; i < end_idx; i++)
+    for (int i = start_idx; i < end_idx; i++)
         vmm_idxs.emplace(i);
     compute_vector_range(vmm_idxs, rhs_arg_params, ddp, qdp);
 }
 
 template <cpu_isa_t isa, typename Vmm>
 void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
-        size_t start_idx, size_t end_idx) {
+    int start_idx, int end_idx) {
     compute_vector_range(
             start_idx, end_idx, binary_injector::rhs_arg_dynamic_params_t());
 }
@@ -359,7 +359,7 @@ void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
         const depthwise_injector::dynamic_params_t &ddp,
         const quantization_injector::dynamic_params_t &qdp, bool is_broadcast) {
 
-    std::size_t rhs_arg_idx = 0;
+    int rhs_arg_idx = 0;
     std::size_t quantization_inj_idx = 0;
     std::size_t depthwise_inj_idx = 0;
     std::size_t post_ops_data_offset = 0;
@@ -512,18 +512,18 @@ void jit_uni_postops_injector_t<isa, Vmm>::prepare_table(bool gen_table) {
 }
 
 template <cpu_isa_t isa, typename Vmm>
-void jit_uni_postops_injector_t<isa, Vmm>::compute_vector(size_t idx,
+void jit_uni_postops_injector_t<isa, Vmm>::compute_vector(int idx,
         const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params) {
     compute_vector_range({idx}, rhs_arg_params);
 }
 
 template <cpu_isa_t isa, typename Vmm>
-void jit_uni_postops_injector_t<isa, Vmm>::compute_vector(size_t idx) {
+void jit_uni_postops_injector_t<isa, Vmm>::compute_vector(int idx) {
     compute_vector_range({idx});
 }
 
 template <cpu_isa_t isa, typename Vmm>
-void jit_uni_postops_injector_t<isa, Vmm>::compute_vector(size_t idx,
+void jit_uni_postops_injector_t<isa, Vmm>::compute_vector(int idx,
         const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
         const depthwise_injector::dynamic_params_t &ddp,
         const quantization_injector::dynamic_params_t &qdp) {
@@ -531,7 +531,7 @@ void jit_uni_postops_injector_t<isa, Vmm>::compute_vector(size_t idx,
 }
 
 template <cpu_isa_t isa, typename Vmm>
-void jit_uni_postops_injector_t<isa, Vmm>::compute_vector(size_t idx,
+void jit_uni_postops_injector_t<isa, Vmm>::compute_vector(int idx,
         const depthwise_injector::dynamic_params_t &ddp,
         const quantization_injector::dynamic_params_t &qdp, bool is_broadcast) {
     compute_vector_range({idx}, binary_injector::rhs_arg_dynamic_params_t(),
