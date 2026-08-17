@@ -1,0 +1,13 @@
+# *******************************************************************************
+# Copyright 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+# *******************************************************************************
+
+# Immutable history tips that predate the current commit-message policy.
+#
+# Format: <full commit SHA> <reason>
+# Every commit reachable from a listed tip is excluded. Descendant commits
+# remain subject to all checks. A tip is active only when it occurs in the
+# checked PR range. Additions require an auditable migration reason.
+
+4f91720a073d915dd7a62d756bda7a276caccd9a oneDNN v3.13 migration history imported by PR 319
