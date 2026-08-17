@@ -2,7 +2,7 @@
 
 # *******************************************************************************
 # Copyright 2024 Arm Limited and affiliates.
-# Copyright 2024 Intel Corporation
+# Copyright 2024-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,9 +18,62 @@
 # limitations under the License.
 # *******************************************************************************
 
-import re
 import argparse
+from pathlib import Path
+import re
 import subprocess
+import sys
+
+
+def _run_git(args):
+    try:
+        return subprocess.run(
+            ["git", *args],
+            capture_output=True,
+            check=True,
+            text=True,
+        ).stdout
+    except subprocess.CalledProcessError as error:
+        details = error.stderr.strip() or error.stdout.strip()
+        raise RuntimeError(details) from error
+
+
+def _load_grandfathered_tips(path, commits_in_range):
+    if path is None:
+        return []
+
+    tips = []
+    try:
+        lines = Path(path).read_text(encoding="utf-8").splitlines()
+    except OSError as error:
+        raise RuntimeError(
+            f"Cannot read grandfathered history file '{path}': {error}"
+        ) from error
+
+    for line_number, line in enumerate(lines, 1):
+        entry = line.strip()
+        if not entry or entry.startswith("#"):
+            continue
+
+        fields = entry.split(maxsplit=1)
+        if len(fields) != 2 or not re.fullmatch(r"[0-9a-f]{40}", fields[0]):
+            raise RuntimeError(
+                f"Invalid grandfathered history entry at {path}:{line_number}. "
+                "Expected: <40-character commit SHA> <reason>"
+            )
+
+        commit, reason = fields
+        if commit not in commits_in_range:
+            print(
+                f"Grandfathered history tip inactive: {commit} is not "
+                "present in the checked commit range."
+            )
+            continue
+
+        print(f"Grandfathered history tip: {commit} ({reason})")
+        tips.append(commit)
+
+    return tips
 
 # Ensure the scope ends in a colon and that same level scopes are
 # comma delimited.
@@ -77,19 +130,44 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("head", help="Head commit of PR branch")
     parser.add_argument("base", help="Base commit of PR branch")
+    parser.add_argument(
+        "--grandfathered",
+        metavar="FILE",
+        help=(
+            "File containing immutable history tips to exclude. Each line "
+            "must contain a full commit SHA and an audit reason."
+        ),
+    )
     args = parser.parse_args()
     base: str = args.base
     head: str = args.head
 
     commit_range = base + ".." + head
-    messages = subprocess.run(
-        ["git", "rev-list", "--format=oneline", commit_range],
-        capture_output=True,
-        text=True,
-    ).stdout
+    try:
+        all_messages = _run_git(
+            ["rev-list", "--format=oneline", commit_range]
+        ).splitlines()
+        commits_in_range = {line.split(" ", 1)[0] for line in all_messages}
+        grandfathered_tips = _load_grandfathered_tips(
+            args.grandfathered, commits_in_range
+        )
+        revision_args = ["rev-list", "--format=oneline", commit_range]
+        if grandfathered_tips:
+            revision_args.extend(["--not", *grandfathered_tips])
+        messages = _run_git(revision_args).splitlines()
+    except RuntimeError as error:
+        print(f"Commit message check setup FAILED: {error}", file=sys.stderr)
+        return 2
+
+    skipped_count = len(all_messages) - len(messages)
+    if skipped_count:
+        print(
+            f"Skipped {skipped_count} commits from explicitly "
+            "grandfathered history."
+        )
 
     is_ok = True
-    for i in messages.splitlines():
+    for i in messages:
         print(i)
         commit_msg = i.split(" ", 1)[1]
         result = __numCharacterCheck(commit_msg)
@@ -98,14 +176,16 @@ def main():
         is_ok = is_ok and result
 
     if is_ok:
-        print("All commmit messages are formatted correctly. ")
+        print("All commit messages are formatted correctly.")
     else:
         print(
             "Some commit message checks failed. Please align commit messages "
             "with Contributing Guidelines and update the PR."
         )
-        exit(1)
+        return 1
+
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

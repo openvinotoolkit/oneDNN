@@ -1,6 +1,6 @@
 # *******************************************************************************
 # Copyright 2024 Arm Limited and affiliates.
-# Copyright 2024 Intel Corporation
+# Copyright 2024-2026 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -41,7 +41,12 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - name: Check commit messages
-        run: python3 ./.github/automation/commit-msg-check.py "${{ github.event.pull_request.head.sha }}" "${{ github.event.pull_request.base.sha }}"
+        run: |
+          python3 ./.github/automation/test_commit_msg_check.py
+          python3 ./.github/automation/commit-msg-check.py \
+            "${{ github.event.pull_request.head.sha }}" \
+            "${{ github.event.pull_request.base.sha }}" \
+            --grandfathered ./.github/automation/commit-msg-grandfathered.txt
 
   pr-header-guards:
     name: Header guards
