@@ -150,7 +150,8 @@ void jit_avx2_convolution_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
                         par_conv.flags |= FLAG_IC_FIRST;
                     }
 
-                    if ((jcp.with_eltwise || jcp.with_binary)
+                    if ((jcp.with_eltwise || jcp.with_binary
+                                || jcp.with_depthwise || jcp.with_quantization)
                             && icb + 1 == jcp.nb_ic)
                         par_conv.flags |= FLAG_IC_LAST;
 
@@ -176,6 +177,7 @@ void jit_avx2_convolution_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
                     par_conv.post_ops_binary_rhs_arg_vec
                             = post_ops_binary_rhs_arg_vec.data();
                     par_conv.dst_orig = dst;
+                    par_conv.oc_off = _oc * oc_bias_scale * sizeof(float);
 
                     (*kernel_)(&par_conv);
                 }
@@ -194,6 +196,8 @@ void jit_avx2_convolution_bwd_data_t::execute_backward_data(
     auto diff_dst = CTX_IN_MEM(const data_t *, DNNL_ARG_DIFF_DST);
     auto weights = CTX_IN_MEM(const data_t *, DNNL_ARG_WEIGHTS);
     auto diff_src = CTX_OUT_MEM(data_t *, DNNL_ARG_DIFF_SRC);
+    const auto post_ops_binary_rhs_arg_vec
+            = binary_injector::prepare_binary_args(pd()->jcp_.post_ops, ctx);
 
     const memory_desc_wrapper diff_dst_d(pd()->diff_dst_md());
     const memory_desc_wrapper diff_src_d(pd()->diff_src_md());
@@ -334,6 +338,13 @@ void jit_avx2_convolution_bwd_data_t::execute_backward_data(
                         if (par_conv.load_work % jcp.ic_block > 0)
                             par_conv.flags |= FLAG_IC_LAST;
                     }
+
+                    par_conv.ic_off = (g * jcp.ic_without_padding
+                                              + jcp.nb_ic_blocking * icbb
+                                                      * jcp.ic_block)
+                            * sizeof(float);
+                    par_conv.post_ops_binary_rhs_arg_vec
+                            = post_ops_binary_rhs_arg_vec.data();
 
                     (*kernel_)(&par_conv);
                 }

@@ -28,9 +28,9 @@
 namespace dnnl {
 namespace impl {
 
-status_t fill_blocked(memory_desc_t &md, std::initializer_list<int> perm,
-        std::initializer_list<int> inner_blks,
-        std::initializer_list<int> inner_idxs) {
+template <typename T>
+static status_t fill_blocked_impl(
+        memory_desc_t &md, T &&perm, T &&inner_blks, T &&inner_idxs) {
     const bool ok = true && perm.size() == (size_t)md.ndims
             && inner_blks.size() == inner_idxs.size();
     if (!ok) return status::invalid_arguments;
@@ -104,6 +104,17 @@ status_t fill_blocked(memory_desc_t &md, std::initializer_list<int> perm,
     return status::success;
 }
 
+status_t fill_blocked(memory_desc_t &md, std::initializer_list<int> perm,
+        std::initializer_list<int> inner_blks,
+        std::initializer_list<int> inner_idxs) {
+    return fill_blocked_impl(md, perm, inner_blks, inner_idxs);
+}
+
+status_t fill_blocked(memory_desc_t &md, std::vector<int> &perm,
+        std::vector<int> &inner_blks, std::vector<int> &inner_idxs) {
+    return fill_blocked_impl(md, perm, inner_blks, inner_idxs);
+}
+
 void memory_desc_wrapper::compute_strides_compat(dims_t *strides_compat) const {
 
     if (ndims() == 0) return;
@@ -148,15 +159,15 @@ void memory_desc_wrapper::compute_strides_compat(dims_t *strides_compat) const {
     utils::array_copy(strides_compat[1], inner_strides, ndims());
 }
 
-status_t memory_desc_wrapper::compute_blocking(
-        memory_desc_t &memory_desc, format_tag_t tag) {
+template <typename F, typename... Args>
+status_t process_tag(F f, format_tag_t tag, Args &&...args) {
     using namespace format_tag;
 
-    VCHECK_MEMORY((memory_desc.ndims != 0), status::invalid_arguments,
-            VERBOSE_BAD_NDIMS, "", 0);
+    // VCHECK_MEMORY((memory_desc.ndims != 0), status::invalid_arguments,
+    //         VERBOSE_BAD_NDIMS, "", 0);
 
 #define C(tag, ... /* perm, inner_blks, inner_idxs */) \
-    case tag: return fill_blocked(memory_desc, __VA_ARGS__)
+    case tag: return f(std::forward<Args>(args)..., __VA_ARGS__)
 
     switch (tag) {
         C(a, {0}, {}, {});
@@ -353,6 +364,19 @@ status_t memory_desc_wrapper::compute_blocking(
         C(aBC32b32c, {0, 1, 2}, {32, 32}, {1, 2});
         C(aBC48b16c, {0, 1, 2}, {48, 16}, {1, 2});
         C(aBC48b32c, {0, 1, 2}, {48, 32}, {1, 2});
+        C(aBC8c8b2c, {0, 1, 2}, {8, 8, 2}, {2, 1, 2});
+        C(aBC8c16b2c, {0, 1, 2}, {8, 16, 2}, {2, 1, 2});
+        C(aBC8c24b2c, {0, 1, 2}, {8, 24, 2}, {2, 1, 2});
+        C(aBC8c32b2c, {0, 1, 2}, {8, 32, 2}, {2, 1, 2});
+        C(aBC8c64b2c, {0, 1, 2}, {8, 64, 2}, {2, 1, 2});
+        C(aBC16c16b2c, {0, 1, 2}, {16, 16, 2}, {2, 1, 2});
+        C(aBC16c32b2c, {0, 1, 2}, {16, 32, 2}, {2, 1, 2});
+        C(aBC16c48b2c, {0, 1, 2}, {16, 48, 2}, {2, 1, 2});
+        C(aBC16c64b2c, {0, 1, 2}, {16, 64, 2}, {2, 1, 2});
+        C(aBC16c16b4c, {0, 1, 2}, {16, 16, 4}, {2, 1, 2});
+        C(aBC16c32b4c, {0, 1, 2}, {16, 32, 4}, {2, 1, 2});
+        C(aBC16c48b4c, {0, 1, 2}, {16, 48, 4}, {2, 1, 2});
+        C(aBC16c64b4c, {0, 1, 2}, {16, 64, 4}, {2, 1, 2});
         C(aCB4c8b8c2b, {0, 2, 1}, {4, 8, 8, 2}, {2, 1, 2, 1});
         C(aCB4c8b8c4b, {0, 2, 1}, {4, 8, 8, 4}, {2, 1, 2, 1});
         C(aCB4c8b16c2b, {0, 2, 1}, {4, 8, 16, 2}, {2, 1, 2, 1});
@@ -429,6 +453,7 @@ status_t memory_desc_wrapper::compute_blocking(
         C(ABcd8a16b2a, {0, 1, 2, 3}, {8, 16, 2}, {0, 1, 0});
         C(BAcd8a16b2a, {1, 0, 2, 3}, {8, 16, 2}, {0, 1, 0});
         C(ABcd8a8b, {0, 1, 2, 3}, {8, 8}, {0, 1});
+        C(ABcd8a32b, {0, 1, 2, 3}, {8, 32}, {0, 1});
         C(ABcd8a4b, {0, 1, 2, 3}, {8, 4}, {0, 1});
         C(ABcd8a2b, {0, 1, 2, 3}, {8, 2}, {0, 1});
         C(aBcd8b, {0, 1, 2, 3}, {8}, {1});
@@ -629,6 +654,8 @@ status_t memory_desc_wrapper::compute_blocking(
         C(aCBdef4b4c, {0, 2, 1, 3, 4, 5}, {4, 4}, {1, 2});
         C(aCBdef8b8c, {0, 2, 1, 3, 4, 5}, {8, 8}, {1, 2});
         C(aCBdef16b16c, {0, 2, 1, 3, 4, 5}, {16, 16}, {1, 2});
+        C(Abcdef4a, {0, 1, 2, 3, 4, 5}, {4}, {0});
+        C(Abcdef8a, {0, 1, 2, 3, 4, 5}, {8}, {0});
         C(Abcdef16a, {0, 1, 2, 3, 4, 5}, {16}, {0});
         C(Abcdef32a, {0, 1, 2, 3, 4, 5}, {32}, {0});
         C(aCBd16c16b, {0, 2, 1, 3}, {16, 16}, {2, 1});
@@ -1049,6 +1076,30 @@ status_t memory_desc_wrapper::compute_blocking(
 #undef C
 
     return status::invalid_arguments;
+}
+
+status_t memory_desc_wrapper::compute_blocking(
+        memory_desc_t &memory_desc, format_tag_t tag) {
+    using fill_blocked_t = status_t(memory_desc_t &, std::initializer_list<int>,
+            std::initializer_list<int>, std::initializer_list<int>);
+    if (memory_desc.ndims == 0) return status::invalid_arguments;
+    return process_tag<fill_blocked_t>(fill_blocked, tag, memory_desc);
+}
+
+status_t memory_desc_wrapper::compute_blocking(format_tag_t tag,
+        std::vector<size_t> &perm, std::vector<size_t> &inner_blks,
+        std::vector<size_t> &inner_idxs) {
+
+    auto extract_data
+            = [&](std::initializer_list<int> _perm,
+                      std::initializer_list<int> _inner_blks,
+                      std::initializer_list<int> _inner_idxs) -> status_t {
+        perm = {_perm.begin(), _perm.end()};
+        inner_blks = {_inner_blks.begin(), _inner_blks.end()};
+        inner_idxs = {_inner_idxs.begin(), _inner_idxs.end()};
+        return status::success;
+    };
+    return process_tag(extract_data, tag);
 }
 
 } // namespace impl

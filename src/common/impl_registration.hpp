@@ -26,10 +26,8 @@
 #define REG_BWD_PK(...) __VA_ARGS__
 #define REG_BWD_D_PK(...) __VA_ARGS__
 #else
-#define REG_BWD_PK(...) \
-    { nullptr }
-#define REG_BWD_D_PK(...) \
-    { nullptr }
+#define REG_BWD_PK(...) {nullptr},
+#define REG_BWD_D_PK(...) {nullptr},
 #endif
 
 // Primitives section
@@ -55,8 +53,7 @@
 #if BUILD_PRIMITIVE_ALL || BUILD_CONCAT
 #define REG_CONCAT_P(...) __VA_ARGS__
 #else
-#define REG_CONCAT_P(...) \
-    { nullptr }
+#define REG_CONCAT_P(...) {nullptr},
 #endif
 
 #if BUILD_PRIMITIVE_ALL || BUILD_CONVOLUTION
@@ -134,8 +131,7 @@
 #if BUILD_PRIMITIVE_ALL || BUILD_MATMUL
 #define REG_MATMUL_P(...) __VA_ARGS__
 #else
-#define REG_MATMUL_P(...) \
-    { nullptr }
+#define REG_MATMUL_P(...) {nullptr},
 #endif
 
 #if BUILD_PRIMITIVE_ALL || BUILD_POOLING
@@ -155,8 +151,7 @@
 #if BUILD_PRIMITIVE_ALL || BUILD_REDUCTION
 #define REG_REDUCTION_P(...) __VA_ARGS__
 #else
-#define REG_REDUCTION_P(...) \
-    { nullptr }
+#define REG_REDUCTION_P(...) {nullptr},
 #endif
 
 #if BUILD_PRIMITIVE_ALL || BUILD_REORDER

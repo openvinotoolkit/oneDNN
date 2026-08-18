@@ -607,7 +607,9 @@ void ref_deconvolution_bwd_weights_t::compute_bwd_bias_ncdhw(
     parallel_nd(OC, [=](dim_t oc) {
         float db = 0;
         for (dim_t mb = 0; mb < MB; ++mb) {
+#if !defined(_MSC_VER)
             PRAGMA_OMP_SIMD(reduction(+ : db))
+#endif
             for (dim_t sp = 0; sp < SP; ++sp) {
                 auto offset = (size_t)(mb * OC + oc) * SP + sp;
                 db += diff_dst[offset];
@@ -628,7 +630,9 @@ void ref_deconvolution_bwd_weights_t::compute_bwd_bias_ndhwc(
     parallel_nd(OC, [=](dim_t oc) {
         float db = 0;
         for (dim_t mb = 0; mb < MB; ++mb) {
+#if !defined(_MSC_VER)
             PRAGMA_OMP_SIMD(reduction(+ : db))
+#endif
             for (dim_t sp = 0; sp < SP; ++sp) {
                 const dim_t offset = (mb * SP + sp) * OC + oc;
                 db += diff_dst[offset];

@@ -127,9 +127,16 @@ private:
     constexpr static int off_reg_ker_ = 8;
     constexpr static int stack_space_needed_ = 16;
 
-    std::unique_ptr<injector::jit_uni_postops_injector_t<avx512_core, Vmm>>
+    std::unique_ptr<injector::jit_uni_postops_injector_t<avx512_core>>
             postops_injector_;
     std::unique_ptr<bf16_emulation_t> bf16_emu_;
+
+    reg64_t reg_d_weights = r15;
+    reg64_t reg_d_bias = reg_kj;
+    int base_post_ops_data_offset = 0;
+
+    Xbyak::Zmm zmm_d_weights = Xbyak::Zmm(31);
+    Xbyak::Zmm zmm_d_bias = Xbyak::Zmm(30);
 
     inline void prepare_dst(int ur_w);
     void apply_postops(int ur_w);
@@ -272,6 +279,12 @@ struct jit_avx512_core_bf16_bwd_data_kernel_vmm_t : public jit_generator_t {
                     bf16_emu_scratch, bf16_emu_reserv_4, bf16_emu_reserv_5);
     }
 
+    ~jit_avx512_core_bf16_bwd_data_kernel_vmm_t() {
+        for (auto inj : depthwise_injectors)
+            delete inj;
+        depthwise_injectors.clear();
+    }
+
     DECLARE_CPU_JIT_AUX_FUNCTIONS(_jit_avx512_core_bf16_bwd_data_kernel_f32)
 
     const jit_conv_conf_t &jcp;
@@ -351,6 +364,12 @@ private:
 
     Vmm vmm_wei = Vmm(31);
     std::unique_ptr<bf16_emulation_t> bf16_emu_;
+
+    reg64_t reg_d_weights = r15;
+    reg64_t reg_d_bias = reg_kj;
+
+    nstl::vector<jit_uni_depthwise_injector_f32<avx512_core> *>
+            depthwise_injectors;
 
     inline void prepare_output(int ur_w);
     inline void store_output(int ur_w);
@@ -459,6 +478,8 @@ struct jit_avx512_core_bf16_bwd_data_kernel_t {
     }
 
     ~jit_avx512_core_bf16_bwd_data_kernel_t() = default;
+
+    static bool post_ops_ok(jit_conv_conf_t &jcp);
 
     static status_t init_conf(jit_conv_conf_t &jcp,
             const convolution_desc_t &cd, memory_desc_t &diff_src_md,

@@ -99,7 +99,10 @@ inline int ilog2q(size_t v) {
             p += (pw); \
         } \
     } while (0)
+
+#if INTPTR_MAX == INT64_MAX
     CP(32);
+#endif
     CP(16);
     CP(8);
     CP(4);
@@ -261,7 +264,7 @@ inline U logistic_bwd_use_dst(T dd, T d) {
 template <typename T, typename A,
         typename U = typename utils::remove_reference<T>::type>
 inline U soft_relu_fwd(T s, A alpha) {
-    float exp_overflow_bound = 88.72283172607421875f;
+    float exp_overflow_bound = 20.f;
     float in = (float)s * (float)alpha;
     float v = (in < exp_overflow_bound ? (U)(::log1pf(::expf(in))) : (U)in);
     return (U)(v / alpha);
@@ -420,6 +423,29 @@ inline U hardswish_bwd(T dd, T s, A alpha, A beta) {
     return v <= 0.f ? 0.f : v >= 1.f ? dd : dd * w;
 }
 
+template <typename T, typename U = typename utils::remove_reference<T>::type>
+inline U hsigmoid_fwd(T s) {
+    float v = s + 3.0f;
+    v = v > 0.0f ? v : 0.0f;
+    v = v < 6.0f ? v : 6.0f;
+    return (U)(v / 6.0f);
+}
+
+template <typename T, typename U = typename utils::remove_reference<T>::type>
+inline U round_half_to_even_fwd(T s) {
+    float r = ::roundf((float)s);
+    float d = (float)s - r;
+    float remainder = ::fmodf(r, 2.0f);
+    return ((d != 0.5f) && (d != -0.5f)) || (remainder == 0.0f)
+            ? (U)r
+            : (U)((float)s + d);
+}
+
+template <typename T, typename U = typename utils::remove_reference<T>::type>
+inline U round_half_away_from_zero_fwd(T s) {
+    return (U)(::roundf((float)s));
+}
+
 inline bool is_eltwise_ok(
         data_type_t src_dt, alg_kind_t alg, float alpha, float beta) {
     using namespace alg_kind;
@@ -432,7 +458,9 @@ inline bool is_eltwise_ok(
                       eltwise_exp, eltwise_gelu_tanh, eltwise_hardsigmoid,
                       eltwise_hardswish, eltwise_swish, eltwise_log,
                       eltwise_clip, eltwise_clip_v2, eltwise_pow,
-                      eltwise_gelu_erf, eltwise_round)
+                      eltwise_gelu_erf, eltwise_round, eltwise_hsigmoid,
+                      eltwise_round_half_away_from_zero,
+                      eltwise_round_half_to_even)
             && IMPLICATION(
                     one_of(alg, eltwise_clip, eltwise_clip_v2), beta >= alpha)
             && IMPLICATION(alg == eltwise_round, src_dt == dnnl_f32)
@@ -571,6 +599,41 @@ inline float stochastic_round_fwd(
     if (r < 0 && r > -min_value<float>(dst_dt)) r = 0;
 
     return r;
+}
+
+inline float get_bias(const char *bias, size_t offset, data_type_t data_type) {
+    if (!bias) return 0.0f;
+
+#define CASE(dt) \
+    case dt: return (float)((const prec_traits_t<dt>::type *)bias)[offset]
+
+    switch (data_type) {
+        CASE(data_type::s8);
+        CASE(data_type::u8);
+        CASE(data_type::bf16);
+        CASE(data_type::s32);
+        CASE(data_type::f32);
+        default: assert(!"unimplemented");
+    }
+    return 0; // never happens (should probably be a NaN)
+#undef CASE
+}
+
+inline float get_sum(char *sum, size_t offset, data_type_t data_type) {
+    if (!sum) return 0.0f;
+
+#define CASE(dt) \
+    case dt: return (float)((const prec_traits_t<dt>::type *)sum)[offset]
+
+    switch (data_type) {
+        CASE(data_type::s8);
+        CASE(data_type::u8);
+        CASE(data_type::s32);
+        CASE(data_type::f32);
+        default: assert(!"unimplemented");
+    }
+    return 0; // never happens (should probably be a NaN)
+#undef CASE
 }
 
 } // namespace math

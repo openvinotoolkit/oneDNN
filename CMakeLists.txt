@@ -56,14 +56,20 @@ set(PROJECT_VERSION "3.13.0")
 
 project(${PROJECT_NAME} VERSION "${PROJECT_VERSION}" LANGUAGES C CXX)
 
+if(NOT BUILD_SHARED_LIBS)
+    add_compile_definitions(${onednn_renamed_definitions})
+endif()
+
 if (NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
-    message(FATAL_ERROR "oneDNN supports 64 bit platforms only")
+    message(WARNING "oneDNN officially supports 64 bit platforms only")
 endif()
 
 # Set the target architecture.
 if(NOT DNNL_TARGET_ARCH)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(aarch64.*|AARCH64.*|arm64.*|ARM64.*)")
         set(DNNL_TARGET_ARCH "AARCH64")
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm.*|ARM.*)")
+        set(DNNL_TARGET_ARCH "ARM")
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(ppc64.*|PPC64.*|powerpc64.*)")
         set(DNNL_TARGET_ARCH "PPC64")
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(s390x.*|S390X.*)")
@@ -120,7 +126,9 @@ if(UNIX OR MINGW)
     set(CMAKE_C_EXTENSIONS OFF)
     set(CMAKE_CXX_EXTENSIONS OFF)
 endif()
-
+if (ANDROID)
+    set(CMAKE_CXX_STANDARD 20)
+endif()
 # Handle cases when OpenMP runtime is requested but not found: override CPU
 # runtime to be sequential
 if(DNNL_CPU_RUNTIME STREQUAL "OMP" AND

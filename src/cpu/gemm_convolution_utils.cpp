@@ -23,6 +23,10 @@
 #include "common/utils.hpp"
 #include "cpu/gemm_convolution_utils.hpp"
 #include "cpu/scale_utils.hpp"
+
+#include "ref_depthwise_injector.hpp"
+#include "ref_eltwise.hpp"
+
 #if DNNL_X64
 #include "cpu/x64/injectors/jit_uni_postops_injector.hpp"
 #endif
@@ -31,6 +35,7 @@
 
 #if DNNL_X64
 #include "cpu/x64/cpu_isa_traits.hpp"
+#include "cpu/x64/jit_gemm_convolution_utils.hpp"
 #endif
 
 namespace dnnl {
@@ -50,6 +55,200 @@ single_gemm_conv_chunk_desc_t::single_gemm_conv_chunk_desc_t(dim_t d_off,
     , h_size_(h_size)
     , w_off_(w_off)
     , w_size_(w_size) {}
+
+namespace gemm_convolution_utils {
+
+struct ref_pp_kernel_t : pp_kernel_t {
+    ref_pp_kernel_t(const convolution_pd_t *pd, const conv_gemm_conf_t &jcp)
+        : pp_kernel_t(pd, jcp) {
+        for (int i = 0; i < post_ops_.len(); i++) {
+            auto &post_op = post_ops_.entry_[i];
+            if (post_op.is_eltwise()) {
+                ref_eltwise_injectors_.push_back(
+                        new ref_eltwise_scalar_fwd_t(post_op.eltwise));
+            } else if (post_op.is_depthwise()) {
+                ref_depthwise_injectors_.push_back(
+                        new ref_depthwise_scalar_fwd_t(post_op.depthwise.alg));
+            }
+        }
+    }
+    ~ref_pp_kernel_t() {
+        for (auto impl : ref_eltwise_injectors_)
+            delete impl;
+        ref_eltwise_injectors_.clear();
+        for (auto impl : ref_depthwise_injectors_)
+            delete impl;
+        ref_depthwise_injectors_.clear();
+    }
+
+    virtual void operator()(float *dst_orig, float *dst, const float *bias,
+            const int len, const int oc_start, const int oc_work,
+            const int oc_stride,
+            const std::vector<const void *> &post_ops_binary_rhs_arg_vec)
+            const override;
+
+    static bool post_ops_ok(const convolution_pd_t *pd) {
+        using namespace dnnl::impl::primitive_kind;
+        const auto &po = pd->attr()->post_ops_;
+        for (int i = 0; i < po.len(); i++) {
+            if (!utils::one_of(
+                        po.entry_[i].kind, eltwise, depthwise, quantization)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+private:
+    nstl::vector<ref_eltwise_scalar_fwd_t *> ref_eltwise_injectors_;
+    nstl::vector<ref_depthwise_scalar_fwd_t *> ref_depthwise_injectors_;
+};
+
+void ref_pp_kernel_t::operator()(float *dst_orig, float *dst, const float *bias,
+        const int len, const int oc_start, const int oc_work,
+        const int oc_stride,
+        const std::vector<const void *> &post_ops_binary_rhs_arg_vec) const {
+    // TODO: for "outer threading" we have parallel section within
+    // outermost "parallel". It is not good. Consider to use
+    // "parallel" here with number of threads passed as parameter
+    const auto &p = post_ops_;
+    bool need_bias = do_bias_;
+    if (p.len() > 0) {
+        std::size_t post_ops_data_idx = 0;
+        int eltwise_inj_idx = 0;
+        int depthwise_inj_idx = 0;
+
+        for (int i = 0; i < p.len(); i++) {
+            auto &post_op = p.entry_[i];
+            // todo: sum?
+            if (post_op.is_eltwise()) {
+                parallel_nd(oc_work, [&](const int oc) {
+                    float b = need_bias ? bias[oc_start + oc] : 0;
+                    float *d_ = dst + oc * oc_stride;
+                    for (int oS = 0; oS < len; ++oS) {
+                        d_[oS] += b;
+                        d_[oS] = ref_eltwise_injectors_[eltwise_inj_idx]
+                                         ->compute_scalar(d_[oS]);
+                    }
+                });
+
+                eltwise_inj_idx++;
+                need_bias = false;
+            } else if (post_op.is_depthwise()) {
+                auto depthwise_base = reinterpret_cast<const float *>(
+                        post_ops_binary_rhs_arg_vec[post_ops_data_idx]);
+                auto depthwise_weights = depthwise_base
+                        + post_op.depthwise.offset[post_op.depthwise.scales];
+                auto depthwise_bias = depthwise_base
+                        + post_op.depthwise.offset[post_op.depthwise.shifts];
+
+                parallel_nd(oc_work, [&](const int oc) {
+                    float b = need_bias ? bias[oc_start + oc] : 0;
+                    float *d_ = dst + oc * oc_stride;
+                    for (int oS = 0; oS < len; ++oS) {
+                        d_[oS] += b;
+                        d_[oS] = ref_depthwise_injectors_[depthwise_inj_idx]
+                                         ->compute_scalar(d_[oS],
+                                                 depthwise_weights + oc_start
+                                                         + oc,
+                                                 depthwise_bias + oc_start
+                                                         + oc);
+                    }
+                });
+
+                post_ops_data_idx++;
+                depthwise_inj_idx++;
+                need_bias = false;
+            } else if (post_op.is_quantization()) {
+                auto quant = post_op.quantization;
+                auto quantization_base = reinterpret_cast<const float *>(
+                        post_ops_binary_rhs_arg_vec[post_ops_data_idx]);
+                auto pcl = quantization_base
+                        + post_op.quantization.offset[quant.crop_low];
+                auto pch = quantization_base
+                        + post_op.quantization.offset[quant.crop_high];
+                auto pisc = quantization_base
+                        + post_op.quantization.offset[quant.inp_scale];
+                auto pish = quantization_base
+                        + post_op.quantization.offset[quant.inp_shift];
+                auto posc = quantization_base
+                        + post_op.quantization.offset[quant.output_scale];
+                auto posh = quantization_base
+                        + post_op.quantization.offset[quant.output_shift];
+
+                parallel_nd(oc_work, [&](const int oc) {
+                    float b = need_bias ? bias[oc_start + oc] : 0;
+                    float *d_ = dst + oc * oc_stride;
+
+                    int cl_idx = !quant.per_channel[quant.crop_low]
+                            ? 0
+                            : oc_start + oc;
+                    int ch_idx = !quant.per_channel[quant.crop_high]
+                            ? 0
+                            : oc_start + oc;
+                    int isc_idx = !quant.per_channel[quant.inp_scale]
+                            ? 0
+                            : oc_start + oc;
+                    int ish_idx = !quant.per_channel[quant.inp_shift]
+                            ? 0
+                            : oc_start + oc;
+                    int osc_idx = !quant.per_channel[quant.output_scale]
+                            ? 0
+                            : oc_start + oc;
+                    int osh_idx = !quant.per_channel[quant.output_shift]
+                            ? 0
+                            : oc_start + oc;
+
+                    PRAGMA_OMP_SIMD()
+                    for (int oS = 0; oS < len; ++oS) {
+                        d_[oS] += b;
+
+                        d_[oS] = nstl::min(
+                                pch[ch_idx], nstl::max(pcl[cl_idx], d_[oS]));
+                        d_[oS] = d_[oS] * pisc[isc_idx] + pish[ish_idx];
+                        d_[oS] = roundf(d_[oS]);
+                        d_[oS] = d_[oS] * posc[osc_idx] + posh[osh_idx];
+                    }
+                });
+
+                post_ops_data_idx++;
+                need_bias = false;
+            }
+        }
+    }
+
+    if (need_bias) {
+        parallel_nd(oc_work, [&](const int oc) {
+            float b = bias[oc_start + oc];
+            float *d_ = dst + oc * oc_stride;
+            PRAGMA_OMP_SIMD()
+            for (int oS = 0; oS < len; ++oS) {
+                d_[oS] += b;
+            }
+        });
+    }
+}
+
+// Interface section
+
+pp_kernel_t::pp_kernel_t(
+        const convolution_pd_t *pd, const conv_gemm_conf_t &jcp)
+    : do_bias_(pd->with_bias()), post_ops_(pd->attr()->post_ops_) {}
+
+pp_kernel_t *pp_kernel_t::create(
+        const convolution_pd_t *pd, const conv_gemm_conf_t &jcp) {
+#if DNNL_X64
+    auto *res = x64::gemm_convolution_utils::jit_pp_kernel_create(pd, jcp);
+    if (res) return res;
+#endif
+
+    if (ref_pp_kernel_t::post_ops_ok(pd)) {
+        return new ref_pp_kernel_t(pd, jcp);
+    }
+
+    return nullptr;
+}
+} // namespace gemm_convolution_utils
 
 namespace jit_gemm_convolution_utils {
 
@@ -277,7 +476,8 @@ template void transpose_dt(const conv_gemm_conf_t &jcp,
 /* col[kd][kh][kw][g][ic][od][oh][ow] <-- im2col_dt_3d(im[id][ih][iw][g][ic]) */
 template <typename orig_im_dt, typename orig_col_dt>
 void im2col_dt_3d(const conv_gemm_conf_t &jcp, const void *__restrict _imtr,
-        orig_col_dt *__restrict _col, dim_t od) {
+        orig_col_dt *__restrict _col, dim_t od,
+        const uint8_t *__restrict input_zp) {
     // For performance reasons, use uint16_t as a proxy for bfloat16_t
     using im_dt =
             typename utils::conditional<data_traits_t<orig_im_dt>::data_type
@@ -308,15 +508,18 @@ void im2col_dt_3d(const conv_gemm_conf_t &jcp, const void *__restrict _imtr,
     const dim_t IHW = jcp.ih * jcp.iw;
     const dim_t OHW = jcp.oh * jcp.ow;
 
+    bool with_input_zp = input_zp != nullptr;
+
     if (sd == 1 && sh == 1 && sw == 1 && dd == 1 && dh == 1 && dw == 1)
-        parallel_nd(jcp.kd, jcp.kh, jcp.kw, jcp.ic,
+        parallel_nd_legacy(jcp.kd, jcp.kh, jcp.kw, jcp.ic,
                 [&](dim_t kd, dim_t kh, dim_t kw, dim_t ic) {
             col_dt *__restrict col_loc = col + kd * col_kd_s + kh * col_kh_s
                     + kw * col_kw_s + ic * col_ic_s;
             const dim_t id = od - fp + kd;
             if (id < 0 || id >= jcp.id) {
+                col_dt izp = with_input_zp ? (col_dt)input_zp[ic] : shift;
                 for (ptrdiff_t i = 0; i < OHW; i++)
-                    col_loc[i] = shift;
+                    col_loc[i] = izp;
                 return;
             }
             const im_dt *__restrict imtr_loc = imtr + (ic * jcp.id + id) * IHW;
@@ -335,14 +538,15 @@ void im2col_dt_3d(const conv_gemm_conf_t &jcp, const void *__restrict _imtr,
             }
         });
     else if (sd == 2 && sh == 2 && sw == 2 && dd == 1 && dh == 1 && dw == 1)
-        parallel_nd(jcp.kd, jcp.kh, jcp.kw, jcp.ic,
+        parallel_nd_legacy(jcp.kd, jcp.kh, jcp.kw, jcp.ic,
                 [&](dim_t kd, dim_t kh, dim_t kw, dim_t ic) {
             col_dt *__restrict col_loc = col + kd * col_kd_s + kh * col_kh_s
                     + kw * col_kw_s + ic * col_ic_s;
             const dim_t id = od * 2 - fp + kd;
             if (id < 0 || id >= jcp.id) {
+                col_dt izp = with_input_zp ? (col_dt)input_zp[ic] : shift;
                 for (ptrdiff_t i = 0; i < OHW; i++)
-                    col_loc[i] = shift;
+                    col_loc[i] = izp;
                 return;
             }
             const im_dt *__restrict imtr_loc = imtr + (ic * jcp.id + id) * IHW;
@@ -365,14 +569,15 @@ void im2col_dt_3d(const conv_gemm_conf_t &jcp, const void *__restrict _imtr,
             }
         });
     else
-        parallel_nd(jcp.kd, jcp.kh, jcp.kw, jcp.ic,
+        parallel_nd_legacy(jcp.kd, jcp.kh, jcp.kw, jcp.ic,
                 [&](dim_t kd, dim_t kh, dim_t kw, dim_t ic) {
             col_dt *__restrict col_loc = col + kd * col_kd_s + kh * col_kh_s
                     + kw * col_kw_s + ic * col_ic_s;
             const dim_t id = od * sd - fp + kd * dd;
             if (id < 0 || id >= jcp.id) {
+                col_dt izp = with_input_zp ? (col_dt)input_zp[ic] : shift;
                 for (ptrdiff_t i = 0; i < OHW; i++)
-                    col_loc[i] = shift;
+                    col_loc[i] = izp;
                 return;
             }
             const im_dt *__restrict imtr_loc = imtr + (ic * jcp.id + id) * IHW;
@@ -397,13 +602,17 @@ void im2col_dt_3d(const conv_gemm_conf_t &jcp, const void *__restrict _imtr,
 }
 
 template void im2col_dt_3d<int8_t, uint8_t>(const conv_gemm_conf_t &jcp,
-        const void *__restrict im, uint8_t *__restrict col, dim_t od);
+        const void *__restrict im, uint8_t *__restrict col, dim_t od,
+        const uint8_t *__restrict input_zp);
 template void im2col_dt_3d<uint8_t, uint8_t>(const conv_gemm_conf_t &jcp,
-        const void *__restrict im, uint8_t *__restrict col, dim_t od);
+        const void *__restrict im, uint8_t *__restrict col, dim_t od,
+        const uint8_t *__restrict input_zp);
 template void im2col_dt_3d<float, float>(const conv_gemm_conf_t &jcp,
-        const void *__restrict im, float *__restrict col, dim_t od);
+        const void *__restrict im, float *__restrict col, dim_t od,
+        const uint8_t *__restrict input_zp);
 template void im2col_dt_3d<bfloat16_t, bfloat16_t>(const conv_gemm_conf_t &jcp,
-        const void *__restrict im, bfloat16_t *__restrict col, dim_t od);
+        const void *__restrict im, bfloat16_t *__restrict col, dim_t od,
+        const uint8_t *__restrict input_zp);
 
 /* col[ic][kh][kw][oh][ow] <-- im2col(im[ic][ih][iw]) */
 template <typename data_type_t>
@@ -506,7 +715,7 @@ void im2col(const conv_gemm_conf_t &jcp, const data_type_t *__restrict im,
         // Generated code is more optimized for stride_w == 1
         // because innermost loop is by width
         if (sw == 1)
-            parallel_nd(cb, jcp.kh, jcp.kw, oh_range,
+            parallel_nd_legacy(cb, jcp.kh, jcp.kw, oh_range,
                     [&](dim_t ic, dim_t kh, dim_t kw, dim_t ohr) {
                 const dim_t oh = ohr + oh_begin;
                 const dim_t ih = oh * sh - tp + kh * dh;
@@ -530,7 +739,7 @@ void im2col(const conv_gemm_conf_t &jcp, const data_type_t *__restrict im,
                     }
             });
         else
-            parallel_nd(cb, jcp.kh, jcp.kw, oh_range,
+            parallel_nd_legacy(cb, jcp.kh, jcp.kw, oh_range,
                     [&](dim_t ic, dim_t kh, dim_t kw, dim_t ohr) {
                 const dim_t oh = ohr + oh_begin;
                 const dim_t ih = oh * sh - tp + kh * dh;
@@ -567,7 +776,7 @@ template void im2col(const conv_gemm_conf_t &jcp,
 template <typename orig_im_dt, typename orig_col_dt>
 void im2col_dt(const conv_gemm_conf_t &jcp, const void *__restrict _im,
         void *__restrict _imtr, orig_col_dt *__restrict _col, dim_t hs,
-        dim_t hb, dim_t ws, dim_t wb) {
+        dim_t hb, dim_t ws, dim_t wb, const uint8_t *__restrict input_zp) {
     // For performance reasons, use uint16_t as a proxy for bfloat16_t
     using im_dt =
             typename utils::conditional<data_traits_t<orig_im_dt>::data_type
@@ -590,6 +799,8 @@ void im2col_dt(const conv_gemm_conf_t &jcp, const void *__restrict _im,
     const dim_t im_ih_stride = jcp.iw * im_iw_stride;
     const dim_t tp = jcp.t_pad;
     const dim_t lp = jcp.l_pad;
+
+    bool with_input_zp = input_zp != nullptr;
 
     if (jcp.outer_threading && sh == 1 && sw == 1 && dh == 1 && dw == 1) {
         /* im[ih][iw][ic] --> imtr[ic][ih][iw] --> col[kh][kw][ic][oh][ow] */
@@ -634,59 +845,101 @@ void im2col_dt(const conv_gemm_conf_t &jcp, const void *__restrict _im,
                 const dim_t ow_start = saturate(dim_t(0), wb, ow_kw);
                 const dim_t ow_end = saturate(dim_t(0), wb, ow_kw + iwb);
                 for (dim_t ic = 0; ic < jcp.ic; ic++) {
+                    uint8_t izp = with_input_zp ? input_zp[ic] : (uint8_t)0;
                     const ptrdiff_t col_idx_ic = col_idx_kw + ic * col_ic_str;
                     const dim_t imtr_idx_ic = ic * imtr_ic_stride - imtr_shift;
                     for (dim_t oh = 0; oh < oh_start; oh++) {
                         const ptrdiff_t col_idx_oh = col_idx_ic + oh * wb;
-                        for (dim_t ow = 0; ow < wb; ++ow)
-                            col[col_idx_oh + ow] = shift;
+                        if (with_input_zp) {
+                            for (dim_t ow = 0; ow < wb; ++ow)
+                                col[col_idx_oh + ow] = izp;
+                        } else {
+                            for (dim_t ow = 0; ow < wb; ++ow)
+                                col[col_idx_oh + ow] = shift;
+                        }
                     }
                     for (dim_t oh = oh_start; oh < oh_end; oh++) {
                         const ptrdiff_t col_idx_oh = col_idx_ic + oh * wb;
                         const ptrdiff_t imtr_idx_oh = imtr_idx_ic + oh * iwb;
-                        for (dim_t ow = 0; ow < ow_start; ++ow)
-                            col[col_idx_oh + ow] = shift;
-                        for (dim_t ow = ow_start; ow < ow_end; ++ow)
-                            col[col_idx_oh + ow]
-                                    = imtr[imtr_idx_oh + ow] + shift;
-                        for (dim_t ow = ow_end; ow < wb; ++ow)
-                            col[col_idx_oh + ow] = shift;
+                        if (with_input_zp) {
+                            for (dim_t ow = 0; ow < ow_start; ++ow)
+                                col[col_idx_oh + ow] = izp;
+                            for (dim_t ow = ow_start; ow < ow_end; ++ow)
+                                col[col_idx_oh + ow] = imtr[imtr_idx_oh + ow];
+                            for (dim_t ow = ow_end; ow < wb; ++ow)
+                                col[col_idx_oh + ow] = izp;
+                        } else {
+                            for (dim_t ow = 0; ow < ow_start; ++ow)
+                                col[col_idx_oh + ow] = shift;
+                            for (dim_t ow = ow_start; ow < ow_end; ++ow)
+                                col[col_idx_oh + ow]
+                                        = imtr[imtr_idx_oh + ow] + shift;
+                            for (dim_t ow = ow_end; ow < wb; ++ow)
+                                col[col_idx_oh + ow] = shift;
+                        }
                     }
                     for (dim_t oh = oh_end; oh < hb; oh++) {
                         const ptrdiff_t col_idx_oh = col_idx_ic + oh * wb;
-                        for (dim_t ow = 0; ow < wb; ++ow)
-                            col[col_idx_oh + ow] = shift;
+                        if (with_input_zp) {
+                            for (dim_t ow = 0; ow < wb; ++ow)
+                                col[col_idx_oh + ow] = izp;
+                        } else {
+                            for (dim_t ow = 0; ow < wb; ++ow)
+                                col[col_idx_oh + ow] = shift;
+                        }
                     }
                 }
             }
         }
     } else {
-        parallel_nd(jcp.kh, jcp.kw, jcp.ic, hb,
+        parallel_nd_legacy(jcp.kh, jcp.kw, jcp.ic, hb,
                 [&](dim_t kh, dim_t kw, dim_t ic, dim_t oh) {
             const dim_t hp = tp - kh * dh;
             const dim_t ih = (oh + hs) * sh - hp;
             const ptrdiff_t col_idx_base
                     = (((kh * jcp.kw + kw) * jcp.ic + ic) * hb + oh) * wb;
-            if (ih < 0 || ih >= jcp.ih)
-                for (dim_t ow = 0; ow < wb; ow++)
-                    col[col_idx_base + ow] = shift;
-            else {
+            uint8_t izp = with_input_zp ? input_zp[ic] : (uint8_t)0;
+            if (ih < 0 || ih >= jcp.ih) {
+                if (with_input_zp) {
+                    for (dim_t ow = 0; ow < wb; ow++)
+                        col[col_idx_base + ow] = izp;
+                } else {
+                    for (dim_t ow = 0; ow < wb; ow++)
+                        col[col_idx_base + ow] = shift;
+                }
+            } else {
                 const dim_t wp = lp - kw * dw;
                 const dim_t ow_start = saturate(
                         dim_t(0), wb, div_up(nstl::max(dim_t(0), wp), sw) - ws);
                 const dim_t ow_end = saturate(dim_t(0), wb,
                         div_up(nstl::max(dim_t(0), jcp.iw + wp), sw) - ws);
-                for (dim_t ow = 0; ow < ow_start; ow++)
-                    col[col_idx_base + ow] = shift;
-                const dim_t iw_base = ws * sw - wp;
-                const ptrdiff_t im_idx_base = ih * im_ih_stride + ic;
-                for (dim_t ow = ow_start; ow < ow_end; ow++) {
-                    const dim_t iw = iw_base + ow * sw;
-                    const ptrdiff_t im_idx = im_idx_base + iw * im_iw_stride;
-                    col[col_idx_base + ow] = im[im_idx] + shift;
+                if (with_input_zp) {
+                    for (dim_t ow = 0; ow < ow_start; ow++)
+                        col[col_idx_base + ow] = izp;
+                    const dim_t iw_base = ws * sw - wp;
+                    const ptrdiff_t im_idx_base = ih * im_ih_stride + ic;
+                    for (dim_t ow = ow_start; ow < ow_end; ow++) {
+                        const dim_t iw = iw_base + ow * sw;
+                        const ptrdiff_t im_idx
+                                = im_idx_base + iw * im_iw_stride;
+                        col[col_idx_base + ow] = im[im_idx];
+                    }
+                    for (dim_t ow = ow_end; ow < wb; ow++)
+                        col[col_idx_base + ow] = izp;
+                } else {
+                    for (dim_t ow = 0; ow < ow_start; ow++)
+                        col[col_idx_base + ow] = shift;
+                    const dim_t iw_base = ws * sw - wp;
+                    const ptrdiff_t im_idx_base = ih * im_ih_stride + ic;
+                    for (dim_t ow = ow_start; ow < ow_end; ow++) {
+                        const dim_t iw = iw_base + ow * sw;
+                        const ptrdiff_t im_idx
+                                = im_idx_base + iw * im_iw_stride;
+                        col[col_idx_base + ow] = im[im_idx] + shift;
+                    }
+                    for (dim_t ow = ow_end; ow < wb; ow++)
+                        col[col_idx_base + ow] = shift;
                 }
-                for (dim_t ow = ow_end; ow < wb; ow++)
-                    col[col_idx_base + ow] = shift;
             }
         });
     }
@@ -694,17 +947,21 @@ void im2col_dt(const conv_gemm_conf_t &jcp, const void *__restrict _im,
 
 template void im2col_dt<int8_t, uint8_t>(const conv_gemm_conf_t &jcp,
         const void *__restrict im, void *__restrict imtr,
-        uint8_t *__restrict col, dim_t hs, dim_t hb, dim_t ws, dim_t wb);
+        uint8_t *__restrict col, dim_t hs, dim_t hb, dim_t ws, dim_t wb,
+        const uint8_t *__restrict input_zp);
 template void im2col_dt<uint8_t, uint8_t>(const conv_gemm_conf_t &jcp,
         const void *__restrict im, void *__restrict imtr,
-        uint8_t *__restrict col, dim_t hs, dim_t hb, dim_t ws, dim_t wb);
+        uint8_t *__restrict col, dim_t hs, dim_t hb, dim_t ws, dim_t wb,
+        const uint8_t *__restrict input_zp);
 template void im2col_dt<float, float>(const conv_gemm_conf_t &jcp,
         const void *__restrict im, void *__restrict imtr, float *__restrict col,
-        dim_t hs, dim_t hb, dim_t ws, dim_t wb);
+        dim_t hs, dim_t hb, dim_t ws, dim_t wb,
+        const uint8_t *__restrict input_zp);
 
 template void im2col_dt<bfloat16_t, bfloat16_t>(const conv_gemm_conf_t &jcp,
         const void *__restrict im, void *__restrict imtr,
-        bfloat16_t *__restrict col, dim_t hs, dim_t hb, dim_t ws, dim_t wb);
+        bfloat16_t *__restrict col, dim_t hs, dim_t hb, dim_t ws, dim_t wb,
+        const uint8_t *__restrict input_zp);
 
 /* im[id][ih][iw][ic] <-- col2im_dt_3d(col[od][oh][ow][kd][kh][kw][ic]) */
 template <typename orig_T>
@@ -1132,6 +1389,23 @@ status_t init_conf(conv_gemm_conf_t &jcp,
             VERBOSE_UNSUPPORTED_FEATURE,
             "dst/scr size > INT_MAX is not supported");
 
+    jcp.with_input_zp = !attr.input_zero_points_.has_default_values();
+    if (jcp.with_input_zp) {
+        if (attr.input_zero_points_.count_ != 1
+                && attr.input_zero_points_.count_ != jcp.ic * jcp.ngroups)
+            return status::unimplemented;
+
+        if (attr.output_compensations_.count_ != jcp.oc * jcp.ngroups)
+            return status::unimplemented;
+    }
+
+    jcp.with_weights_zp = !attr.weights_zero_points_.has_default_values();
+    if (jcp.with_weights_zp) {
+        if (attr.weights_zero_points_.count_ != 1
+                && attr.weights_zero_points_.count_ != jcp.oc * jcp.ngroups)
+            return status::unimplemented;
+    }
+
     bool is_int8_conv = (is_fwd ? utils::one_of(src_d.data_type(), s8, u8)
                                 : utils::one_of(dst_d.data_type(), s8, u8))
             && weights_d.data_type() == s8;
@@ -1163,9 +1437,9 @@ status_t init_conf(conv_gemm_conf_t &jcp,
 
         VDISPATCH_CONV_IC(
                 post_ops_ok(post_ops_ok_args_t(x64::avx512_core,
-                        {binary, eltwise, sum}, attr.post_ops_, &dst_d,
-                        sum_at_pos_0_only, sum_requires_scale_one,
-                        sum_requires_zp_zero)),
+                        {binary, eltwise, sum, depthwise, prelu},
+                        attr.post_ops_, &dst_d, sum_at_pos_0_only,
+                        sum_requires_scale_one, sum_requires_zp_zero)),
                 VERBOSE_UNSUPPORTED_POSTOP);
     }
 #endif
@@ -1179,6 +1453,8 @@ status_t init_conf(conv_gemm_conf_t &jcp,
     jcp.with_binary = !everyone_is(-1, binary_ind, prelu_ind);
     const int sum_ind = jcp.post_ops.find(primitive_kind::sum);
     jcp.with_sum = sum_ind != -1;
+    const int depthwise_ind = jcp.post_ops.find(primitive_kind::depthwise);
+    jcp.with_depthwise = depthwise_ind != -1;
 
     bool is_bf16_conv = false
             || (is_fwd
@@ -2135,8 +2411,8 @@ status_t init_conf(conv_gemm_conf_t &jcp,
         if (size) scratchpad.book<int32_t>(key_conv_gemm_zp_src_comp, size);
     }
 
-    VDISPATCH_CONV_IC(
-            scratchpad.size() <= scratchpad_limit, VERBOSE_SCRATCHPAD_LIMIT);
+    // VDISPATCH_CONV_IC(
+    //         scratchpad.size() <= scratchpad_limit, VERBOSE_SCRATCHPAD_LIMIT);
 
     return status::success;
 }

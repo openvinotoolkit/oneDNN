@@ -77,7 +77,11 @@ struct jit_avx2_1x1_convolution_fwd_t : public primitive_t {
             // TODO: make `init_conf` assign initialized object to `jcp_`
             CHECK(jit_avx2_1x1_conv_kernel_f32_t::init_conf(
                     jcp_, *conv_d, *src_d, *weights_md(), *dst_md(), *attr()));
-            if (jcp_.with_dw_conv) CHECK(depthwise_po_init(engine));
+            if (jcp_.with_dw_conv) {
+                // todo: [antonvor] enable when new behavior of dw convolution fusing from oneDNN 1.6 will be supported
+                return status::unimplemented;
+                CHECK(depthwise_po_init(engine));
+            }
 
             auto scratchpad = scratchpad_registry().registrar();
             jit_avx2_1x1_conv_kernel_f32_t::init_scratchpad(scratchpad, jcp_);
@@ -384,8 +388,7 @@ struct jit_avx2_1x1_convolution_bwd_data_t : public primitive_t {
             VDISPATCH_CONV(set_default_alg_kind(alg_kind::convolution_direct),
                     VERBOSE_BAD_ALGORITHM);
             VDISPATCH_CONV(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
-            VDISPATCH_CONV(
-                    attr()->has_default_values(), VERBOSE_UNSUPPORTED_ATTR);
+            VDISPATCH_CONV(is_supported_post_ops(), VERBOSE_UNSUPPORTED_ATTR);
             VDISPATCH_CONV(set_default_formats(), VERBOSE_UNSUPPORTED_TAG);
 
             const convolution_desc_t *conv_d = desc();
@@ -435,6 +438,24 @@ struct jit_avx2_1x1_convolution_bwd_data_t : public primitive_t {
                     : utils::pick(ndims() - 3, OIw8o8i, OIhw8o8i, OIdhw8o8i);
 
             return set_default_formats_common(dat_tag, wei_tag, dat_tag);
+        }
+
+        virtual bool is_supported_post_ops() const {
+            const auto &p = this->attr()->post_ops_;
+            if (p.len() > 1) return false;
+
+            auto all_post_ops_supported = [&]() {
+                bool ok = true;
+
+                for (int i = 0; i < p.len(); i++) {
+                    ok = ok
+                            && utils::one_of(p.entry_[i].kind,
+                                    primitive_kind::depthwise);
+                }
+                return ok;
+            };
+
+            return all_post_ops_supported();
         }
     };
 

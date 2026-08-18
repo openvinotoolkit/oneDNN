@@ -157,7 +157,9 @@ struct gemm_info_t {
             for (dim_t i = 0; i < m; i++) {
                 c_t acc = 0;
 
+#if !defined(_MSC_VER)
                 PRAGMA_OMP_SIMD(reduction(+ : acc))
+#endif
                 for (dim_t j = 0; j < k; j++) {
                     acc += src[j + i * ld];
                 }
@@ -184,7 +186,9 @@ struct gemm_info_t {
             for (dim_t j = 0; j < n; j++) {
                 c_t acc = 0;
 
+#if !defined(_MSC_VER)
                 PRAGMA_OMP_SIMD(reduction(+ : acc))
+#endif
                 for (dim_t i = 0; i < k; i++)
                     acc += src[i + j * ld];
 

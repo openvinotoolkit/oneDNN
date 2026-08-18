@@ -1075,7 +1075,8 @@ jit_avx512_core_amx_fwd_kernel_t::jit_avx512_core_amx_fwd_kernel_t(
         const jit_conv_conf_t &ajcp, const primitive_attr_t &attr,
         const memory_desc_t &dst_md)
     : jit_generator_t(jit_name(), avx512_core_amx), jcp(ajcp), attr_(attr) {
-    if (jcp.with_eltwise || jcp.with_binary || jcp.with_sum) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_sum
+            || jcp.with_depthwise || jcp.with_quantization) {
         using namespace binary_injector;
         const auto &rhs_addr_reg = bin_injector_helper_reg_1;
         const auto &rhs_helper_reg = bin_injector_helper_reg_2;
@@ -1094,9 +1095,13 @@ jit_avx512_core_amx_fwd_kernel_t::jit_avx512_core_amx_fwd_kernel_t(
         const binary_injector::static_params_t static_params {
                 this->param1, rhs_arg_static_params};
 
+        quantization_injector::static_params_t quantization_static_params
+                = {zmm_d_weights.getIdx(), zmm_d_bias.getIdx(), reg_d_weights,
+                        reg_d_bias};
+
         postops_injector_ = utils::make_unique<
                 injector::jit_uni_postops_injector_t<avx512_core>>(
-                this, jcp.post_ops, static_params);
+                this, jcp.post_ops, static_params, quantization_static_params);
     }
     copy_to_pbuffer_
             = utils::make_unique<jit_avx512_core_amx_copy_to_pbuffer_t>(jcp);
@@ -1406,21 +1411,40 @@ void jit_avx512_core_amx_fwd_kernel_t::apply_sum(const Zmm &zmm_out,
 
 void jit_avx512_core_amx_fwd_kernel_t::apply_postops(const Zmm &zmm_out,
         const float *p_sum_scale, const int32_t *p_sum_zp,
-        const Xbyak::Address &addr, const size_t off, const bool mask_flag) {
+        const Xbyak::Address &addr, const size_t off, const bool mask_flag,
+        const int ocb) {
     if (jcp.with_eltwise || jcp.with_binary
-            || (jcp.with_sum && p_sum_scale != nullptr)) {
+            || (jcp.with_sum && p_sum_scale != nullptr) || jcp.with_depthwise
+            || jcp.with_quantization) {
+        std::map<size_t, int> vmm_idx_off;
+        vmm_idx_off.insert(
+                {zmm_out.getIdx(), ocb * jcp.oc_block * sizeof(float)});
+        depthwise_injector::dynamic_params_t ddp {zmm_d_weights.getIdx(),
+                zmm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
+                ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, this->rsp,
+                base_post_ops_data_offset};
+        quantization_injector::dynamic_params_t qdp {
+                ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, jcp.dst_dt,
+                this->rsp, base_post_ops_data_offset};
+
+        binary_injector::rhs_arg_dynamic_params_t rhs_arg_params;
+
         apply_sum(zmm_out, p_sum_scale, p_sum_zp, addr, mask_flag);
 
         const auto vmm_idx = zmm_out.getIdx();
         if (jcp.with_binary) {
-            binary_injector::rhs_arg_dynamic_params_t rhs_arg_params;
             rhs_arg_params.vmm_idx_to_out_reg.emplace(vmm_idx, reg_out_ptr);
             rhs_arg_params.vmm_idx_to_out_elem_off_val.emplace(vmm_idx, off);
             if (mask_flag) rhs_arg_params.vmm_tail_idx_.emplace(vmm_idx);
+        }
 
-            postops_injector_->compute_vector(vmm_idx, rhs_arg_params);
-        } else {
-            postops_injector_->compute_vector(vmm_idx);
+        postops_injector_->compute_vector_range(
+                {(size_t)vmm_idx}, rhs_arg_params, ddp, qdp);
+
+        if ((jcp.with_depthwise || jcp.with_quantization)
+                && jcp.src_zero_point) {
+            // restore reg_zp_compensation register which was overwritten by legacy postOps
+            mov(reg_zp_compensation, ptr[param1 + GET_OFF(zp_compensation)]);
         }
     }
 }
@@ -1466,7 +1490,7 @@ void jit_avx512_core_amx_fwd_kernel_t::store_output_vector_bf16(
 
     static constexpr auto skip_sum_injection = nullptr;
     apply_postops(zmm_out, skip_sum_injection, skip_sum_injection, addr, off,
-            mask_flag);
+            mask_flag, ocb);
 
     if (jcp.dst_dt == data_type::bf16) {
         store_output_ymm_bf16(zmm_out.getIdx(), addr, mask_flag);
@@ -1549,7 +1573,7 @@ void jit_avx512_core_amx_fwd_kernel_t::store_output_vector_int8(
 
     if (jcp.with_bias) vaddps(zmm_out, zmm_out, zmm_bias);
 
-    apply_postops(zmm_out, p_sum_scale, p_sum_zp, addr, off, mask_flag);
+    apply_postops(zmm_out, p_sum_scale, p_sum_zp, addr, off, mask_flag, ocb);
 
     if (jcp.with_dst_scales) {
         mov(reg_ptr_dst_scales, ptr[param1 + GET_OFF(dst_scales)]);
@@ -1801,6 +1825,7 @@ void jit_avx512_core_amx_fwd_kernel_t::compute_icb_loop(int width,
 
         push(reg_inp_ptr);
         push(reg_wei_ptr);
+        base_post_ops_data_offset += 2 * reg64_size;
 
         for (int ireduce = 0; ireduce < nreduce; ireduce += stride) {
             for (int ohb = 0; ohb < jcp.nb_oh_blocking; ohb++) {
@@ -1826,6 +1851,7 @@ void jit_avx512_core_amx_fwd_kernel_t::compute_icb_loop(int width,
         }
         pop(reg_wei_ptr);
         pop(reg_inp_ptr);
+        base_post_ops_data_offset -= 2 * reg64_size;
 
         store_output(width, tail, do_store, handle_h_blk, t_pad_output,
                 b_pad_output, l_pad_output, r_pad_output, is_last_oh_block);
@@ -1869,6 +1895,7 @@ void jit_avx512_core_amx_fwd_kernel_t::compute_icb_loop(int width,
                 dec(reg_kd);
                 jl(kd_skip_compute, T_NEAR);
                 push(reg_kd);
+                base_post_ops_data_offset += reg64_size;
             }
             for (int kh = 0; kh < jcp.kh; kh++) {
                 for (int set_idx = 0; set_idx < jcp.n_stride_sets;
@@ -1896,7 +1923,10 @@ void jit_avx512_core_amx_fwd_kernel_t::compute_icb_loop(int width,
                     }
                 }
             }
-            if (check_kd_padding) pop(reg_kd);
+            if (check_kd_padding) {
+                pop(reg_kd);
+                base_post_ops_data_offset -= reg64_size;
+            }
         }
         L(kd_skip_compute);
     }
@@ -2093,6 +2123,10 @@ void jit_avx512_core_amx_fwd_kernel_t::compute_ow_loop() {
 void jit_avx512_core_amx_fwd_kernel_t::generate() {
     preamble();
 
+    if (postops_injector_)
+        postops_injector_->push_post_ops_data_on_stack(param1,
+                GET_OFF(post_ops_binary_rhs_arg_vec), reg_inp_ptr, reg_wei_ptr);
+
     mov(reg_inp_ptr, ptr[param1 + GET_OFF(src)]);
     mov(reg_wei_ptr, ptr[param1 + GET_OFF(filt)]);
     mov(reg_out_ptr, ptr[param1 + GET_OFF(dst)]);
@@ -2133,6 +2167,8 @@ void jit_avx512_core_amx_fwd_kernel_t::generate() {
         L(mask_is_set);
     }
     compute_ow_loop();
+
+    if (postops_injector_) postops_injector_->reset_stack_pointer();
 
     postamble();
 
@@ -2531,6 +2567,8 @@ status_t jit_avx512_core_amx_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
     const int prelu_ind = p.find(primitive_kind::prelu);
     jcp.with_binary = !everyone_is(-1, binary_ind, prelu_ind);
     jcp.sum_dt = p.get_sum_dt(jcp.dst_dt);
+    jcp.with_depthwise = p.find(primitive_kind::depthwise) != -1;
+    jcp.with_quantization = p.find(primitive_kind::quantization) != -1;
 
     jcp.post_ops = p;
 
@@ -2539,8 +2577,9 @@ status_t jit_avx512_core_amx_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
     const bool sum_requires_scale_one = sum_at_pos_0_only;
     const bool sum_requires_zp_zero = sum_at_pos_0_only;
     bool post_ops_ok_ = post_ops_ok(post_ops_ok_args_t(avx512_core,
-            {eltwise, binary, sum}, jcp.post_ops, &dst_d, sum_at_pos_0_only,
-            sum_requires_scale_one, sum_requires_zp_zero));
+            {eltwise, binary, sum, depthwise, quantization}, jcp.post_ops,
+            &dst_d, sum_at_pos_0_only, sum_requires_scale_one,
+            sum_requires_zp_zero));
     // temporary workaround that skips avx512 implementation for ternary
     // post-ops with scalar broadcasting to avoid register collisions.
     post_ops_ok_ = post_ops_ok_
@@ -2598,9 +2637,10 @@ status_t jit_avx512_core_amx_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
 
     jcp.nb_oc_blocking_thr_chunk = 1;
 
-    const int target_palette = amx::get_target_palette();
-    jcp.max_tiles = amx::get_max_tiles(target_palette);
-    jcp.full_tile_width = amx::get_max_rows(target_palette);
+    // @todo This change must be explained with a comment
+    // const int target_palette = amx::get_target_palette();
+    jcp.max_tiles = 8; //amx::get_max_tiles(target_palette);
+    jcp.full_tile_width = 16; //amx::get_max_rows(target_palette);
     VDISPATCH_CONV_IC(!(jcp.max_tiles != 8 || jcp.full_tile_width != 16),
             VERBOSE_BLOCKING_FAIL, "bad blocking parameters");
 
@@ -3290,7 +3330,9 @@ void jit_avx512_core_amx_bwd_data_kernel_t::store_output_vector_xf16(
     }
 
     const int eltwise_ind = p.find(primitive_kind::eltwise);
-    if (eltwise_ind != -1) eltwise_injector_->compute_vector(zmm_out.getIdx());
+    if (eltwise_ind != -1)
+        idx_to_eltwise_injector_.at(eltwise_ind)
+                .compute_vector(zmm_out.getIdx());
 
     const Ymm ymm_out = Ymm(zmm_out.getIdx());
     const Ymm ymm_out_k = ymm_mask(ymm_out, mask_flag, true);
@@ -3363,7 +3405,8 @@ void jit_avx512_core_amx_bwd_data_kernel_t::store_output_vector_int8(
     if (jcp.with_bias) vaddps(zmm_out, zmm_out, zmm_bias);
 
     /* Do post-ops */
-    if (maybe_eltwise(0)) eltwise_injector_->compute_vector(zmm_out.getIdx());
+    if (maybe_eltwise(0))
+        idx_to_eltwise_injector_.at(0).compute_vector(zmm_out.getIdx());
     if (p_sum_scale) { // post_op: sum
         cvt2ps(jcp.dsrc_dt, zmm_prev_dst, addr, mask_flag);
         if (*p_sum_zp != 0) {
@@ -3375,7 +3418,13 @@ void jit_avx512_core_amx_bwd_data_kernel_t::store_output_vector_int8(
         else
             vfmadd231ps(zmm_out, zmm_prev_dst, zword_b[reg_ptr_sum_scale]);
     }
-    if (maybe_eltwise(1)) eltwise_injector_->compute_vector(zmm_out.getIdx());
+
+    if (maybe_eltwise(1))
+        idx_to_eltwise_injector_.at(1).compute_vector(zmm_out.getIdx());
+    for (auto i = 2; i < jcp.post_ops.len(); i++) {
+        if (idx_to_eltwise_injector_.count(i) != 0)
+            idx_to_eltwise_injector_.at(i).compute_vector(zmm_out.getIdx());
+    }
 
     if (jcp.with_dst_scales) {
         mov(reg_ptr_dst_scales, ptr[param1 + GET_OFF(dst_scales)]);
@@ -3703,7 +3752,10 @@ void jit_avx512_core_amx_bwd_data_kernel_t::generate() {
 
     postamble();
 
-    if (jcp.with_eltwise) eltwise_injector_->prepare_table();
+    if (jcp.with_eltwise) {
+        for (auto &elt_injector : idx_to_eltwise_injector_)
+            elt_injector.second.prepare_table();
+    }
 }
 
 bool jit_avx512_core_amx_bwd_data_kernel_t::post_ops_ok(
@@ -3721,6 +3773,11 @@ bool jit_avx512_core_amx_bwd_data_kernel_t::post_ops_ok(
         else
             return p.contain(sum, idx);
     };
+    //Add more element-wise post-ops supported for int8 deconv.
+    bool all_eltwise = jcp.is_int8_deconvolution;
+    for (auto i = 0; i < p.len(); i++)
+        all_eltwise &= is_eltwise(i);
+    if (all_eltwise) return true;
 
     switch (p.len()) {
         case 0: return true;
@@ -3811,6 +3868,7 @@ status_t jit_avx512_core_amx_bwd_data_kernel_t::init_conf(jit_conv_conf_t &jcp,
 
     jcp = zero<decltype(jcp)>();
     jcp.isa = is_f16 ? avx512_core_amx_fp16 : avx512_core_amx;
+    jcp.is_int8_deconvolution = is_int8_deconvolution;
     jcp.ndims = ndims;
     jcp.prop_kind = cd.prop_kind;
     jcp.ngroups = with_groups ? weights_d.dims()[0] : 1;
@@ -3898,7 +3956,7 @@ status_t jit_avx512_core_amx_bwd_data_kernel_t::init_conf(jit_conv_conf_t &jcp,
             VERBOSE_UNSUPPORTED_TAG_S, "src");
 
     jcp.is_nspc = jcp.src_tag == dat_tag_nspc;
-    assert(IMPLICATION(is_int8_deconvolution, jcp.is_nspc));
+    assert(IMPLICATION(jcp.is_int8_deconvolution, jcp.is_nspc));
 
     // TODO: remove all support for nChw16c from this implementation
     VDISPATCH_CONV_IC(jcp.is_nspc, VERBOSE_UNSUPPORTED_TAG_S, "src");
@@ -3937,7 +3995,7 @@ status_t jit_avx512_core_amx_bwd_data_kernel_t::init_conf(jit_conv_conf_t &jcp,
     const auto &p = attr.post_ops_;
     const int eltwise_ind = p.find(primitive_kind::eltwise);
     jcp.with_eltwise = eltwise_ind != -1;
-    if (jcp.with_eltwise) jcp.eltwise = p.entry_[eltwise_ind].eltwise;
+    jcp.post_ops = p;
 
     auto set_or_check_wei_format = [&]() {
         using namespace format_tag;
@@ -3950,7 +4008,7 @@ status_t jit_avx512_core_amx_bwd_data_kernel_t::init_conf(jit_conv_conf_t &jcp,
             wei_tag = pick(with_groups + 2 * (ndims - 3), OIw16i16o2i,
                     gOIw16i16o2i, OIhw16i16o2i, gOIhw16i16o2i, OIdhw16i16o2i,
                     gOIdhw16i16o2i);
-        else if (is_int8_deconvolution)
+        else if (jcp.is_int8_deconvolution)
             wei_tag = pick(with_groups + 2 * (ndims - 3), OIw16i16o4i,
                     gOIw16i16o4i, OIhw16i16o4i, gOIhw16i16o4i, OIdhw16i16o4i,
                     gOIdhw16i16o4i);

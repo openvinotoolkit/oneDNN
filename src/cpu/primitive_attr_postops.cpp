@@ -42,6 +42,7 @@ float compute_binary_scalar(alg_kind_t alg, float x, float y, bool c) {
         case binary_eq: return x == y;
         case binary_ne: return x != y;
         case binary_select: return c ? x : y;
+        case binary_prelu: return x >= 0 ? x : x * y;
         default: assert(!"unsupported operation!"); return NAN;
     }
 }
@@ -71,6 +72,11 @@ float compute_eltwise_scalar_fwd(
         case eltwise_mish: d = mish_fwd(s); break;
         case eltwise_hardsigmoid: d = hardsigmoid_fwd(s, alpha, beta); break;
         case eltwise_hardswish: d = hardswish_fwd(s, alpha, beta); break;
+        case eltwise_hsigmoid: d = hsigmoid_fwd(s); break;
+        case eltwise_round_half_away_from_zero:
+            d = round_half_away_from_zero_fwd(s);
+            break;
+        case eltwise_round_half_to_even: d = round_half_to_even_fwd(s); break;
         case eltwise_relu_use_dst_for_bwd: d = relu_fwd(s, alpha); break;
         case eltwise_tanh_use_dst_for_bwd: d = tanh_fwd(s); break;
         case eltwise_elu_use_dst_for_bwd: d = elu_fwd(s, alpha); break;
@@ -138,7 +144,8 @@ ref_binary_scalar_t::ref_binary_scalar_t(alg_kind_t alg) : alg_(alg) {
             alg_kind::binary_min, alg_kind::binary_mul, alg_kind::binary_div,
             alg_kind::binary_sub, alg_kind::binary_ge, alg_kind::binary_gt,
             alg_kind::binary_le, alg_kind::binary_lt, alg_kind::binary_eq,
-            alg_kind::binary_ne, alg_kind::binary_select));
+            alg_kind::binary_ne, alg_kind::binary_select,
+            alg_kind::binary_prelu));
 }
 
 ref_binary_scalar_t::ref_binary_scalar_t(
@@ -171,7 +178,8 @@ ref_eltwise_scalar_fwd_t::ref_eltwise_scalar_fwd_t(
             eltwise_soft_relu, eltwise_mish, eltwise_logistic, eltwise_exp,
             eltwise_gelu_tanh, eltwise_swish, eltwise_log, eltwise_clip,
             eltwise_clip_v2, eltwise_pow, eltwise_gelu_erf, eltwise_round,
-            eltwise_hardsigmoid, eltwise_hardswish,
+            eltwise_hardswish, eltwise_hardsigmoid, eltwise_hsigmoid,
+            eltwise_round_half_away_from_zero, eltwise_round_half_to_even,
             eltwise_relu_use_dst_for_bwd, eltwise_tanh_use_dst_for_bwd,
             eltwise_elu_use_dst_for_bwd, eltwise_sqrt_use_dst_for_bwd,
             eltwise_logistic_use_dst_for_bwd, eltwise_exp_use_dst_for_bwd,
@@ -210,6 +218,8 @@ ref_post_ops_t::ref_post_ops_t(const post_ops_t &po, bool skip_sum)
             eltwise_po_.emplace_back(e.eltwise);
         } else if (po_.contain(primitive_kind::binary, idx)) {
             binary_po_.emplace_back(e.binary);
+        } else if (po_.contain(primitive_kind::depthwise, idx)) {
+            depthwise_po_.emplace_back(e.depthwise.alg);
         }
     }
 }
@@ -309,12 +319,14 @@ float ref_dropout(float src, uint8_t *mask, dim_t idx, float p, int64_t seed,
     return (m) ? src * inv_q : 0;
 }
 
-void ref_post_ops_t::execute(float &res, const args_t &args) const {
+void ref_post_ops_t::execute(
+        float &res, const args_t &args, const size_t oc) const {
     if (po_.len() == 0) return;
 
     auto it_eltwise_po = eltwise_po_.begin();
     auto it_binary_po = binary_po_.begin();
     auto it_prelu_md = prelu_md_.begin();
+    auto it_depthwise_po = depthwise_po_.begin();
     for (auto idx = 0; idx < po_.len(); ++idx) {
         const auto &e = po_.entry_[idx];
         switch (e.kind) {
@@ -387,6 +399,59 @@ void ref_post_ops_t::execute(float &res, const args_t &args) const {
                 const auto &weights_value = prelu_weights[off];
                 res = weights_value * res;
                 ++it_prelu_md;
+            } break;
+            case primitive_kind::depthwise: {
+                const exec_ctx_t &ctx = *args.ctx;
+                auto depthwise_base = CTX_IN_MEM(const float *,
+                        (DNNL_ARG_ATTR_MULTIPLE_POST_OP(idx) | DNNL_ARG_SRC_1));
+                auto depthwise_weights = depthwise_base
+                        + e.depthwise.offset[e.depthwise.scales];
+                auto depthwise_bias = depthwise_base
+                        + e.depthwise.offset[e.depthwise.shifts];
+
+                res = it_depthwise_po->compute_scalar(
+                        res, depthwise_weights + oc, depthwise_bias + oc);
+
+                ++it_depthwise_po;
+            } break;
+            case primitive_kind::quantization: {
+                bool do_dequantization = e.quantization.alg
+                        == alg_kind::quantization_quantize_dequantize;
+                bool do_rounding = do_dequantization
+                        || args.dst_md->data_type == dnnl_f32
+                        || idx != po_.len() - 1;
+
+                auto quant = e.quantization;
+                const exec_ctx_t &ctx = *args.ctx;
+                auto quantization_base = CTX_IN_MEM(const float *,
+                        (DNNL_ARG_ATTR_MULTIPLE_POST_OP(idx) | DNNL_ARG_SRC_1));
+                const auto pcl
+                        = quantization_base + quant.offset[quant.crop_low];
+                const auto pch
+                        = quantization_base + quant.offset[quant.crop_high];
+                const auto pisc
+                        = quantization_base + quant.offset[quant.inp_scale];
+                const auto pish
+                        = quantization_base + quant.offset[quant.inp_shift];
+                const auto posc
+                        = quantization_base + quant.offset[quant.output_scale];
+                const auto posh
+                        = quantization_base + quant.offset[quant.output_shift];
+
+                auto cl_idx = !quant.per_channel[quant.crop_low] ? 0 : oc;
+                auto ch_idx = !quant.per_channel[quant.crop_high] ? 0 : oc;
+                auto isc_idx = !quant.per_channel[quant.inp_scale] ? 0 : oc;
+                auto ish_idx = !quant.per_channel[quant.inp_shift] ? 0 : oc;
+                auto osc_idx = !quant.per_channel[quant.output_scale] ? 0 : oc;
+                auto osh_idx = !quant.per_channel[quant.output_shift] ? 0 : oc;
+
+                res = nstl::min(pch[ch_idx], nstl::max(pcl[cl_idx], res));
+                res = res * pisc[isc_idx] + pish[ish_idx];
+
+                if (do_rounding) res = roundf(res);
+
+                if (do_dequantization)
+                    res = res * posc[osc_idx] + posh[osh_idx];
             } break;
             default: assert(!"unsupported post op primitive kind!");
         }

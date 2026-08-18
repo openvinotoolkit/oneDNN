@@ -54,8 +54,42 @@ size_t aux_vec_count(const post_ops_t &post_ops, cpu_isa_t isa, bool is_fwd) {
 template <cpu_isa_t isa, typename Vmm>
 jit_uni_postops_injector_t<isa, Vmm>::jit_uni_postops_injector_t(
         jit_generator_t *host, const post_ops_t &post_ops,
+        const eltwise_injector::static_params_t &eltwise_static_params,
+        const quantization_injector::static_params_t
+                &quantization_static_params)
+    : post_ops_(post_ops), host_(host), binary_injector_(nullptr) {
+
+    const auto &esp = eltwise_static_params;
+    const auto &qsp = quantization_static_params;
+
+    for (int i = 0; i < post_ops_.len(); i++) {
+        const auto &post_op = post_ops_.entry_[i];
+
+        if (post_op.is_eltwise()) {
+            alg_to_eltwise_injector_.emplace(post_op.eltwise.alg,
+                    jit_uni_eltwise_injector_t<isa, Vmm>(host_, post_op.eltwise,
+                            data_type::f32, esp.save_state, esp.p_table_,
+                            esp.k_mask_, esp.is_fwd, esp.use_dst));
+        } else if (post_op.is_depthwise()) {
+            depthwise_injectors.emplace_back(
+                    new jit_uni_depthwise_injector_f32<isa>(host, post_op));
+        } else if (post_op.is_quantization()) {
+            quantization_injectors.emplace_back(
+                    new jit_uni_quantization_injector_f32<isa, Vmm>(host,
+                            post_op, Vmm(qsp.vmm_d_weights_idx),
+                            Vmm(qsp.vmm_d_bias_idx), qsp.reg_d_weights,
+                            qsp.reg_d_bias));
+        }
+    }
+}
+
+template <cpu_isa_t isa, typename Vmm>
+jit_uni_postops_injector_t<isa, Vmm>::jit_uni_postops_injector_t(
+        jit_generator_t *host, const post_ops_t &post_ops,
         const binary_injector::static_params_t &binary_static_params,
         const eltwise_injector::static_params_t &eltwise_static_params,
+        const quantization_injector::static_params_t
+                &quantization_static_params,
         const lambda_jit_injectors_t &lambda_jit_injectors)
     : post_ops_(post_ops)
     , host_(host)
@@ -63,11 +97,13 @@ jit_uni_postops_injector_t<isa, Vmm>::jit_uni_postops_injector_t(
     , lambda_jit_injectors_(lambda_jit_injectors) {
 
     const auto &esp = eltwise_static_params;
+    const auto &qsp = quantization_static_params;
     bool is_like_binary = false;
     bool is_eltwise = false;
 
-    for (int i = 0; i < post_ops.len(); i++) {
-        const auto &post_op = post_ops.entry_[i];
+    for (int i = 0; i < post_ops_.len(); i++) {
+        const auto &post_op = post_ops_.entry_[i];
+
         if (post_op.is_eltwise()) {
             is_eltwise = true;
             // Note: `dt` argument for eltwise injector is not propagated from
@@ -81,6 +117,15 @@ jit_uni_postops_injector_t<isa, Vmm>::jit_uni_postops_injector_t(
                             esp.preserve_vmm, esp.preserve_p_table));
         } else if (post_op.is_like_binary()) {
             is_like_binary = true;
+        } else if (post_op.is_depthwise()) {
+            depthwise_injectors.emplace_back(
+                    new jit_uni_depthwise_injector_f32<isa>(host, post_op));
+        } else if (post_op.is_quantization()) {
+            quantization_injectors.emplace_back(
+                    new jit_uni_quantization_injector_f32<isa, Vmm>(host,
+                            post_op, Vmm(qsp.vmm_d_weights_idx),
+                            Vmm(qsp.vmm_d_bias_idx), qsp.reg_d_weights,
+                            qsp.reg_d_bias));
         }
     }
 
@@ -103,7 +148,9 @@ jit_uni_postops_injector_t<isa, Vmm>::jit_uni_postops_injector_t(
         jit_generator_t *host, const post_ops_t &post_ops,
         const binary_injector::static_params_t &binary_static_params)
     : jit_uni_postops_injector_t(host, post_ops, binary_static_params,
-              eltwise_injector::static_params_t(), lambda_jit_injectors_t()) {}
+              eltwise_injector::static_params_t(),
+              quantization_injector::static_params_t(),
+              lambda_jit_injectors_t()) {}
 
 template <cpu_isa_t isa, typename Vmm>
 jit_uni_postops_injector_t<isa, Vmm>::jit_uni_postops_injector_t(
@@ -111,7 +158,8 @@ jit_uni_postops_injector_t<isa, Vmm>::jit_uni_postops_injector_t(
         const binary_injector::static_params_t &binary_static_params,
         const lambda_jit_injectors_t &lambda_jit_injectors)
     : jit_uni_postops_injector_t(host, post_ops, binary_static_params,
-              eltwise_injector::static_params_t(), lambda_jit_injectors) {}
+              eltwise_injector::static_params_t(),
+              quantization_injector::static_params_t(), lambda_jit_injectors) {}
 
 template <cpu_isa_t isa, typename Vmm>
 jit_uni_postops_injector_t<isa, Vmm>::jit_uni_postops_injector_t(
@@ -119,7 +167,18 @@ jit_uni_postops_injector_t<isa, Vmm>::jit_uni_postops_injector_t(
         const binary_injector::static_params_t &binary_static_params,
         const eltwise_injector::static_params_t &eltwise_static_params)
     : jit_uni_postops_injector_t(host, post_ops, binary_static_params,
-              eltwise_static_params, lambda_jit_injectors_t()) {}
+              eltwise_static_params, quantization_injector::static_params_t(),
+              lambda_jit_injectors_t()) {}
+
+template <cpu_isa_t isa, typename Vmm>
+jit_uni_postops_injector_t<isa, Vmm>::jit_uni_postops_injector_t(
+        jit_generator_t *host, const post_ops_t &post_ops,
+        const binary_injector::static_params_t &binary_static_params,
+        const quantization_injector::static_params_t
+                &quantization_static_params)
+    : jit_uni_postops_injector_t(host, post_ops, binary_static_params,
+              eltwise_injector::static_params_t(), quantization_static_params,
+              lambda_jit_injectors_t()) {}
 
 // Specialization instantiations are needed to avoid instantiating ISA with
 // Vmm that don't make any sense like sse41 + Zmm.
@@ -252,6 +311,17 @@ jit_uni_postops_injector_base_t<Vmm>::create(jit_generator_t *host,
 }
 
 template <cpu_isa_t isa, typename Vmm>
+jit_uni_postops_injector_t<isa, Vmm>::jit_uni_postops_injector_t(
+        jit_generator_t *host, const post_ops_t &post_ops,
+        const binary_injector::static_params_t &binary_static_params,
+        const eltwise_injector::static_params_t &eltwise_static_params,
+        const quantization_injector::static_params_t
+                &quantization_static_params)
+    : jit_uni_postops_injector_t(host, post_ops, binary_static_params,
+              eltwise_static_params, quantization_static_params,
+              lambda_jit_injectors_t()) {}
+
+template <cpu_isa_t isa, typename Vmm>
 void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
         size_t start_idx, size_t end_idx,
         const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params) {
@@ -264,6 +334,19 @@ void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
 
 template <cpu_isa_t isa, typename Vmm>
 void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
+        size_t start_idx, size_t end_idx,
+        const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
+        const depthwise_injector::dynamic_params_t &ddp,
+        const quantization_injector::dynamic_params_t &qdp) {
+
+    injector_utils::vmm_index_set_t vmm_idxs;
+    for (size_t i = start_idx; i < end_idx; i++)
+        vmm_idxs.emplace(i);
+    compute_vector_range(vmm_idxs, rhs_arg_params, ddp, qdp);
+}
+
+template <cpu_isa_t isa, typename Vmm>
+void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
         size_t start_idx, size_t end_idx) {
     compute_vector_range(
             start_idx, end_idx, binary_injector::rhs_arg_dynamic_params_t());
@@ -272,11 +355,17 @@ void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
 template <cpu_isa_t isa, typename Vmm>
 void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
         const injector_utils::vmm_index_set_t &vmm_idxs,
-        const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params) {
+        const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
+        const depthwise_injector::dynamic_params_t &ddp,
+        const quantization_injector::dynamic_params_t &qdp, bool is_broadcast) {
 
     std::size_t rhs_arg_idx = 0;
+    std::size_t quantization_inj_idx = 0;
+    std::size_t depthwise_inj_idx = 0;
+    std::size_t post_ops_data_offset = 0;
     for (int i = 0; i < post_ops_.len(); i++) {
         const auto &post_op = post_ops_.entry_[i];
+
         if (post_op.is_eltwise()) {
             alg_to_eltwise_injector_.at(i).compute_vector_range(vmm_idxs);
         } else if (post_op.is_like_binary()) {
@@ -286,6 +375,115 @@ void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
             // Ternary op handles two arguments at the same time, thus,
             // skipping one more.
             if (post_op.is_binary_with_ternary_op()) ++rhs_arg_idx;
+        } else if (post_op.is_depthwise()) {
+            const Xbyak::RegExp depthwise_arg_base = ddp.reg_post_ops_data
+                    + ddp.base_post_ops_data_offset + post_ops_data_offset;
+            if (ddp.useAddr)
+                depthwise_injectors[depthwise_inj_idx]->init_ptrs(
+                        depthwise_arg_base, ddp.reg_d_weights, ddp.reg_d_bias,
+                        ddp.reg_init_off_addr, false);
+            else
+                depthwise_injectors[depthwise_inj_idx]->init_ptrs(
+                        depthwise_arg_base, ddp.reg_d_weights, ddp.reg_d_bias,
+                        ddp.reg_init_off, false);
+
+            bool need_to_preserve = false;
+            if (post_op.depthwise.alg == dnnl_depthwise_prelu && isa == sse41)
+                need_to_preserve = true;
+
+            for (auto vmm_idx : vmm_idxs) {
+                depthwise_injectors[depthwise_inj_idx]->compute(vmm_idx,
+                        vmm_idx + 1,
+                        need_to_preserve ? 0 : ddp.vmm_d_weights_idx,
+                        ddp.vmm_d_bias_idx, ddp.reg_d_weights, ddp.reg_d_bias,
+                        is_broadcast, ddp.vmm_idx_off.at(vmm_idx),
+                        need_to_preserve);
+            }
+
+            post_ops_data_offset
+                    += depthwise_injectors[depthwise_inj_idx]->memoryStep();
+            ++rhs_arg_idx;
+            depthwise_inj_idx++;
+        } else if (post_op.is_quantization()) {
+            std::vector<std::pair<int, std::set<size_t>>> vecOfVmmIdxsSets;
+
+            std::multimap<int, size_t> offsetVmmIdxMap;
+            for (auto vmm_idx : vmm_idxs) {
+                offsetVmmIdxMap.insert({qdp.vmm_idx_off.at(vmm_idx), vmm_idx});
+            }
+
+            auto externalIt = offsetVmmIdxMap.begin();
+            while (externalIt != offsetVmmIdxMap.end()) {
+                auto internalIt = externalIt;
+                auto endInternalIt
+                        = offsetVmmIdxMap.upper_bound(externalIt->first);
+
+                std::set<size_t> vmmIndexesToProcess;
+                while (internalIt != endInternalIt) {
+                    vmmIndexesToProcess.insert(internalIt->second);
+                    internalIt++;
+                }
+                vecOfVmmIdxsSets.push_back(
+                        {externalIt->first, vmmIndexesToProcess});
+
+                externalIt = endInternalIt;
+            }
+
+            bool do_dequantization = post_op.quantization.alg
+                    == alg_kind::quantization_quantize_dequantize;
+            bool do_rounding = do_dequantization || qdp.dst_dt == dnnl_f32
+                    || i != post_ops_.len() - 1;
+
+            const Xbyak::RegExp quant_arg_base = qdp.reg_post_ops_data
+                    + qdp.base_post_ops_data_offset + post_ops_data_offset;
+            if (qdp.useAddr)
+                quantization_injectors[quantization_inj_idx]->init_crop_ptrs(
+                        quant_arg_base, qdp.reg_oc_off_addr);
+            else
+                quantization_injectors[quantization_inj_idx]->init_crop_ptrs(
+                        quant_arg_base, qdp.reg_oc_off);
+
+            for (auto &IdxSetPair : vecOfVmmIdxsSets) {
+                quantization_injectors[quantization_inj_idx]->compute_crop(
+                        IdxSetPair.second, IdxSetPair.first, false,
+                        is_broadcast);
+            }
+
+            if (qdp.useAddr)
+                quantization_injectors[quantization_inj_idx]
+                        ->init_input_scale_shift_ptrs(
+                                quant_arg_base, qdp.reg_oc_off_addr);
+            else
+                quantization_injectors[quantization_inj_idx]
+                        ->init_input_scale_shift_ptrs(
+                                quant_arg_base, qdp.reg_oc_off);
+
+            for (auto &IdxSetPair : vecOfVmmIdxsSets) {
+                quantization_injectors[quantization_inj_idx]
+                        ->compute_input_scale_shift(IdxSetPair.second,
+                                IdxSetPair.first, do_rounding, false,
+                                is_broadcast);
+            }
+
+            if (qdp.useAddr)
+                quantization_injectors[quantization_inj_idx]
+                        ->init_output_scale_shift_ptrs(
+                                quant_arg_base, qdp.reg_oc_off_addr);
+            else
+                quantization_injectors[quantization_inj_idx]
+                        ->init_output_scale_shift_ptrs(
+                                quant_arg_base, qdp.reg_oc_off);
+
+            for (auto &IdxSetPair : vecOfVmmIdxsSets) {
+                quantization_injectors[quantization_inj_idx]
+                        ->compute_output_scale_shift(IdxSetPair.second,
+                                IdxSetPair.first, false, is_broadcast);
+            }
+
+            post_ops_data_offset += quantization_injectors[quantization_inj_idx]
+                                            ->memoryStep();
+            ++rhs_arg_idx;
+            quantization_inj_idx++;
         } else {
             const auto lam = lambda_jit_injectors_.find(post_op.kind);
             if (lam != lambda_jit_injectors_.end()) lam->second();
@@ -296,6 +494,15 @@ template <cpu_isa_t isa, typename Vmm>
 void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
         const injector_utils::vmm_index_set_t &vmm_idxs) {
     compute_vector_range(vmm_idxs, binary_injector::rhs_arg_dynamic_params_t());
+}
+
+template <cpu_isa_t isa, typename Vmm>
+void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
+        const injector_utils::vmm_index_set_t &vmm_idxs,
+        const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params) {
+    compute_vector_range(vmm_idxs, rhs_arg_params,
+            depthwise_injector::dynamic_params_t(),
+            quantization_injector::dynamic_params_t());
 }
 
 template <cpu_isa_t isa, typename Vmm>
@@ -316,9 +523,55 @@ void jit_uni_postops_injector_t<isa, Vmm>::compute_vector(size_t idx) {
 }
 
 template <cpu_isa_t isa, typename Vmm>
+void jit_uni_postops_injector_t<isa, Vmm>::compute_vector(size_t idx,
+        const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
+        const depthwise_injector::dynamic_params_t &ddp,
+        const quantization_injector::dynamic_params_t &qdp) {
+    compute_vector_range({idx}, rhs_arg_params, ddp, qdp);
+}
+
+template <cpu_isa_t isa, typename Vmm>
+void jit_uni_postops_injector_t<isa, Vmm>::compute_vector(size_t idx,
+        const depthwise_injector::dynamic_params_t &ddp,
+        const quantization_injector::dynamic_params_t &qdp, bool is_broadcast) {
+    compute_vector_range({idx}, binary_injector::rhs_arg_dynamic_params_t(),
+            ddp, qdp, is_broadcast);
+}
+
+template <cpu_isa_t isa, typename Vmm>
 void jit_uni_postops_injector_t<isa, Vmm>::set_lambda_injector(
         dnnl_primitive_kind_t kind, const std::function<void()> &jit_injector) {
     lambda_jit_injectors_[kind] = jit_injector;
+}
+
+template <cpu_isa_t isa, typename Vmm>
+void jit_uni_postops_injector_t<isa, Vmm>::push_post_ops_data_on_stack(
+        const Xbyak::Reg64 &post_ops_data_reg, std::size_t post_ops_data_offset,
+        const Xbyak::Reg64 &aux_reg0, const Xbyak::Reg64 &aux_reg1) {
+    for (int i = 0; i < post_ops_.len(); i++) {
+        if (post_ops_.entry_[i].is_depthwise()
+                || post_ops_.entry_[i].is_quantization()) {
+            post_ops_pointers_count++;
+        }
+    }
+
+    if (post_ops_pointers_count != 0) {
+        host_->sub(host_->rsp, post_ops_pointers_count * sizeof(float *));
+
+        host_->mov(
+                aux_reg0, host_->ptr[post_ops_data_reg + post_ops_data_offset]);
+        for (size_t i = 0; i < post_ops_pointers_count; i++) {
+            host_->mov(aux_reg1, host_->ptr[aux_reg0 + i * sizeof(float *)]);
+            host_->mov(host_->ptr[host_->rsp + i * sizeof(float *)], aux_reg1);
+        }
+    }
+}
+
+template <cpu_isa_t isa, typename Vmm>
+void jit_uni_postops_injector_t<isa, Vmm>::reset_stack_pointer() {
+    if (post_ops_pointers_count != 0) {
+        host_->add(host_->rsp, post_ops_pointers_count * sizeof(float *));
+    }
 }
 
 post_ops_ok_args_t::post_ops_ok_args_t(const cpu_isa_t isa,
@@ -411,6 +664,12 @@ bool post_ops_ok(const post_ops_ok_args_t &post_ops_ok_args) {
                         }
                         return ok;
                     }
+                    break;
+                case depthwise:
+                    if (entry.is_depthwise()) return true;
+                    break;
+                case quantization:
+                    if (entry.is_quantization()) return true;
                     break;
                 default: assert(!"Unhandled post_op type");
             }

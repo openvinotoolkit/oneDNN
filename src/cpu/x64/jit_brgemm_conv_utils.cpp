@@ -1210,8 +1210,15 @@ void brg_blocking_t::iterate_ker_block(brg_blocking_t &best_brgb, int kd_block_,
                         || kh_block != kh || kw_block != kw
                         || kd_block_pad != kd || kh_block_pad != kh
                         || kw_block_pad != kw);
+        //if (exec_type == exec_base)
+        //    use_buffer = use_buffer || (maybe_use_buffer && iwp != iw);
+        // WA coredump: ws:2, pl: 1, will result r_pad=-1 and incorrect post ops jit kernel.
+        // case: onednn_verbose,exec,cpu,convolution,brgconv:avx512_core,forward_inference,src_f32::blocked:acb:f0 wei_f32:p:blocked:Acb16a:f0 bia_undef::undef::f0 dst_f32::blocked:acb:f0,attr-post-ops:sum:1:0:f32+eltwise_hardswish+binary_min:f32:0+binary_max:f32:0+binary_mul:f32:0+binary_add:f32:0+eltwise_round_half_to_even+binary_mul:f32:0+binary_add:f32:0 ,alg:convolution_direct,mb2_ic112oc6_iw7ow4kw1sw2dw0pw1,63700.4
         if (exec_type == exec_base)
-            use_buffer = use_buffer || (maybe_use_buffer && iwp != iw);
+            use_buffer = use_buffer
+                    || (maybe_use_buffer
+                            && (iwp != iw
+                                    || (l_pad + nstl::max(0, r_pad)) > 0));
 
         const status_t st = estimate_brgemm_ur();
         if (st != status::success) continue;
@@ -1654,8 +1661,13 @@ status_t init_jcp(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
 
     // take L1 as 7/8 of the real size for L1
     brg_blocking_t::L1 = (platform::get_per_core_cache_size(1) * 7) / 8;
+    brg_blocking_t::L2 = platform::get_per_core_cache_size(2);
+    // here is hard-coded L2 size for avx2 performance cores
+    // TODO: get L2 size from the platform
+    if (one_of(isa, avx2, avx2_vnni, avx2_vnni_2))
+        brg_blocking_t::L2 = 2 * 1024 * 1024;
     // take L2 as 3/4 of the real size for L2
-    brg_blocking_t::L2 = (platform::get_per_core_cache_size(2) * 3) / 4;
+    brg_blocking_t::L2 = (brg_blocking_t::L2 * 3) / 4;
 
     // These are rough estimates of the latency (relative) of access to various
     // cache levels. This is enough for an estimation of data access cost.
@@ -2326,10 +2338,6 @@ status_t init_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
 
     if (try_exec_type_res == false) return status::unimplemented;
 
-#if DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_THREADPOOL
-    adjust_nthr(jcp, src_d, dst_d);
-#endif
-
     // ============ end blocking ===========================================
     jcp.brg_type
             = (jcp.use_uker && one_of(jcp.exec_type, exec_base, exec_trans))
@@ -2507,12 +2515,13 @@ status_t init_1x1_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
         const int n_vnni_blocks = utils::div_up(jcp.ic, jcp.vnni_block);
         const int ic_block
                 = nstl::min(jcp.acc_simd_w, n_vnni_blocks) * jcp.vnni_block;
-
-        jcp.extendable_k
-                = !jcp.is_tf32 && jcp.ic > jcp.simd_w && jcp.ic % jcp.simd_w;
+        // WA: extendable_k caused extra error.
+        // jcp.extendable_k = jcp.ic > jcp.simd_w && jcp.ic % jcp.simd_w;
+        // jcp.extendable_k
+        //         = !jcp.is_tf32 && jcp.ic > jcp.simd_w && jcp.ic % jcp.simd_w;
 
         const bool do_zeropad = !(jcp.is_bf32 || jcp.is_tf32)
-                && !jcp.extendable_k
+                // && !jcp.extendable_k
                 && (jcp.ic % jcp.vnni_block != 0 || jcp.ic > ic_block);
         if (do_zeropad) jcp.ic = utils::rnd_up(jcp.ic, ic_block);
         const auto ic_padded_block = jcp.simd_w;
@@ -2566,10 +2575,6 @@ status_t init_1x1_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
         if (cur_brgb.eff > best_brgb.eff) best_brgb = cur_brgb;
     }
     best_brgb.save_to_jcp(jcp);
-
-#if DNNL_CPU_THREADING_RUNTIME == DNNL_RUNTIME_THREADPOOL
-    adjust_nthr(jcp, src_d, dst_d);
-#endif
 
     // =============== end blocking =================================
 

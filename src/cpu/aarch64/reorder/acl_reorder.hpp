@@ -17,13 +17,13 @@
 #define CPU_AARCH64_REORDER_ACL_REORDER_HPP
 
 #include "common/utils.hpp"
-#include "cpu/aarch64/acl_utils.hpp"
+#include "cpu/acl/acl_utils.hpp"
 #include "cpu/reorder/cpu_reorder_pd.hpp"
 
 namespace dnnl {
 namespace impl {
 namespace cpu {
-namespace aarch64 {
+namespace acl {
 
 struct acl_reorder_obj_t {
     arm_compute::NEReorderLayer reorder;
@@ -89,7 +89,7 @@ private:
 
 }; // acl_reorder_fwd_t
 
-} // namespace aarch64
+} // namespace acl
 } // namespace cpu
 } // namespace impl
 } // namespace dnnl

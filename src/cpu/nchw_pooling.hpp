@@ -51,6 +51,8 @@ struct nchw_pooling_fwd_t : public primitive_t {
                             alg_kind::pooling_avg_include_padding,
                             alg_kind::pooling_avg_exclude_padding),
                     VERBOSE_BAD_ALGORITHM);
+            VDISPATCH_POOLING(memory_desc_wrapper(dst_md()).is_dense(false),
+                    VERBOSE_UNSUPPORTED_SPARSE_CFG);
 
             // Disabling verbose dispatch messages for unsupported dt for better
             // readability.
@@ -59,7 +61,6 @@ struct nchw_pooling_fwd_t : public primitive_t {
                         d_type, src_md()->data_type, dst_md()->data_type)) {
                 return status::unimplemented;
             }
-
             VDISPATCH_POOLING(platform::has_data_type_support(d_type),
                     VERBOSE_UNSUPPORTED_DT);
             VDISPATCH_POOLING(

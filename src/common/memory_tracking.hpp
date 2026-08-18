@@ -170,6 +170,7 @@ enum {
     // src and/or wei zero points (consumed by apply_per_mn_compensation).
     key_brgemm_primitive_per_mn_comp,
     key_brgemm_primitive_buffer_reduce,
+    key_brgemm_primitive_decomp_buf,
     key_concat_iptrs,
     key_concat_istrides,
     key_concat_nelems,
@@ -343,10 +344,17 @@ enum {
     key_wino_V,
     key_wino_M,
     key_binary_post_ops_expanded_rhs,
+    key_decompression_scales,
+    key_decompression_zero_points,
+    key_src_quantized,
+    key_src_dequantized_scales,
+    key_src_grouped_sum,
     // These two keys should always be the last ones,
     // even though they are not in alphabetical order
     key_nested,
     key_nested_multiple,
+    key_dw_conv_buffer,
+    key_dw_conv_padded_bias,
 };
 
 enum {

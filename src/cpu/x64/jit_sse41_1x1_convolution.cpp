@@ -32,6 +32,7 @@ namespace x64 {
 
 using namespace dnnl::impl::status;
 using namespace dnnl::impl::utils;
+using namespace dnnl::impl::memory_tracking::names;
 
 void jit_sse41_1x1_convolution_fwd_t::execute_forward(
         const exec_ctx_t &ctx) const {
@@ -52,6 +53,15 @@ void jit_sse41_1x1_convolution_fwd_t::execute_forward(
             : std::vector<const void *> {};
 
     const auto &scratchpad = ctx.get_scratchpad_grantor();
+
+    if (pd()->wants_padded_bias()) {
+        auto padded_bias = scratchpad.get<data_t>(key_conv_padded_bias);
+        utils::array_copy(padded_bias, bias, kernel_->jcp.oc_without_padding);
+        utils::array_set(padded_bias + kernel_->jcp.oc_without_padding, 0.f,
+                kernel_->jcp.oc - kernel_->jcp.oc_without_padding);
+        bias = padded_bias;
+    }
+
     parallel(kernel_->jcp.nthr, [&](const int ithr, const int nthr) {
         execute_forward_thr(ithr, nthr, src, weights, bias, weights_dw, bias_dw,
                 dst, scratchpad, post_ops_binary_rhs_arg_vec.data(),
@@ -172,6 +182,7 @@ void jit_sse41_1x1_convolution_fwd_t::execute_forward_thr(const int ithr,
         par_conv.post_ops_binary_rhs_arg_vec = post_ops_binary_rhs_arg_vec;
         par_conv.dst_orig
                 = static_cast<const float *>(par_conv.output_data) - dst_off;
+        par_conv.oc_off = _ocb * jcp.oc_block * sizeof(float);
 
         (*kernel_)(&par_conv);
     };
@@ -250,6 +261,8 @@ void jit_sse41_1x1_convolution_fwd_t::execute_forward_thr(const int ithr,
             par_conv_dw.post_ops_binary_rhs_arg_vec
                     = post_ops_binary_rhs_arg_vec_dw;
             par_conv_dw.dst_orig = dst;
+
+            par_conv_dw.oc_off = ch * jcp_dw.ch_block * sizeof(float);
 
             (*kernel_dw_)(&par_conv_dw);
 

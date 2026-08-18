@@ -61,11 +61,12 @@ struct jit_avx512_core_x8s8s32x_convolution_fwd_t : public primitive_t {
                     VERBOSE_BAD_ALGORITHM);
             VDISPATCH_CONV(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
 
-            VDISPATCH_CONV(
-                    attr()->has_default_values(smask_t::scales
-                                    | smask_t::zero_points | smask_t::post_ops
-                                    | smask_t::sum_dt,
-                            dst_md(0)->data_type),
+            VDISPATCH_CONV(attr()->has_default_values(smask_t::scales
+                                           | smask_t::zero_points
+                                           | smask_t::post_ops | smask_t::sum_dt
+                                           | smask_t::input_zero_points
+                                           | smask_t::output_compensations,
+                                   dst_md(0)->data_type),
                     VERBOSE_UNSUPPORTED_ATTR);
 
             VDISPATCH_CONV(attr()->post_ops_.check_sum_consistency(
@@ -74,6 +75,8 @@ struct jit_avx512_core_x8s8s32x_convolution_fwd_t : public primitive_t {
 
             CHECK(attr_scales_ok());
             CHECK(attr_zero_points_ok());
+            // VDISPATCH_CONV(!this->attr()->has_asymmetric_quantization(),
+            //                 VERBOSE_UNSUPPORTED_ATTR);
 
             // TODO: make `init_conf` assign initialized object to `jcp_`
             CHECK(jit_avx512_core_x8s8s32x_fwd_kernel_t::init_conf(jcp_,
@@ -109,8 +112,12 @@ struct jit_avx512_core_x8s8s32x_convolution_fwd_t : public primitive_t {
                 return execute_forward_2d_dw(ctx);
             else
                 return execute_forward_2d(ctx);
-        else if (_pd->ndims() == 5)
-            return execute_forward_3d(ctx);
+        else if (_pd->ndims() == 5) {
+            if (_pd->jcp_.is_depthwise)
+                return execute_forward_3d_dw(ctx);
+            else
+                return execute_forward_3d(ctx);
+        }
         return status::unimplemented;
     }
 
@@ -119,6 +126,7 @@ private:
     status_t execute_forward_2d(const exec_ctx_t &ctx) const;
     status_t execute_forward_2d_dw(const exec_ctx_t &ctx) const;
     status_t execute_forward_3d(const exec_ctx_t &ctx) const;
+    status_t execute_forward_3d_dw(const exec_ctx_t &ctx) const;
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 
     std::unique_ptr<jit_avx512_core_x8s8s32x_fwd_kernel_t> kernel_;

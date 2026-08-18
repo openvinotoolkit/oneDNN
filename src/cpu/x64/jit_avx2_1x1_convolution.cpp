@@ -217,6 +217,9 @@ void jit_avx2_1x1_convolution_fwd_t::execute_forward_thr(const int ithr,
         p.post_ops_binary_rhs_arg_vec = post_ops_binary_rhs_arg_vec;
         p.dst_orig = static_cast<const float *>(p.output_data) - dst_off;
 
+        p.oc_off = oc_off_idx * (is_dst_layout_nxc ? 1 : jcp.oc_block)
+                * sizeof(float);
+
         (*kernel_)(&p);
     };
 
@@ -296,6 +299,8 @@ void jit_avx2_1x1_convolution_fwd_t::execute_forward_thr(const int ithr,
                     = post_ops_binary_rhs_arg_vec_dw;
             par_conv_dw.dst_orig = dst;
 
+            par_conv_dw.oc_off = ch * jcp_dw->ch_block * sizeof(float);
+
             (*dw_jit_ker)(&par_conv_dw);
 
             for (int i = 0; i < jcp_dw->kh; ++i)
@@ -374,6 +379,9 @@ void jit_avx2_1x1_convolution_bwd_data_t::execute_backward_data(
     auto diff_dst = CTX_IN_MEM(const data_t *, DNNL_ARG_DIFF_DST);
     auto weights = CTX_IN_MEM(const data_t *, DNNL_ARG_WEIGHTS);
     auto diff_src = CTX_OUT_MEM(data_t *, DNNL_ARG_DIFF_SRC);
+
+    const auto post_ops_binary_rhs_arg_vec
+            = binary_injector::prepare_binary_args(pd()->jcp_.post_ops, ctx);
 
     const memory_desc_wrapper diff_dst_d(pd()->diff_dst_md());
     const memory_desc_wrapper weights_d(pd()->weights_md(0));
@@ -473,10 +481,19 @@ void jit_avx2_1x1_convolution_bwd_data_t::execute_backward_data(
                                     ? weights_d.blk_off(g, ocb, icb)
                                     : weights_d.blk_off(ocb, icb)];
 
-                    p.first_last_flag = ocb == 0 ? FLAG_REDUCE_FIRST : 0;
+                    p.first_last_flag = 0 | (ocb == 0 ? FLAG_REDUCE_FIRST : 0)
+                            | (ocb + jcp.nb_reduce_blocking >= jcp.nb_reduce
+                                            ? FLAG_REDUCE_LAST
+                                            : 0);
 
                     p.reduce_dim = this_block_size(ocb * jcp.oc_block, jcp.oc,
                             nb_oc_blocking * jcp.oc_block);
+
+                    p.oc_off = ic_off_idx
+                            * (is_dsrc_layout_nxc ? 1 : jcp.ic_block)
+                            * sizeof(float);
+                    p.post_ops_binary_rhs_arg_vec
+                            = post_ops_binary_rhs_arg_vec.data();
 
                     (*kernel_)(&p);
                 }

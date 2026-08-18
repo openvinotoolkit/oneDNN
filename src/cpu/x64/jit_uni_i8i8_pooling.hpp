@@ -59,8 +59,6 @@ struct jit_uni_i8i8_pooling_fwd_t : public primitive_t {
             VDISPATCH_POOLING(utils::one_of(src_md()->data_type, data_type::s32,
                                       data_type::s8, data_type::u8),
                     VERBOSE_UNSUPPORTED_DT);
-            VDISPATCH_POOLING(src_md()->data_type == dst_md()->data_type,
-                    VERBOSE_INCONSISTENT_DT, "src", "dst");
             VDISPATCH_POOLING(!is_dilated(), VERBOSE_UNSUPPORTED_FEATURE,
                     "does not support dilations");
             VDISPATCH_POOLING(attr()->has_default_values(
@@ -79,6 +77,13 @@ struct jit_uni_i8i8_pooling_fwd_t : public primitive_t {
             VDISPATCH_POOLING(
                     attr_.set_default_formats(dst_md(0)) == status::success,
                     VERBOSE_UNSUPPORTED_POSTOP);
+            VDISPATCH_POOLING(
+                    IMPLICATION(utils::one_of(desc()->alg_kind,
+                                        alg_kind::pooling_avg_include_padding,
+                                        alg_kind::pooling_avg_exclude_padding),
+                            utils::one_of(dst_md()->data_type, data_type::u8,
+                                    data_type::s8, data_type::f32)),
+                    VERBOSE_BAD_ALGORITHM);
 
             CHECK(jit_conf());
 

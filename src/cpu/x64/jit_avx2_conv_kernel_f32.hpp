@@ -80,6 +80,14 @@ private:
 
     Xbyak::Ymm ytmp = Xbyak::Ymm(14);
 
+    reg64_t reg_d_weights = imm_addr64;
+    reg64_t reg_d_bias = ki_iter;
+
+    Xbyak::Ymm ymm_d_weights = Xbyak::Ymm(14);
+    Xbyak::Ymm ymm_d_bias = Xbyak::Ymm(15);
+    int base_post_ops_data_offset = 0;
+    constexpr static int reg64_size = 8;
+
     inline void oh_step_unroll_kw(
             int ur_w, int pad_l, int pad_r, int oc_blocks);
     inline void oh_step_nopad(int ur_w, int pad_l, int pad_r, int oc_blocks);
@@ -152,6 +160,13 @@ struct jit_avx2_conv_bwd_data_kernel_f32_t : public jit_generator_t {
     jit_avx2_conv_bwd_data_kernel_f32_t(const jit_conv_conf_t &ajcp)
         : jit_generator_t(jit_name()), jcp(ajcp) {}
 
+    ~jit_avx2_conv_bwd_data_kernel_f32_t() {
+        for (auto inj : depthwise_injectors)
+            delete inj;
+        depthwise_injectors.clear();
+    }
+
+    static bool post_ops_ok(const jit_conv_conf_t &jcp);
     static status_t init_conf(jit_conv_conf_t &jcp,
             const convolution_desc_t &cd, const memory_desc_wrapper &diff_src_d,
             const memory_desc_wrapper &weights_d,
@@ -185,6 +200,13 @@ private:
     reg64_t reg_long_offt = r15;
     reg64_t reg_reduce_work = reg_long_offt;
     Xbyak::Reg32 reg_ci_flag = r13d; // used for nxc tails
+
+    reg64_t reg_d_weights = r15;
+    reg64_t reg_d_bias = rbp;
+    int base_post_ops_data_offset = 0;
+    constexpr static int reg64_size = 8;
+
+    nstl::vector<jit_uni_depthwise_injector_f32<avx2> *> depthwise_injectors;
 
     inline void compute_loop(int ur_w, int l_overflow, int r_overflow);
 

@@ -79,14 +79,14 @@ CMAKE_OPTIONS="${CMAKE_OPTIONS}
 # NOTE: only for AArch64 builds.
 if [ ! -z ${ACL_DIR} ]; then
   export ACL_ROOT_DIR=$ACL_DIR
-  CMAKE_OPTIONS="${CMAKE_OPTIONS} -DDNNL_AARCH64_USE_ACL=ON"
+  CMAKE_OPTIONS="${CMAKE_OPTIONS} -DDNNL_USE_ACL=ON"
   echo "Info: Building with Arm Compute Library backend for Aarch64..."
 fi
 
 if [ "$(uname)" == "Linux" ]; then
-    MAKE_OP="-j$(grep -c processor /proc/cpuinfo)"
+    BUILD_JOBS="$(grep -c processor /proc/cpuinfo)"
 else
-    MAKE_OP="-j$(sysctl -n hw.physicalcpu)"
+    BUILD_JOBS="$(sysctl -n hw.physicalcpu)"
 fi
 
 cd "${SORUCE_DIR}"
@@ -104,5 +104,5 @@ if [ "$err" != 0 ]; then
     fi
     exit $err
 fi
-cd ${BUILD_DIR} && make -k ${MAKE_OP}
+cmake --build ${BUILD_DIR} --parallel "${BUILD_JOBS}"
 exit $?

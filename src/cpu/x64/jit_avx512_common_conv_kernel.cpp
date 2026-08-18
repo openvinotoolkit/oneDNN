@@ -76,10 +76,7 @@ inline status_t init_tag(format_tag_t &tag, memory_desc_t &md,
 }
 
 inline bool is_1stconv(const jit_conv_conf_t &jcp) {
-    if (mayiuse(avx512_core))
-        return (jcp.ic < 16 && jcp.ngroups == 1);
-    else
-        return one_of(jcp.ic, 1, 3);
+    return one_of(jcp.ic, 1, 2, 3);
 }
 
 inline bool is_ow_threading_on(const jit_conv_conf_t &jcp) {
@@ -97,7 +94,8 @@ jit_avx512_common_conv_fwd_kernel_vmm_t<Vmm>::
         jit_avx512_common_conv_fwd_kernel_vmm_t(const jit_conv_conf_t &ajcp,
                 const primitive_attr_t &attr, const memory_desc_t &dst_md)
     : jit_generator_t(jit_name()), jcp(ajcp), attr_(attr) {
-    if (jcp.with_eltwise || jcp.with_binary) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise
+            || jcp.with_quantization) {
         using namespace binary_injector;
         static constexpr bool preserve_gpr = true;
         static constexpr bool preserve_vmm = false;
@@ -112,10 +110,13 @@ jit_avx512_common_conv_fwd_kernel_vmm_t<Vmm>::
                 use_exact_tail_scalar_bcast};
         const binary_injector::static_params_t static_params {
                 this->param1, rhs_args_static_params};
+        quantization_injector::static_params_t quantization_static_params {
+                zmm_d_weights.getIdx(), zmm_d_bias.getIdx(), reg_d_weights,
+                reg_d_bias};
 
         postops_injector_ = utils::make_unique<
                 injector::jit_uni_postops_injector_t<avx512_core>>(
-                this, jcp.post_ops, static_params);
+                this, jcp.post_ops, static_params, quantization_static_params);
     }
 }
 
@@ -145,6 +146,20 @@ static void iterate(const int nb_oc_blocking, const int ur_w, const F &fun) {
 
 template <typename Vmm>
 void jit_avx512_common_conv_fwd_kernel_vmm_t<Vmm>::apply_postops(int ur_w) {
+    std::map<size_t, int> vmm_idx_off;
+    iterate(jcp.nb_oc_blocking, ur_w,
+            [&](const bool, const int i_load, const int i_ur) {
+        vmm_idx_off.insert({vmm_out_idx(i_ur, i_load),
+                i_load * jcp.oc_block * sizeof(float)});
+    });
+    depthwise_injector::dynamic_params_t ddp {zmm_d_weights.getIdx(),
+            zmm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
+            ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, this->rsp,
+            base_post_ops_data_offset};
+    quantization_injector::dynamic_params_t qdp {
+            ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, jcp.dst_dt,
+            this->rsp, base_post_ops_data_offset};
+
     injector_utils::vmm_index_set_t vmm_idxs;
     if (jcp.with_binary) {
         binary_injector::rhs_arg_dynamic_params_t rhs_arg_params;
@@ -162,13 +177,15 @@ void jit_avx512_common_conv_fwd_kernel_vmm_t<Vmm>::apply_postops(int ur_w) {
             if (mask_flag) { rhs_arg_params.vmm_tail_idx_.emplace(vmm_idx); }
         });
 
-        postops_injector_->compute_vector_range(vmm_idxs, rhs_arg_params);
+        postops_injector_->compute_vector_range(
+                vmm_idxs, rhs_arg_params, ddp, qdp);
     } else {
         iterate(jcp.nb_oc_blocking, ur_w,
                 [&](const bool, const int i_load, const int i_ur) {
             vmm_idxs.emplace(vmm_out_idx(i_ur, i_load));
         });
-        postops_injector_->compute_vector_range(vmm_idxs);
+        postops_injector_->compute_vector_range(vmm_idxs,
+                binary_injector::rhs_arg_dynamic_params_t(), ddp, qdp);
     }
 }
 
@@ -221,7 +238,8 @@ void jit_avx512_common_conv_fwd_kernel_vmm_t<Vmm>::store_output(int ur_w) {
 
     L(post_ops_label);
 
-    if (jcp.with_eltwise || jcp.with_binary) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise
+            || jcp.with_quantization) {
         test(reg_channel, FLAG_IC_LAST);
         jz(store_label, T_NEAR);
 
@@ -507,7 +525,10 @@ void jit_avx512_common_conv_fwd_kernel_vmm_t<Vmm>::compute_loop_fma_core(
 template <typename Vmm>
 void jit_avx512_common_conv_fwd_kernel_vmm_t<Vmm>::compute_loop(
         int ur_w, int pad_l, int pad_r) {
-    if (jcp.ndims == 5) push(reg_oi);
+    if (jcp.ndims == 5) {
+        push(reg_oi);
+        base_post_ops_data_offset += reg64_size;
+    }
 
     prepare_output(ur_w);
 
@@ -562,7 +583,10 @@ void jit_avx512_common_conv_fwd_kernel_vmm_t<Vmm>::compute_loop(
 
     L(skip_compute_loop);
     store_output(ur_w);
-    if (jcp.ndims == 5) pop(reg_oi);
+    if (jcp.ndims == 5) {
+        pop(reg_oi);
+        base_post_ops_data_offset -= reg64_size;
+    }
 }
 
 template <typename Vmm>
@@ -586,6 +610,11 @@ void jit_avx512_common_conv_fwd_kernel_vmm_t<Vmm>::generate() {
             * (is_dst_layout_nxc() ? jcp.ngroups * jcp.oc : jcp.oc_block);
 
     preamble();
+
+    if (postops_injector_)
+        postops_injector_->push_post_ops_data_on_stack(this->param1,
+                GET_OFF(post_ops_binary_rhs_arg_vec), reg_inp, reg_out);
+
     mov(reg_inp, ptr[param1 + GET_OFF(src)]);
     mov(reg_out, ptr[param1 + GET_OFF(dst)]);
     mov(reg_ker, ptr[param1 + GET_OFF(filt)]);
@@ -767,6 +796,9 @@ void jit_avx512_common_conv_fwd_kernel_vmm_t<Vmm>::generate() {
         if (ur_w_tail != 0) { compute_loop(ur_w_tail, 0, r_pad); }
         L(end_label);
     }
+
+    if (postops_injector_) postops_injector_->reset_stack_pointer();
+
     postamble();
 
     if (jcp.with_eltwise)
@@ -837,11 +869,11 @@ status_t jit_avx512_common_conv_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
             jcp.t_pad, jcp.oh, jcp.ih, jcp.stride_h, ext_kh);
     jcp.back_pad = calculate_end_padding(
             jcp.f_pad, jcp.od, jcp.id, jcp.stride_d, ext_kd);
-    bool kernel_outside_src = false || ext_kw <= jcp.l_pad
-            || ext_kw <= jcp.r_pad || ext_kh <= jcp.t_pad || ext_kh <= jcp.b_pad
-            || ext_kd <= jcp.f_pad || ext_kd <= jcp.back_pad;
-    VDISPATCH_CONV_IC(!kernel_outside_src, VERBOSE_UNSUPPORTED_PAD_FEATURE,
-            "weights and src size mismatch");
+    // bool kernel_outside_src = false || ext_kw <= jcp.l_pad
+    //         || ext_kw <= jcp.r_pad || ext_kh <= jcp.t_pad || ext_kh <= jcp.b_pad
+    //         || ext_kd <= jcp.f_pad || ext_kd <= jcp.back_pad;
+    // VDISPATCH_CONV_IC(!kernel_outside_src, VERBOSE_UNSUPPORTED_PAD_FEATURE,
+    //         "weights and src size mismatch");
 
     const auto dat_tag_nxc = pick(ndims - 3, nwc, nhwc, ndhwc);
     const auto dat_tag_ncx = pick(ndims - 3, ncw, nchw, ncdhw);
@@ -964,6 +996,8 @@ status_t jit_avx512_common_conv_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
     const int binary_ind = post_ops.find(primitive_kind::binary);
     const int prelu_ind = post_ops.find(primitive_kind::prelu);
     jcp.with_binary = !everyone_is(-1, binary_ind, prelu_ind);
+    jcp.with_depthwise = post_ops.find(primitive_kind::depthwise) != -1;
+    jcp.with_quantization = post_ops.find(primitive_kind::quantization) != -1;
 
     jcp.post_ops = post_ops;
 
@@ -972,8 +1006,9 @@ status_t jit_avx512_common_conv_fwd_kernel_t::init_conf(jit_conv_conf_t &jcp,
     static constexpr bool sum_requires_scale_one = true;
     static constexpr bool sum_requires_zp_zero = true;
     bool post_ops_ok_ = post_ops_ok(post_ops_ok_args_t(avx512_core,
-            {eltwise, binary, sum}, jcp.post_ops, &dst_d, sum_at_pos_0_only,
-            sum_requires_scale_one, sum_requires_zp_zero));
+            {eltwise, binary, sum, depthwise, quantization}, jcp.post_ops,
+            &dst_d, sum_at_pos_0_only, sum_requires_scale_one,
+            sum_requires_zp_zero));
     // temporary workaround that skips avx2 implementation for ternary
     // post-ops with scalar broadcasting to avoid register collisions.
     post_ops_ok_ = post_ops_ok_
@@ -1325,13 +1360,45 @@ void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<Vmm>::prepare_output(
 template <typename Vmm>
 void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<Vmm>::store_output(
         int ur_w) {
-    Label no_update_label;
+    std::size_t post_ops_data_offset = 0;
+    int depthwise_inj_idx = 0;
+    Label no_update_label, skip_post_ops;
     const int ic_tail = jcp.ic_without_padding % jcp.simd_w;
     const bool dsrc_layout_nxc = is_dsrc_layout_nxc();
     mov(reg_channel, ptr[param + GET_OFF(channel)]);
     cmp(reg_channel, 0);
     je(no_update_label, T_NEAR);
+    const auto &p = jcp.post_ops;
+    const bool with_depthwise = p.find(primitive_kind::depthwise) != -1;
+
+    if (with_depthwise) {
+        mov(reg_d_weights,
+                ptr[this->rsp + base_post_ops_data_offset
+                        + post_ops_data_offset]);
+        add(reg_d_weights, ptr[this->param1 + GET_OFF(oc_off)]);
+    }
+
     for (int k = 0; k < jcp.nb_ic_blocking; k++) {
+        if (with_depthwise) {
+            post_ops_data_offset = 0;
+            depthwise_inj_idx = 0;
+            for (int i = 0; i < p.len(); i++) {
+                auto &post_op = p.entry_[i];
+                if (post_op.is_depthwise()) {
+                    depthwise_injectors[depthwise_inj_idx]
+                            ->compute_vector_range(k * jcp.ur_w,
+                                    k * jcp.ur_w + ur_w, reg_d_weights,
+                                    reg_d_weights, false, true);
+
+                    post_ops_data_offset
+                            += depthwise_injectors[depthwise_inj_idx]
+                                       ->memoryStep();
+                    depthwise_inj_idx++;
+                }
+            }
+            add(reg_d_weights, jcp.ic_block * sizeof(float));
+        }
+
         for (int j = 0; j < ur_w; j++) {
             Vmm vmm = vmm_out(j, k);
             size_t aux_src_offset = get_diff_src_offset(j, k);
@@ -1340,8 +1407,34 @@ void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<Vmm>::store_output(
                             reg_src, aux_src_offset, reg_long_offt));
         }
     }
+    jmp(skip_post_ops, T_NEAR);
 
     L(no_update_label);
+    post_ops_data_offset = 0;
+    depthwise_inj_idx = 0;
+
+    for (int i = 0; i < p.len(); i++) {
+        auto &post_op = p.entry_[i];
+        if (post_op.is_depthwise()) {
+            mov(reg_d_weights,
+                    ptr[this->rsp + base_post_ops_data_offset
+                            + post_ops_data_offset]);
+            add(reg_d_weights, ptr[this->param1 + GET_OFF(oc_off)]);
+
+            for (int k = 0; k < jcp.nb_ic_blocking; k++) {
+                depthwise_injectors[depthwise_inj_idx]->compute_vector_range(
+                        k * jcp.ur_w, k * jcp.ur_w + ur_w, reg_d_weights,
+                        reg_d_weights);
+
+                add(reg_d_weights, jcp.ic_block * sizeof(float));
+            }
+            post_ops_data_offset
+                    += depthwise_injectors[depthwise_inj_idx]->memoryStep();
+            depthwise_inj_idx++;
+        }
+    }
+    L(skip_post_ops);
+
     for (int k = 0; k < jcp.nb_ic_blocking; k++) {
         for (int j = 0; j < ur_w; j++) {
             Vmm vmm = vmm_out(j, k);
@@ -1388,6 +1481,7 @@ void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<Vmm>::compute_loop_fma(
     }
 
     if (jcp.ndims == 5) {
+        base_post_ops_data_offset += reg64_size;
         push(reg_src);
 
         mov(reg_ki, ptr[param + GET_OFF(kd_padding)]);
@@ -1397,6 +1491,7 @@ void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<Vmm>::compute_loop_fma(
             // aux_reg_ker_d == reg_ker we need to save its value and restore
             // it after kd loop
             assert(aux_reg_ker_d == reg_ker);
+            base_post_ops_data_offset += reg64_size;
             push(aux_reg_ker_d);
         } else
             mov(aux_reg_ker_d, ptr[param + GET_OFF(filt)]);
@@ -1494,10 +1589,16 @@ void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<Vmm>::compute_loop_fma(
         dec(reg_ki);
         cmp(reg_ki, 0);
         jg(kd_label, T_NEAR);
-        if (ocb_loop_in_compute_function) pop(aux_reg_ker_d);
+        if (ocb_loop_in_compute_function) {
+            pop(aux_reg_ker_d);
+            base_post_ops_data_offset -= reg64_size;
+        }
     }
 
-    if (jcp.ndims == 5) { pop(reg_src); }
+    if (jcp.ndims == 5) {
+        pop(reg_src);
+        base_post_ops_data_offset -= reg64_size;
+    }
 }
 
 template <typename Vmm>
@@ -1535,6 +1636,7 @@ void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<
 
     const bool ocb_loop_in_compute_function = ddst_layout_nxc;
     if (jcp.ndims == 5) {
+        base_post_ops_data_offset += reg64_size;
         push(reg_src);
 
         mov(reg_ki, ptr[param + GET_OFF(kd_padding)]);
@@ -1544,6 +1646,7 @@ void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<
             // aux_reg_ker_d == reg_ker we need to save its value and restore
             // it after kd loop
             assert(aux_reg_ker_d == reg_ker);
+            base_post_ops_data_offset += reg64_size;
             push(aux_reg_ker_d);
         } else
             mov(aux_reg_ker_d, ptr[param + GET_OFF(filt)]);
@@ -1616,15 +1719,22 @@ void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<
         cmp(reg_ki, 0);
         jg(kd_label, T_NEAR);
 
-        if (ocb_loop_in_compute_function) pop(aux_reg_ker_d);
+        if (ocb_loop_in_compute_function) {
+            pop(aux_reg_ker_d);
+            base_post_ops_data_offset -= reg64_size;
+        }
         pop(reg_src);
+        base_post_ops_data_offset -= reg64_size;
     }
 }
 
 template <typename Vmm>
 inline void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<Vmm>::compute_loop(
         int ur_w, int l_overflow, int r_overflow, int k_offset) {
-    if (jcp.ndims == 5) push(reg_oi);
+    if (jcp.ndims == 5) {
+        base_post_ops_data_offset += reg64_size;
+        push(reg_oi);
+    }
 
     prepare_output(ur_w);
 
@@ -1641,6 +1751,7 @@ inline void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<Vmm>::compute_loop(
     const bool generate_ocb_loop = jcp.nb_oc > 1 && is_ddst_layout_nxc();
     Label oc_loop;
     if (generate_ocb_loop) {
+        base_post_ops_data_offset += 2 * reg64_size;
         push(reg_dst);
         push(reg_ker);
 
@@ -1663,15 +1774,29 @@ inline void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<Vmm>::compute_loop(
 
         pop(reg_ker);
         pop(reg_dst);
+        base_post_ops_data_offset -= 2 * reg64_size;
     }
 
     L(skip_compute_loop);
     store_output(ur_w);
-    if (jcp.ndims == 5) pop(reg_oi);
+    if (jcp.ndims == 5) {
+        pop(reg_oi);
+        base_post_ops_data_offset -= reg64_size;
+    }
 }
 
 template <typename Vmm>
 void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<Vmm>::generate() {
+    const auto &p = jcp.post_ops;
+    for (int i = 0; i < p.len(); i++) {
+        auto &post_op = p.entry_[i];
+        if (post_op.is_depthwise()) {
+            depthwise_injectors.push_back(
+                    new jit_uni_depthwise_injector_f32<avx512_core>(
+                            this, post_op));
+        }
+    }
+
     int iw = jcp.iw;
     int kw = jcp.kw;
     int ur_w = jcp.ur_w;
@@ -1689,6 +1814,26 @@ void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<Vmm>::generate() {
             * (is_dsrc_layout_nxc() ? jcp.ngroups * jcp.ic : ic_block);
 
     preamble();
+
+    std::size_t post_ops_pointers_count = 0;
+    for (int i = 0; i < p.len(); i++) {
+        if (p.entry_[i].is_depthwise() || p.entry_[i].is_quantization()) {
+            post_ops_pointers_count++;
+        }
+    }
+
+    if (post_ops_pointers_count != 0) {
+        sub(rsp, post_ops_pointers_count * sizeof(float *));
+
+        auto aux_reg0 = reg_src;
+        auto aux_reg1 = reg_dst;
+
+        mov(aux_reg0, ptr[this->param + GET_OFF(post_ops_binary_rhs_arg_vec)]);
+        for (size_t i = 0; i < post_ops_pointers_count; i++) {
+            mov(aux_reg1, ptr[aux_reg0 + i * sizeof(float *)]);
+            mov(ptr[rsp + i * sizeof(float *)], aux_reg1);
+        }
+    }
 
     mov(reg_src, ptr[param + GET_OFF(src)]);
     mov(reg_dst, ptr[param + GET_OFF(dst)]);
@@ -1854,7 +1999,30 @@ void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<Vmm>::generate() {
     }
     L(end_label);
 
+    if (post_ops_pointers_count != 0) {
+        add(rsp, post_ops_pointers_count * sizeof(float *));
+    }
+
     postamble();
+}
+
+bool jit_avx512_common_conv_bwd_data_kernel_f32_t::post_ops_ok(
+        const jit_conv_conf_t &jcp) {
+    const auto &p = jcp.post_ops;
+    if (p.len() > 1) return false;
+
+    auto all_post_ops_supported = [&]() {
+        bool ok = true;
+
+        for (int i = 0; i < p.len(); i++) {
+            ok = ok
+                    && utils::one_of(
+                            p.entry_[i].kind, primitive_kind::depthwise);
+        }
+        return ok;
+    };
+
+    return all_post_ops_supported();
 }
 
 status_t jit_avx512_common_conv_bwd_data_kernel_f32_t::init_conf(
@@ -1862,6 +2030,8 @@ status_t jit_avx512_common_conv_bwd_data_kernel_f32_t::init_conf(
         memory_desc_t &diff_src_md, memory_desc_t &weights_md,
         memory_desc_t &diff_dst_md, int nthreads) {
     if (!mayiuse(avx512_core)) return status::unimplemented;
+
+    if (!post_ops_ok(jcp)) return status::unimplemented;
 
     const memory_desc_wrapper diff_src_d(&diff_src_md);
     const memory_desc_wrapper weights_d(&weights_md);

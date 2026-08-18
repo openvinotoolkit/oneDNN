@@ -159,12 +159,11 @@ status_t jit_uni_x8s8s32x_deconv_fwd_kernel_t<isa>::init_conf(
         CHECK_BOOL(memory_desc_init_by_tag(want_wei_md, wei_tag));
 
         if (jcp.signed_input && !jcp.is_depthwise) {
-            want_wei_md.extra.flags = 0
-                    | memory_extra_flags::compensation_conv_s8s8
-                    | memory_extra_flags::scale_adjust;
+            want_wei_md.extra.flags
+                    = 0 | memory_extra_flags::compensation_conv_s8s8;
             want_wei_md.extra.compensation_mask = (1 << 0)
                     + (with_groups && !jcp.is_depthwise ? (1 << 1) : 0);
-            want_wei_md.extra.scale_adjust = jcp.has_vnni ? 1.f : 0.5f;
+            want_wei_md.extra.scale_adjust = 1.f;
         }
         if (jcp.src_zero_point) set_zp_src_comp_flags(want_wei_md, with_groups);
 
@@ -270,11 +269,22 @@ status_t jit_uni_x8s8s32x_deconv_fwd_kernel_t<isa>::init_conf(
     const int sum_ind = p.find(primitive_kind::sum);
     jcp.with_sum = sum_ind != -1;
 
+    const int depthwise_ind = p.find(primitive_kind::depthwise);
+    jcp.with_depthwise = depthwise_ind != -1;
+
+    const int quantization_ind = p.find(primitive_kind::quantization);
+    jcp.with_quantization = quantization_ind != -1;
+
     jcp.is_oc_scale = attr.scales_.get_mask(DNNL_ARG_WEIGHTS) > 0;
     jcp.with_src_scales = !attr.scales_.get(DNNL_ARG_SRC).has_default_values();
     jcp.with_wei_scales
             = !attr.scales_.get(DNNL_ARG_WEIGHTS).has_default_values();
     jcp.with_dst_scales = !attr.scales_.get(DNNL_ARG_DST).has_default_values();
+
+    const auto &wei_scales = attr.scales_.get(DNNL_ARG_WEIGHTS);
+    const auto &dst_scales = attr.scales_.get(DNNL_ARG_DST);
+    jcp.is_oc_scale = wei_scales.get_mask() > 0;
+    jcp.with_dst_scales = !dst_scales.has_default_values();
 
     jcp.post_ops = p;
 
@@ -410,8 +420,9 @@ bool jit_uni_x8s8s32x_deconv_fwd_kernel_t<isa>::post_ops_ok(
         const primitive_attr_t &attr) {
     using namespace injector;
 
-    return injector::post_ops_ok(post_ops_ok_args_t(isa, {sum, eltwise, binary},
-            attr.post_ops_, &dst_d, false /*sum_at_pos_0_only*/,
+    return injector::post_ops_ok(post_ops_ok_args_t(isa,
+            {sum, eltwise, binary, depthwise, quantization}, attr.post_ops_,
+            &dst_d, false /*sum_at_pos_0_only*/,
             false /*sum_requires_scale_one*/, false /*sum_requires_zp_zero*/,
             true /*sum_requires_same_params*/,
             {broadcasting_strategy_t::per_oc,
@@ -428,7 +439,8 @@ jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa,
     , postops_injector_(nullptr)
     , ker_max_regs_(jcp_.has_vnni ? 14 : 12) {
 
-    if (jcp_.with_eltwise || jcp_.with_binary || jcp_.with_sum) {
+    if (jcp_.with_eltwise || jcp_.with_binary || jcp_.with_sum
+            || jcp_.with_depthwise || jcp_.with_quantization) {
         const std::size_t tail_size = get_tail_size();
 
         static constexpr bool preserve_gpr = true;
@@ -442,9 +454,13 @@ jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa,
                 tail_size, Xbyak::Opmask(2), use_exact_tail_scalar_bcast};
         const binary_injector::static_params_t bsp {this->param1_, rhs_sp};
 
+        const quantization_injector::static_params_t qsp {
+                vmm_d_weights.getIdx(), vmm_d_bias.getIdx(), reg_d_weights,
+                reg_d_bias};
+
         postops_injector_ = utils::make_unique<
                 injector::jit_uni_postops_injector_t<isa, Vmm>>(
-                this, jcp_.post_ops, bsp);
+                this, jcp_.post_ops, bsp, qsp);
     }
 }
 
@@ -1067,10 +1083,26 @@ void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::apply_postops(int ur_w,
             }
         }
     }
+
+    std::map<size_t, int> vmm_idx_off;
+    for (int ocb = 0; ocb < jcp_.nb_oc_blocking; ocb++) {
+        for (int ur = 0; ur < ur_w; ur++) {
+            vmm_idx_off.insert({vmm_out(ur, ocb).getIdx(),
+                    ocb * jcp_.oc_block * sizeof(float)});
+        }
+    }
+    depthwise_injector::dynamic_params_t ddp {vmm_d_weights.getIdx(),
+            vmm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
+            ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, this->rsp,
+            base_post_ops_data_offset};
+    quantization_injector::dynamic_params_t qdp {
+            ptr[this->param1 + GET_OFF(oc_off)], vmm_idx_off, jcp_.dst_dt,
+            this->rsp, base_post_ops_data_offset};
+
     const int nb_oc_block
             = jcp_.is_depthwise ? jcp_.nb_ch_blocking : jcp_.nb_oc_blocking;
     postops_injector_->compute_vector_range(
-            16 - nb_oc_block * ur_w, 16, rhs_arg_params);
+            16 - nb_oc_block * ur_w, 16, rhs_arg_params, ddp, qdp);
 }
 
 template <cpu_isa_t isa, typename Vmm>
@@ -1211,7 +1243,8 @@ void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::store_output(
     if (p_sum_zp && *p_sum_zp != 0) {
         mov(reg_ptr_sum_zp_, reinterpret_cast<size_t>(p_sum_zp));
     }
-    if (jcp_.with_eltwise || jcp_.with_binary || jcp_.with_sum)
+    if (jcp_.with_eltwise || jcp_.with_binary || jcp_.with_sum
+            || jcp_.with_depthwise || jcp_.with_quantization)
         apply_postops(ur_w, last_oc_block, p_sum_scale, p_sum_zp);
 
     if (jcp_.with_dst_scales) {
@@ -1375,8 +1408,14 @@ template <cpu_isa_t isa, typename Vmm>
 void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::generate() {
     preamble();
 
-    if (zp::should_calculate_deconv_zp_src_pad_str_comp(jcp_))
+    if (postops_injector_)
+        postops_injector_->push_post_ops_data_on_stack(param1,
+                GET_OFF(post_ops_binary_rhs_arg_vec), reg_src_, reg_filt_);
+
+    if (zp::should_calculate_deconv_zp_src_pad_str_comp(jcp_)) {
         sub(rsp, reserved_stack_size_);
+        base_post_ops_data_offset += reserved_stack_size_;
+    }
 
     const auto vmm_one_128 = Xbyak::Xmm(vmm_one_.getIdx());
     mov(reg_scratch_, 0x10001);
@@ -1442,8 +1481,12 @@ void jit_uni_x8s8s32x_deconv_fwd_kernel_vmm_t<isa, Vmm>::generate() {
         }
     }
 
-    if (zp::should_calculate_deconv_zp_src_pad_str_comp(jcp_))
+    if (zp::should_calculate_deconv_zp_src_pad_str_comp(jcp_)) {
         add(rsp, reserved_stack_size_);
+        base_post_ops_data_offset -= reserved_stack_size_;
+    }
+
+    if (postops_injector_) postops_injector_->reset_stack_pointer();
 
     postamble();
 
@@ -1646,6 +1689,8 @@ status_t jit_uni_x8s8s32x_deconvolution_fwd_t<isa>::execute_forward_1d(
             p.dst_zero_point = dst_zero_points;
             p.dst_orig = dst;
 
+            p.oc_off = g_oc * sizeof(float);
+
             (*kernel_)(&p);
 
             ++start;
@@ -1833,6 +1878,8 @@ status_t jit_uni_x8s8s32x_deconvolution_fwd_t<isa>::execute_forward_2d(
                 p.src_zero_point = src_zero_points;
                 p.dst_zero_point = dst_zero_points;
                 p.dst_orig = dst;
+
+                p.oc_off = g_oc * sizeof(float);
 
                 (*kernel_)(&p);
             }
@@ -2076,6 +2123,8 @@ status_t jit_uni_x8s8s32x_deconvolution_fwd_t<isa>::execute_forward_3d(
                 p.src_zero_point = src_zero_points;
                 p.dst_zero_point = dst_zero_points;
                 p.dst_orig = dst;
+
+                p.oc_off = g_oc * sizeof(float);
 
                 (*kernel_)(&p);
             }

@@ -236,20 +236,22 @@ status_t jit_uni_dw_conv_fwd_kernel_t<isa, kernel_dt>::init_conf(
                         broadcasting_strategy_t::per_oc,
                         broadcasting_strategy_t::no_broadcast);
     }
+    jcp.with_depthwise = post_ops.find(primitive_kind::depthwise) != -1;
+    jcp.with_quantization = post_ops.find(primitive_kind::quantization) != -1;
 
     jcp.post_ops = post_ops;
 
     using namespace injector;
     static constexpr bool sum_at_pos_0_only = true;
     static constexpr bool sum_requires_scale_one = true;
-    const bool post_ops_ok_ = post_ops_ok(
-            post_ops_ok_args_t(isa, {eltwise, binary, sum}, jcp.post_ops,
-                    &dst_d, sum_at_pos_0_only, sum_requires_scale_one));
+    const bool post_ops_ok_ = post_ops_ok(post_ops_ok_args_t(isa,
+            {eltwise, binary, sum, depthwise, quantization}, jcp.post_ops,
+            &dst_d, sum_at_pos_0_only, sum_requires_scale_one));
     VDISPATCH_CONV_IC(post_ops_ok_, VERBOSE_UNSUPPORTED_POSTOP);
 
     const bool ok_to_pad_channels = true && !is_data_layout_nxc
             && jcp.oc == jcp.ngroups && jcp.ic == jcp.ngroups
-            && one_of(isa, avx512_core_fp16, avx512_core, avx2);
+            && one_of(isa, avx512_core_fp16, avx512_core, avx2, sse41);
     if (ok_to_pad_channels) {
         jcp.oc = rnd_up(jcp.oc, simd_w);
         jcp.ic = rnd_up(jcp.oc, simd_w);
@@ -279,6 +281,26 @@ void jit_uni_dw_conv_fwd_kernel_t<isa, kernel_dt>::init_scratchpad(
         scratchpad.book<float>(key_conv_bias_f16_convert_wsp, jcp.oc);
     else if (jcp.with_bias && jcp.oc_without_padding != jcp.oc)
         scratchpad.book<float>(key_conv_padded_bias, jcp.oc);
+}
+
+template <cpu_isa_t isa, data_type_t kernel_dt>
+bool jit_uni_dw_conv_bwd_data_kernel_t<isa, kernel_dt>::post_ops_ok(
+        const jit_conv_conf_t &jcp) {
+    const auto &p = jcp.post_ops;
+    if (p.len() > 1) return false;
+
+    auto all_post_ops_supported = [&]() {
+        bool ok = true;
+
+        for (int i = 0; i < p.len(); i++) {
+            ok = ok
+                    && utils::one_of(
+                            p.entry_[i].kind, primitive_kind::depthwise);
+        }
+        return ok;
+    };
+
+    return all_post_ops_supported();
 }
 
 template <cpu_isa_t isa, data_type_t kernel_dt>
@@ -389,6 +411,8 @@ status_t jit_uni_dw_conv_bwd_data_kernel_t<isa, kernel_dt>::init_conf(
     // note: sse41 uses 'ch_block = 8' where the value is derived
     // from: 'simd_w_ * reg_repeats_ = 4 * 2'
     jcp.ch_block = isa == avx512_core ? 16 : 8;
+
+    if (!post_ops_ok(jcp)) return status::unimplemented;
 
     bool ok_to_pad_channels = !is_data_layout_nxc && jcp.oc == jcp.ngroups
             && jcp.ic == jcp.ngroups && one_of(isa, avx512_core, avx2);

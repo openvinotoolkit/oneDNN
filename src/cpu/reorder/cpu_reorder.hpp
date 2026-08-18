@@ -23,6 +23,7 @@
 
 #include "cpu/reorder/simple_reorder.hpp"
 #include "cpu/reorder/simple_sparse_reorder.hpp"
+#include "cpu/reorder/simple_sparse_reorder_v0.hpp"
 
 #include "common/impl_list_item.hpp"
 #include "common/memory.hpp"
@@ -39,7 +40,7 @@
 #include "cpu/aarch64/matmul/brgemm_matmul_reorders.hpp"
 #include "cpu/aarch64/reorder/jit_blk_reorder.hpp"
 #include "cpu/aarch64/reorder/jit_uni_reorder.hpp"
-#if defined(DNNL_AARCH64_USE_ACL)
+#if defined(DNNL_USE_ACL)
 #include "cpu/aarch64/reorder/acl_reorder.hpp"
 #endif
 #elif DNNL_PPC64
@@ -90,6 +91,7 @@ extern const impl_list_map_t &regular_f32_s32_impl_list_map();
 extern const impl_list_map_t &regular_f32_s8_impl_list_map();
 extern const impl_list_map_t &regular_f32_u8_impl_list_map();
 extern const impl_list_map_t &regular_fp8_impl_list_map();
+extern const impl_list_map_t &regular_f32_bin_impl_list_map();
 extern const impl_list_map_t &regular_bf16_impl_list_map();
 extern const impl_list_map_t &regular_f16_impl_list_map();
 extern const impl_list_map_t &regular_s32_impl_list_map();
@@ -97,6 +99,9 @@ extern const impl_list_map_t &regular_s8_impl_list_map();
 extern const impl_list_map_t &regular_u8_impl_list_map();
 extern const impl_list_map_t &regular_s4_impl_list_map();
 extern const impl_list_map_t &regular_u4_impl_list_map();
+extern const impl_list_map_t &regular_u2_impl_list_map();
+extern const impl_list_map_t &regular_bin_impl_list_map();
+extern const impl_list_map_t &regular_nf4_impl_list_map();
 
 /* conv reorders w/ compensation */
 extern const impl_list_map_t &comp_f32_s8_impl_list_map();
@@ -105,17 +110,44 @@ extern const impl_list_map_t &comp_s8_s8_impl_list_map();
 
 // clang-format off
 
-#define REG_SR(idt, ifmt, odt, ofmt, ...) \
+using spec_reference = spec::reference;
+using spec_direct_copy = spec::direct_copy;
+using spec_direct_copy_except_dim_0 = spec::direct_copy_except_dim_0;
+using spec_conv_req_comp = spec::conv_req_comp;
+constexpr bool fmt_order_keep = fmt_order::keep;
+constexpr bool fmt_order_reverse = fmt_order::reverse;
+constexpr bool fmt_order_any = fmt_order::any;
+
+#if DNNL_X64
+using x64_jit_blk_reorder_t = x64::jit_blk_reorder_t;
+using x64_jit_uni_reorder_t = x64::jit_uni_reorder_t;
+using x64_brgemm_matmul_copy_reorder_t = x64::brgemm_matmul_copy_reorder_t;
+using x64_jit_uni_reorder_direct_copy_t = x64::jit_uni_reorder_direct_copy_t;
+#elif DNNL_AARCH64
+using aarch64_jit_blk_reorder_t = aarch64::jit_blk_reorder_t;
+using aarch64_jit_uni_reorder_t = aarch64::jit_uni_reorder_t;
+#endif
+
+#define CPU_REORDER_INSTANCE_IMPL(...) \
     impl_list_item_t(impl_list_item_t::reorder_type_deduction_helper_t< \
-            simple_reorder_t<idt, ifmt, odt, ofmt, __VA_ARGS__>::pd_t>()),
+            __VA_ARGS__::pd_t>())
+
+#define CPU_REORDER_INSTANCE(...) \
+    DNNL_PRIMITIVE_IMPL(CPU_REORDER_INSTANCE_IMPL, __VA_ARGS__)
+
+#define REG_SR(idt, ifmt, odt, ofmt, ...) \
+    CPU_REORDER_INSTANCE(simple_reorder_t, idt, ifmt, odt, ofmt, __VA_ARGS__)
+    /* impl_list_item_t(impl_list_item_t::reorder_type_deduction_helper_t< \
+             simple_reorder_t<idt, ifmt, odt, ofmt, __VA_ARGS__>::pd_t>()),
+    */
 
 #define REG_SR_BIDIR(idt, ifmt, odt, ofmt) \
-    REG_SR(idt, ifmt, odt, ofmt, fmt_order::keep) \
-    REG_SR(idt, ifmt, odt, ofmt, fmt_order::reverse)
+    REG_SR(idt, ifmt, odt, ofmt, fmt_order_keep) \
+    REG_SR(idt, ifmt, odt, ofmt, fmt_order_reverse)
 
 #define REG_SR_DIRECT_COPY(idt, odt)				  \
-    REG_SR(idt, any, odt, any, fmt_order::any, spec::direct_copy) \
-    REG_SR(idt, any, odt, any, fmt_order::any, spec::direct_copy_except_dim_0)
+    REG_SR(idt, any, odt, any, fmt_order_any, spec_direct_copy) \
+    REG_SR(idt, any, odt, any, fmt_order_any, spec_direct_copy_except_dim_0)
 
 // clang-format on
 
@@ -136,10 +168,6 @@ extern const impl_list_map_t &comp_s8_s8_impl_list_map();
 #else
 #define REG_FAST_DIRECT_COPY(sdt, ddt)
 #endif
-
-#define CPU_REORDER_INSTANCE(...) \
-    impl_list_item_t(impl_list_item_t::reorder_type_deduction_helper_t< \
-            __VA_ARGS__::pd_t>()),
 
 } // namespace cpu
 } // namespace impl

@@ -19,6 +19,7 @@
 
 #include "common/c_types_map.hpp"
 #include "common/memory.hpp"
+#include "common/memory_tracking.hpp"
 
 #include "cpu/x64/injectors/jit_uni_postops_injector.hpp"
 #include "cpu/x64/jit_generator.hpp"
@@ -40,6 +41,8 @@ struct jit_sse41_1x1_conv_kernel_f32_t : public jit_generator_t {
             int nthreads);
 
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_sse41_1x1_conv_kernel_f32_t)
+    static void init_scratchpad(memory_tracking::registrar_t &scratchpad,
+            const jit_1x1_conv_conf_t &jcp);
 
     jit_1x1_conv_conf_t jcp;
     const primitive_attr_t &attr_;
@@ -55,12 +58,12 @@ private:
     reg64_t reg_output_data = rbx;
     reg64_t aux_reg_bcast_data = rdx;
     reg64_t aux1_reg_bcast_data = abi_not_param1;
-    reg64_t aux_reg_load_data = abi_param1;
     reg64_t aux_reg_output_data = rbp;
     reg64_t reg_load_loop_work = r9;
     reg64_t reg_bcast_loop_work = r10;
     reg64_t reg_reduce_loop_work = r11;
     reg64_t load_loop_iter = r13;
+    reg64_t aux_reg_load_data = load_loop_iter;
     reg64_t imm_addr64 = load_loop_iter;
     reg64_t bcast_loop_iter = r14;
     reg64_t reduce_loop_iter = r15;
@@ -79,6 +82,14 @@ private:
 
     std::unique_ptr<injector::jit_uni_postops_injector_t<sse41>>
             postops_injector_;
+
+    reg64_t reg_oc_off = abi_param1;
+    reg64_t reg_d_weights = aux_reg_bcast_data;
+    reg64_t reg_d_bias = reduce_loop_iter;
+    int base_post_ops_data_offset = 0;
+
+    Xbyak::Xmm xmm_d_weights = Xbyak::Xmm(14);
+    Xbyak::Xmm xmm_d_bias = Xbyak::Xmm(15);
 
     void generate_bcast_loop(int load_loop_blk);
     void generate_reduce_loop(int load_loop_blk, int ur);

@@ -158,11 +158,11 @@ status_t conv_desc_init(convolution_desc_t *conv_desc, prop_kind_t prop_kind,
         VCHECK_CONV(pad_l >= 0,
                 "%s: left padding value (%d) must be non-negative",
                 VERBOSE_INCONSISTENT_PRB, static_cast<int>(pad_l));
-        VCHECK_CONV(pad_r + str > 0,
-                "%s: right padding (%d) and stride (%d) must sum up to a "
-                "positive value",
-                VERBOSE_INCONSISTENT_PRB, static_cast<int>(pad_r),
-                static_cast<int>(str));
+        // VCHECK_CONV(pad_r + str > 0,
+        //         "%s: right padding (%d) and stride (%d) must sum up to a "
+        //         "positive value",
+        //         VERBOSE_INCONSISTENT_PRB, static_cast<int>(pad_r),
+        //         static_cast<int>(str));
         VCHECK_CONV((src - ker_range + pad_l + pad_r) / str + 1 == dst,
                 "%s: mismatch between actual and computed dst dims, dst (%d) "
                 "!= (src(%d) - ker(%d) + pad_l(%d) + pad_r(%d))/ str(%d) + 1",
@@ -205,7 +205,9 @@ status_t conv_attr_check(const convolution_desc_t &desc, const engine_t *engine,
         const bool enable_quantization = is_int8 || is_fp8;
         if (enable_quantization)
             fwd_attr_mask |= smask_t::zero_points_data_type
-                    | smask_t::scales_data_type;
+                    | smask_t::scales_data_type | smask_t::input_zero_points
+                    | smask_t::output_compensations
+                    | smask_t::weights_zero_points;
 
         VCHECK_CONV_UNIMPL(attr->has_default_values(fwd_attr_mask, dst_dt),
                 VERBOSE_UNSUPPORTED_ATTR);
@@ -251,8 +253,9 @@ status_t conv_attr_check(const convolution_desc_t &desc, const engine_t *engine,
         if (!attr->post_ops_.has_default_values()) {
             const auto &po = attr->post_ops_;
             using namespace primitive_kind;
-            VCHECK_CONV_UNIMPL(po.has_default_values({binary, eltwise, prelu,
-                                       sum, convolution}),
+            VCHECK_CONV_UNIMPL(
+                    po.has_default_values({binary, eltwise, prelu, sum,
+                            convolution, depthwise, quantization}),
                     VERBOSE_UNSUPPORTED_POSTOP);
 
             // Check sum
@@ -262,10 +265,10 @@ status_t conv_attr_check(const convolution_desc_t &desc, const engine_t *engine,
             // Note: verbose support is inside the call.
             CHECK(po.validate_binary(engine->kind(), &desc.dst_desc));
         }
-    } else {
-        auto bwd_attr_mask = smask_t::fpmath_mode | smask_t::accumulation_mode;
-        VCHECK_CONV_UNIMPL(attr->has_default_values(bwd_attr_mask),
-                VERBOSE_UNSUPPORTED_ATTR);
+        // } else {
+        //     auto bwd_attr_mask = smask_t::fpmath_mode | smask_t::accumulation_mode;
+        //     VCHECK_CONV_UNIMPL(attr->has_default_values(bwd_attr_mask),
+        //             VERBOSE_UNSUPPORTED_ATTR);
     }
 
     return status::success;

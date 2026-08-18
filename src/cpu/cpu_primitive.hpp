@@ -49,18 +49,18 @@
                     "Scales buffer for arg %d is missing", (arg)); \
             const auto scales_d \
                     = ctx.memory_mdw(DNNL_ARG_ATTR_SCALES | (arg)); \
-            VCHECK_ATTR( \
-                    utils::one_of(scales_d.data_type(), data_type::f32, \
-                            data_type::f16, data_type::bf16, data_type::e8m0), \
+            VCHECK_ATTR(utils::one_of(scales_d.data_type(), data_type::f32, \
+                                data_type::e8m0) \
+                            && (scales_d.ndims() == 1 \
+                                    || scales_d.ndims() == 2), \
                     "Unsupported scales data type"); \
-            if (scales_d.nelems() == 1) { \
-                const float s = cpu::io::load_float_value( \
-                        scales_d.data_type(), scales, 0); \
+            if (scales_d.dims()[0] == 1) { \
                 if (utils::one_of((arg), DNNL_ARG_DST, \
                             DNNL_ARG_ATTR_POST_OP_DW | DNNL_ARG_DST)) { \
-                    utils::array_set(CONCAT2(scales, _buf16), 1.f / s, 16); \
+                    utils::array_set( \
+                            CONCAT2(scales, _buf16), 1.f / scales[0], 16); \
                 } else { \
-                    utils::array_set(CONCAT2(scales, _buf16), s, 16); \
+                    utils::array_set(CONCAT2(scales, _buf16), scales[0], 16); \
                 } \
                 scales = CONCAT2(scales, _buf16); \
             } \
@@ -71,11 +71,98 @@
 #define DEFINE_ARG_SCALES_BUFFER(scales, arg) \
     DEFINE_ARG_SCALES_BUFFER_ATTR(pd()->attr(), scales, (arg))
 
+#define DEFINE_ZERO_POINTS_BUFFER_ATTR_U8(attr, zero_points_ptr, arg) \
+    uint8_t CONCAT2(default_zero_point_, arg) = 0; \
+    const uint8_t *zero_points_ptr {nullptr}; \
+    if ((attr)) { \
+        if ((attr)->zero_points_.has_default_values(arg)) { \
+            zero_points_ptr = &CONCAT2(default_zero_point_, arg); \
+        } else { \
+            /* CAVEAT: type should be void to force proper loads of zero-points.
+             * Accessing `zero_points_ptr` by index will lead to a crash for
+             * datatypes different from s32. */ \
+            zero_points_ptr = CTX_IN_MEM( \
+                    const uint8_t *, DNNL_ARG_ATTR_ZERO_POINTS | (arg)); \
+            VCHECK_ATTR(zero_points_ptr != nullptr, \
+                    "Zero points buffer for arg %d is missing", (arg)); \
+            const auto zero_points_d \
+                    = ctx.memory_mdw(DNNL_ARG_ATTR_ZERO_POINTS | (arg)); \
+            VCHECK_ATTR( \
+                    utils::one_of(zero_points_d.data_type(), data_type::s32, \
+                            data_type::s8, data_type::u8, data_type::s4, \
+                            data_type::u4, data_type::u2, data_type::f32), \
+                    VERBOSE_INVALID_DATATYPE, "zero points"); \
+        } \
+    } \
+    MAYBE_UNUSED(zero_points_ptr);
+
+#define DEFINE_ZERO_POINTS_BUFFER_ATTR(attr, zero_points_ptr, arg) \
+    int32_t CONCAT2(default_zero_point_, arg) = 0; \
+    const int32_t *zero_points_ptr {nullptr}; \
+    if ((attr)) { \
+        if ((attr)->zero_points_.has_default_values(arg)) { \
+            zero_points_ptr = &CONCAT2(default_zero_point_, arg); \
+        } else { \
+            /* CAVEAT: type should be void to force proper loads of zero-points.
+             * Accessing `zero_points_ptr` by index will lead to a crash for
+             * datatypes different from s32. */ \
+            zero_points_ptr = CTX_IN_MEM( \
+                    const int32_t *, DNNL_ARG_ATTR_ZERO_POINTS | (arg)); \
+            VCHECK_ATTR(zero_points_ptr != nullptr, \
+                    "Zero points buffer for arg %d is missing", (arg)); \
+            const auto zero_points_d \
+                    = ctx.memory_mdw(DNNL_ARG_ATTR_ZERO_POINTS | (arg)); \
+            VCHECK_ATTR(utils::one_of(zero_points_d.data_type(), \
+                                data_type::s32, data_type::s8, data_type::u8, \
+                                data_type::s4, data_type::u4), \
+                    VERBOSE_INVALID_DATATYPE, "zero points"); \
+        } \
+    } \
+    MAYBE_UNUSED(zero_points_ptr);
+
+#define DEFINE_ZERO_POINTS_BUFFER(zero_points_ptr, arg) \
+    DEFINE_ZERO_POINTS_BUFFER_ATTR(pd()->attr(), zero_points_ptr, arg)
+
 #define ASSIGN_ARG_SCALE_VALUE(scale, mem_arg) \
     alignas(16) float CONCAT2(CONCAT2(scales, _buf16), mem_arg)[16] = {0}; \
     if (pd()->attr()->scales_.has_default_values(mem_arg)) { \
         utils::array_set(CONCAT2(CONCAT2(scales, _buf16), mem_arg), 1.0f, 16); \
         scale = CONCAT2(CONCAT2(scales, _buf16), mem_arg); \
+    } else { \
+        const auto scale_d = ctx.memory_mdw(DNNL_ARG_ATTR_SCALES | mem_arg); \
+        VCHECK_ATTR_EXEC(scale_d.data_type() == data_type::f32, \
+                "Scales data type is not f32"); \
+        VCHECK_ATTR_EXEC(scale_d.ndims() == 1, "Scales ndims is not 1"); \
+        VCHECK_ATTR_EXEC( \
+                scale_d.dims()[0] == 1, "Not a single scale was provided"); \
+        const float *scale_p \
+                = CTX_IN_MEM(const float *, DNNL_ARG_ATTR_SCALES | mem_arg); \
+        VCHECK_ATTR_EXEC(scale_p != nullptr, \
+                "Scales buffer for arg %d is missing", mem_arg); \
+        scale = scale_p; \
+    }
+
+#define DEFINE_INPUT_ZERO_POINTS_BUFFER(input_zero_points_ptr, jcp) \
+    const uint8_t *input_zero_points_ptr = nullptr; \
+    if (jcp.with_input_zp) { \
+        input_zero_points_ptr = CTX_IN_MEM( \
+                const uint8_t *, DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_SRC); \
+        if (input_zero_points_ptr == nullptr) \
+            return status::invalid_arguments; \
+    }
+
+#define DEFINE_OUTPUT_COMPENSATION_BUFFER(output_compensation_ptr, jcp) \
+    const int32_t *output_compensation_ptr = nullptr; \
+    if (jcp.with_input_zp) { \
+        output_compensation_ptr = CTX_IN_MEM( \
+                const int32_t *, DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_DST); \
+        if (output_compensation_ptr == nullptr) \
+            return status::invalid_arguments; \
+    }
+
+#define ASSIGN_INPUT_SCALE_VALUE(scale, mem_arg) \
+    if (pd()->attr()->scales_.get(mem_arg).defined()) { \
+        scale = pd()->attr()->scales_.get(mem_arg).scales_; \
     } else { \
         const auto scale_d = ctx.memory_mdw(DNNL_ARG_ATTR_SCALES | mem_arg); \
         VCHECK_ATTR_EXEC(scale_d.data_type() == data_type::f32, \

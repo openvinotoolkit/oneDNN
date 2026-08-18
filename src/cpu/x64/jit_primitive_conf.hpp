@@ -102,6 +102,8 @@ struct jit_conv_conf_t {
     bool with_sum;
     bool with_eltwise;
     bool with_binary;
+    bool with_depthwise;
+    bool with_quantization;
 
     data_type_t sum_dt;
 
@@ -258,6 +260,17 @@ struct jit_conv_conf_t {
     int max_width;
 
     bool transform_to_vnni;
+
+    bool with_input_zp;
+    bool with_weights_zp;
+
+    int oh_block;
+    int oh_block_step;
+    int nb_ow_blocking;
+
+    int dw_conv_oh, dw_conv_ow;
+    data_type_t dw_conv_dst_dt;
+    bool is_int8_deconvolution;
 };
 
 // calculates filter size taking into account dilation
@@ -407,6 +420,20 @@ struct jit_conv_args_t {
     int oc_flag = 0;
     size_t last_ic_block = 0;
     size_t last_oc_block = 0;
+
+    size_t oc_off;
+    //Used for holding oc offset like GP registers. Used when lack of regisers.
+    size_t dummy_oc_off;
+    size_t ic_off;
+    size_t oc_off_prf;
+    size_t oh_blocks;
+
+    const void *input_zp;
+
+    size_t oc_work;
+    const void *src_row0; /* hack, non-const for backward_data */
+    const void *src_row1; /* hack, non-const for backward_data */
+    const void *src_row2; /* hack, non-const for backward_data */
 };
 
 struct jit_deconv_args_t {
@@ -437,6 +464,7 @@ struct jit_deconv_args_t {
     size_t kh_padding = 0;
     size_t kd_padding = 0;
     size_t oc_blocks = 0;
+    size_t oc_off;
 };
 
 struct jit_dw_conv_args_t {
@@ -468,6 +496,8 @@ struct jit_1x1_conv_conf_t {
     bool with_sum;
     bool with_eltwise;
     bool with_binary;
+    bool with_depthwise;
+    bool with_quantization;
     bool with_dw_conv;
 
     post_ops_t post_ops;
@@ -504,6 +534,7 @@ struct jit_1x1_conv_conf_t {
     bool transpose_src;
     int nthr, nthr_mb, nthr_g, nthr_oc_b, nthr_ic_b;
     int is_oc_scale;
+    data_type_t src_dt;
     data_type_t bia_dt;
     data_type_t dst_dt;
     data_type_t sum_dt;
@@ -520,6 +551,12 @@ struct jit_1x1_conv_conf_t {
 
     cpu_isa_t isa;
     bool uses_permw_transposition;
+
+    bool with_input_zp;
+    bool with_weights_zp;
+
+    int dw_conv_oh, dw_conv_ow;
+    data_type_t dw_conv_dst_dt;
 };
 
 struct jit_1x1_conv_args_t {
@@ -551,6 +588,8 @@ struct jit_1x1_conv_args_t {
     size_t output_stride = 0; // used in backward_weights only
 
     size_t first_last_flag = 0;
+
+    size_t oc_off;
 };
 
 struct jit_pool_conf_t {
@@ -592,6 +631,8 @@ struct jit_pool_conf_t {
     bool with_postops;
     bool with_eltwise;
     bool with_binary;
+    bool with_depthwise;
+    bool with_quantization;
     int nthr;
     memory_desc_t tmp_md;
     bool needs_f32_accum_for_bf16;
@@ -1019,6 +1060,26 @@ struct jit_uni_reduction_args_t {
     void *dst = nullptr;
     const void *post_ops_binary_rhs_arg_vec = nullptr;
     const void *dst_orig = nullptr;
+};
+
+/* softmax */
+struct jit_softmax_conf_t {
+    size_t outer_size;
+    size_t channels;
+    size_t inner_size;
+    size_t ur_channel;
+    size_t ur_inner;
+    size_t outer_block;
+    size_t dt_size;
+    data_type_t dt;
+};
+
+struct jit_softmax_call_s {
+    const uint8_t *src;
+    uint8_t *dst;
+
+    size_t channels;
+    size_t work;
 };
 
 } // namespace x64

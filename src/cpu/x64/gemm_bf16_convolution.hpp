@@ -25,7 +25,10 @@
 #include "cpu/cpu_engine.hpp"
 #include "cpu/gemm/gemm.hpp"
 #include "cpu/gemm_convolution_utils.hpp"
+#include "cpu/ref_depthwise_injector.hpp"
 #include "cpu/x64/cpu_reducer.hpp"
+#include "cpu/x64/injectors/jit_uni_binary_injector.hpp"
+#include "cpu/x64/injectors/jit_uni_eltwise_injector.hpp"
 #include "cpu/x64/injectors/jit_uni_postops_injector.hpp"
 #include "cpu/x64/jit_avx512_core_bf16cvt.hpp"
 
@@ -45,9 +48,6 @@ struct gemm_bf16_convolution_fwd_t : public primitive_t {
         status_t init(engine_t *engine) {
             using namespace dnnl::impl::data_type;
 
-            VDISPATCH_CONV(
-                    DNNL_CPU_THREADING_RUNTIME != DNNL_RUNTIME_THREADPOOL,
-                    VERBOSE_UNSUPPORTED_THREADPOOL_RUNTIME);
             VDISPATCH_CONV(is_fwd(), VERBOSE_BAD_PROPKIND);
             VDISPATCH_CONV(
                     expect_data_types(bf16, bf16, dnnl::impl::data_type::undef,
@@ -70,6 +70,7 @@ struct gemm_bf16_convolution_fwd_t : public primitive_t {
                                    primitive_attr_t::skip_mask_t::post_ops,
                                    dst_data_type),
                     VERBOSE_UNSUPPORTED_ATTR);
+            VDISPATCH_CONV(post_ops_ok(), VERBOSE_UNSUPPORTED_ATTR);
 
             auto scratchpad = scratchpad_registry().registrar();
 
@@ -93,6 +94,39 @@ struct gemm_bf16_convolution_fwd_t : public primitive_t {
         }
 
         conv_gemm_conf_t jcp_ = utils::zero<decltype(jcp_)>();
+
+    protected:
+        virtual bool post_ops_ok() const {
+            auto const &po = this->attr()->post_ops_;
+            auto all_post_ops_supported = [&]() {
+                bool ok = true;
+
+                for (int i = 0; i < po.len(); i++) {
+                    ok = ok
+                            && utils::one_of(po.entry_[i].kind,
+                                    primitive_kind::sum, primitive_kind::binary,
+                                    primitive_kind::eltwise,
+                                    primitive_kind::depthwise);
+                }
+                return ok;
+            };
+
+            auto contain = [&](dnnl::impl::primitive_kind_t kind) {
+                return po.find(kind) != -1;
+            };
+            auto position = [&](dnnl::impl::primitive_kind_t kind) {
+                return po.find(kind);
+            };
+            auto count = [&](dnnl::impl::primitive_kind_t kind) {
+                return po.count(kind);
+            };
+
+            return all_post_ops_supported() && count(primitive_kind::sum) <= 1
+                    && IMPLICATION(contain(primitive_kind::sum),
+                            position(primitive_kind::sum) == 0);
+
+            return false;
+        }
     };
 
     gemm_bf16_convolution_fwd_t(const pd_t *apd)
@@ -139,15 +173,21 @@ private:
         DECLARE_CPU_JIT_AUX_FUNCTIONS(gemm_bf16_convolution_fwd_t::pp_kernel);
         pp_ker_t(const pd_t *pd);
 
+        ~pp_ker_t() {
+            for (auto inj : jit_eltwise_injectors_)
+                delete inj;
+            jit_eltwise_injectors_.clear();
+        }
+
         void operator()(dst_data_t *dst, const acc_data_t *acc,
                 const acc_data_t *bias, float sum_scale, size_t oc_work,
-                const void *post_ops_binary_rhs_arg_vec, const void *dst_orig,
-                const size_t g_oc_offset);
+                size_t g_offset, const void *post_ops_binary_rhs_arg_vec,
+                const void *dst_orig, const size_t g_oc_offset);
         void operator()(dst_data_t *dst, const acc_data_t *acc,
-                const acc_data_t *bias, float sum_scale, size_t dst_str,
-                size_t acc_str, size_t sp_len, size_t oc,
-                const void *post_ops_binary_rhs_arg_vec, const void *dst_orig,
-                const size_t g_oc_offset);
+                const acc_data_t *bias, size_t g_offset, size_t start_oc,
+                float sum_scale, size_t dst_str, size_t acc_str, size_t sp_len,
+                size_t oc, const void *post_ops_binary_rhs_arg_vec,
+                const void *dst_orig, const size_t g_oc_offset);
 
     private:
         struct ker_args_t {
@@ -159,6 +199,7 @@ private:
             size_t acc_stride_in_bytes = 0;
             size_t spatial_length = 0;
             size_t oc_work = 0;
+            size_t oc_offset;
 
             size_t g_oc_offset = 0;
             const void *post_ops_binary_rhs_arg_vec = nullptr;
@@ -183,10 +224,16 @@ private:
         Xbyak::Reg64 reg_dst_str = r13;
         Xbyak::Reg64 reg_acc_str = r14;
 
+        using Vmm = typename cpu_isa_traits_t<avx512_core>::Vmm;
+        Xbyak::Reg64 reg_oc_offset = r10;
+        Xbyak::Reg64 reg_dw = r9;
+        Xbyak::Reg64 reg_post_ops_data = reg_bias;
+        Xbyak::Opmask kmask = k7;
+
         Xbyak::Reg64 reserved_eltwise_gpr = r10;
         Xbyak::Opmask reserved_eltwise_maskr = k2;
 
-        Xbyak::Zmm vreg_sum_scale, vreg_bias;
+        Xbyak::Zmm vreg_sum_scale, vreg_bias, vreg_dw;
 
         Xbyak::Zmm bf16_emu_reserv_1 = Xbyak::Zmm(27);
         Xbyak::Zmm bf16_emu_reserv_2 = Xbyak::Zmm(28);
@@ -196,17 +243,19 @@ private:
         Xbyak::Zmm bf16_emu_reserv_6 = Xbyak::Zmm(31);
 
         const conv_gemm_conf_t &jcp_;
+        post_ops_t post_ops_;
         const bool do_sum_;
         int max_data_reg_idx_, max_unroll_, compute_reg_step_;
         int data_reg_base_idx_;
         size_t vlen_;
         cpu_isa_t isa_;
         std::unique_ptr<bf16_emulation_t> bf16_emu_;
-        std::unique_ptr<injector::jit_uni_postops_injector_t<avx512_core>>
-                postops_injector_;
+        const primitive_attr_t *attr_;
+        nstl::vector<jit_uni_eltwise_injector_t<avx512_core> *>
+                jit_eltwise_injectors_;
+        std::unique_ptr<binary_injector::jit_uni_binary_injector_t<avx512_core>>
+                jit_binary_injector_;
 
-        void apply_postops(const bool apply_mask, const size_t out_offset,
-                const int vmm_idx);
         void generate() override;
         int vreg_dst_idx(int iter) {
             int idx = data_reg_base_idx_ + iter * compute_reg_step_ + 0;
@@ -249,9 +298,6 @@ struct gemm_bf16_convolution_bwd_data_t : public primitive_t {
         status_t init(engine_t *engine) {
             using namespace dnnl::impl::data_type;
 
-            VDISPATCH_CONV(
-                    DNNL_CPU_THREADING_RUNTIME != DNNL_RUNTIME_THREADPOOL,
-                    VERBOSE_UNSUPPORTED_THREADPOOL_RUNTIME);
             VDISPATCH_CONV(desc()->prop_kind == prop_kind::backward_data,
                     VERBOSE_BAD_PROPKIND);
             VDISPATCH_CONV(expect_data_types(diff_src_data_type, bf16,
@@ -261,8 +307,7 @@ struct gemm_bf16_convolution_bwd_data_t : public primitive_t {
                     VERBOSE_BAD_ALGORITHM);
             VDISPATCH_CONV(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
             VDISPATCH_CONV(mayiuse(avx512_core), VERBOSE_UNSUPPORTED_ISA);
-            VDISPATCH_CONV(
-                    attr()->has_default_values(), VERBOSE_UNSUPPORTED_ATTR);
+            VDISPATCH_CONV(is_supported_post_ops(), VERBOSE_UNSUPPORTED_ATTR);
 
             auto scratchpad = scratchpad_registry().registrar();
 
@@ -274,9 +319,43 @@ struct gemm_bf16_convolution_bwd_data_t : public primitive_t {
         }
 
         conv_gemm_conf_t jcp_ = utils::zero<decltype(jcp_)>();
+
+    protected:
+        virtual bool is_supported_post_ops() const {
+            const auto &p = this->attr()->post_ops_;
+            if (p.len() > 1) return false;
+
+            auto all_post_ops_supported = [&]() {
+                bool ok = true;
+
+                for (int i = 0; i < p.len(); i++) {
+                    ok = ok
+                            && utils::one_of(p.entry_[i].kind,
+                                    primitive_kind::depthwise);
+                }
+                return ok;
+            };
+
+            return all_post_ops_supported();
+        }
     };
 
-    gemm_bf16_convolution_bwd_data_t(const pd_t *apd) : primitive_t(apd) {}
+    gemm_bf16_convolution_bwd_data_t(const pd_t *apd) : primitive_t(apd) {
+        const auto &post_ops = pd()->attr()->post_ops_;
+        for (int i = 0; i < post_ops.len(); i++) {
+            auto &post_op = post_ops.entry_[i];
+            if (post_op.is_depthwise()) {
+                depthwise_injectors.push_back(
+                        new ref_depthwise_scalar_fwd_t(post_op.depthwise.alg));
+            }
+        }
+    }
+
+    ~gemm_bf16_convolution_bwd_data_t() {
+        for (auto inj : depthwise_injectors)
+            delete inj;
+        depthwise_injectors.clear();
+    }
 
     using diff_dst_data_t = typename prec_traits_t<data_type::bf16>::type;
     using acc_data_t = typename prec_traits_t<data_type::f32>::type;
@@ -295,9 +374,12 @@ private:
     status_t execute_backward_data_thr_nspc(const int ithr, const int nthr,
             diff_src_data_t *diff_src_base, const wei_data_t *wei_base,
             const diff_dst_data_t *diff_dst_base,
-            const memory_tracking::grantor_t &scratchpad) const;
+            const memory_tracking::grantor_t &scratchpad,
+            const std::vector<const void *> &post_ops_binary_rhs_arg_vec) const;
 
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
+
+    nstl::vector<ref_depthwise_scalar_fwd_t *> depthwise_injectors;
 };
 
 template <data_type_t diff_wei_data_type>
@@ -312,9 +394,6 @@ struct gemm_bf16_convolution_bwd_weights_t : public primitive_t {
         status_t init(engine_t *engine) {
             using namespace dnnl::impl::data_type;
 
-            VDISPATCH_CONV(
-                    DNNL_CPU_THREADING_RUNTIME != DNNL_RUNTIME_THREADPOOL,
-                    VERBOSE_UNSUPPORTED_THREADPOOL_RUNTIME);
             VDISPATCH_CONV(desc()->prop_kind == prop_kind::backward_weights,
                     VERBOSE_BAD_PROPKIND);
             VDISPATCH_CONV(expect_data_types(bf16, diff_wei_data_type,

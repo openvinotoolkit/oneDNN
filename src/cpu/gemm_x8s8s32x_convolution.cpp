@@ -128,6 +128,9 @@ status_t gemm_x8s8s32x_convolution_fwd_t::execute_forward(
             = binary_injector_utils::prepare_binary_args(
                     this->pd()->attr()->post_ops_, ctx);
 
+    DEFINE_INPUT_ZERO_POINTS_BUFFER(input_zp_base, jcp);
+    DEFINE_OUTPUT_COMPENSATION_BUFFER(output_compensation_base, jcp);
+
     const auto &scratchpad = ctx.get_scratchpad_grantor();
 
     assert(IMPLICATION(jcp.ow_block != jcp.ow, jcp.oh_block == 1));
@@ -149,7 +152,8 @@ status_t gemm_x8s8s32x_convolution_fwd_t::execute_forward(
     parallel(jcp.nthr, [&](const int ithr, const int nthr) {
         status_t st_thr = execute_forward_thr(ithr, nthr, src_base, wei_base,
                 bia_base, dst_base, scales, dst_scales, zp, scratchpad,
-                post_ops_binary_rhs_arg_vec.data(), ctx);
+                post_ops_binary_rhs_arg_vec.data(), ctx, input_zp_base,
+                output_compensation_base);
 
         if (st_thr != status::success) st = st_thr;
     });
@@ -169,7 +173,9 @@ status_t gemm_x8s8s32x_convolution_fwd_t::execute_forward_thr(const int ithr,
         const char *bia_base, void *dst_base, const float *scales,
         const float *dst_scales, const zero_point_call_params_t &zp,
         const memory_tracking::grantor_t &scratchpad,
-        const void *post_ops_binary_rhs_arg_vec, const exec_ctx_t &ctx) const {
+        const void *post_ops_binary_rhs_arg_vec, const exec_ctx_t &ctx,
+        const uint8_t *input_zp_base,
+        const int32_t *output_compensation_base) const {
 
     const conv_gemm_conf_t &jcp = this->pd()->jcp_;
 
@@ -195,19 +201,12 @@ status_t gemm_x8s8s32x_convolution_fwd_t::execute_forward_thr(const int ithr,
     int *__restrict acc = scratchpad.get<int>(key_conv_int_dat_in_acc_dt)
             + (ptrdiff_t)ithr * jcp.oh_block * jcp.ow_block * jcp.oc;
 
-    const int32_t *_wei_comp
-            = jcp.signed_input ? get_wei_comp(wei_base, wei_md) : nullptr;
+    const int32_t *_wei_comp = jcp.signed_input ? get_wei_comp(wei_base, wei_md)
+            : jcp.with_input_zp                 ? output_compensation_base
+                                                : nullptr;
 
-    const bool should_apply_zp_src_comp_pad = jcp.zp.src_exists
-            && jit_gemm_convolution_utils::padding_exists(jcp);
-    const bool should_apply_zp_src_comp_pad_jit_pp
-            = should_apply_zp_src_comp_pad
-            && gemm_x8s8s32x_convolution_utils::mayiuse_jit_pp_kernel(
-                    dst_md.data_type());
-    const bool should_apply_zp_src_comp_outside_pp
-            = should_apply_zp_src_comp_pad
-            && !gemm_x8s8s32x_convolution_utils::mayiuse_jit_pp_kernel(
-                    dst_md.data_type());
+    const bool should_apply_zp_src_comp_pad_jit_pp = false;
+    const bool should_apply_zp_src_comp_outside_pp = false;
 
     dim_t g {0}, n {0}, ohb {0}, owb {0};
     dim_t start = 0, end = 0;
@@ -223,7 +222,7 @@ status_t gemm_x8s8s32x_convolution_fwd_t::execute_forward_thr(const int ithr,
     balance211(work_amount, nthr, ithr, start, end);
     nd_iterator_init(start, n, jcp.mb, g, jcp.ngroups, ohb, nb_oh, owb, nb_ow);
     const uint8_t shift = jcp.signed_input ? 128 : 0;
-    parallel_nd(jcp.im2col_sz, [&](ptrdiff_t i) { col[i] = shift; });
+    parallel_nd_legacy(jcp.im2col_sz, [&](ptrdiff_t i) { col[i] = shift; });
 
     status_t st = status::success;
 
@@ -243,6 +242,10 @@ status_t gemm_x8s8s32x_convolution_fwd_t::execute_forward_thr(const int ithr,
         for (int od = 0; od < jcp.od; od++) {
             const auto dst_off = n * dst_mb_stride + g * dst_g_stride
                     + ((od * jcp.oh + oh) * jcp.ow + ow) * jcp.dst_os_stride;
+
+            const uint8_t *__restrict input_zp = nullptr;
+            if (jcp.with_input_zp) input_zp = input_zp_base + g * jcp.ic;
+
             char *__restrict dst = (char *)dst_base
                     + types::data_type_size(dst_md.data_type()) * dst_off;
             if (jcp.im2col_sz) {
@@ -250,20 +253,20 @@ status_t gemm_x8s8s32x_convolution_fwd_t::execute_forward_thr(const int ithr,
                     case data_type::s8: {
                         if (is_problem_3d)
                             jit_gemm_convolution_utils::im2col_dt_3d<int8_t,
-                                    uint8_t>(jcp, imtr, col, od);
+                                    uint8_t>(jcp, imtr, col, od, input_zp);
                         else
                             jit_gemm_convolution_utils::im2col_dt<int8_t,
                                     uint8_t>(jcp, src, imtr, col, oh, h_step,
-                                    ow, w_step);
+                                    ow, w_step, input_zp);
                     } break;
                     case data_type::u8: {
                         if (is_problem_3d)
                             jit_gemm_convolution_utils::im2col_dt_3d<uint8_t,
-                                    uint8_t>(jcp, imtr, col, od);
+                                    uint8_t>(jcp, imtr, col, od, input_zp);
                         else
                             jit_gemm_convolution_utils::im2col_dt<uint8_t,
                                     uint8_t>(jcp, src, imtr, col, oh, h_step,
-                                    ow, w_step);
+                                    ow, w_step, input_zp);
                     } break;
                     default: assert(!"unsupported data type"); break;
                 }
@@ -281,10 +284,13 @@ status_t gemm_x8s8s32x_convolution_fwd_t::execute_forward_thr(const int ithr,
             const float onef = 1.f, zerof = 0.f;
             const char *__restrict src_od
                     = src + od * jcp.oh * jcp.ow * jcp.ngroups * jcp.ic;
-            st = gemm_s8u8s32("N", BT, jcp.signed_input ? "C" : "F", &M, &N, &K,
-                    &onef, wei, &LDA, &off_a,
+            st = gemm_s8u8s32("N", BT,
+                    (jcp.signed_input || jcp.with_input_zp) ? "C" : "F", &M, &N,
+                    &K, &onef, wei, &LDA, &off_a,
                     jcp.im2col_sz ? col : (uint8_t *)src_od, &LDB, &off_b,
-                    &zerof, acc, &M, jcp.signed_input ? wei_comp : &off_c);
+                    &zerof, acc, &M,
+                    (jcp.signed_input || jcp.with_input_zp) ? wei_comp
+                                                            : &off_c);
 
             if (st != status::success) return st;
 

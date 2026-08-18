@@ -216,7 +216,7 @@ status_t ref_convolution_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
         args.ctx = &ctx;
         args.l_offset = dst_l_off;
         args.dst_md = pd()->dst_md();
-        ref_post_ops->execute(d, args);
+        ref_post_ops->execute(d, args, g * OC + oc);
         if (dst_rnd_mode == rounding_mode::stochastic)
             d = math::stochastic_round_fwd(
                     d, dst_off, rnd_seed[0], dst_d.data_type());
@@ -395,6 +395,8 @@ status_t ref_convolution_bwd_data_t::execute_backward_data(
         return ds;
     };
 
+    const auto &p = pd()->attr()->post_ops_;
+
     parallel_nd(G, MB, IC, ID, IH, IW,
             [=](dim_t g, dim_t mb, dim_t ic, dim_t id, dim_t ih, dim_t iw) {
         float ds = 0;
@@ -403,6 +405,24 @@ status_t ref_convolution_bwd_data_t::execute_backward_data(
             ds += ker_plain(g, mb, ic, id, ih, iw);
         else
             ds += ker(g, mb, ic, id, ih, iw);
+
+        int depthwise_inj_idx = 0;
+        for (int i = 0; i < p.len(); i++) {
+            auto &post_op = p.entry_[i];
+            if (post_op.is_depthwise()) {
+                auto depthwise_base = CTX_IN_MEM(const float *,
+                        (DNNL_ARG_ATTR_MULTIPLE_POST_OP(i) | DNNL_ARG_SRC_1));
+                auto depthwise_weights = depthwise_base
+                        + post_op.depthwise.offset[post_op.depthwise.scales];
+                auto depthwise_bias = depthwise_base
+                        + post_op.depthwise.offset[post_op.depthwise.shifts];
+
+                ds = depthwise_injectors[depthwise_inj_idx]->compute_scalar(ds,
+                        depthwise_weights + g * IC + ic,
+                        depthwise_bias + g * IC + ic);
+                depthwise_inj_idx++;
+            }
+        }
 
         const auto diff_src_off = ref_conv_utils::get_data_off(
                 diff_src_d, ndims, mb, g * IC + ic, id, ih, iw);

@@ -32,15 +32,17 @@
 
 #if DNNL_X64
 #include "cpu/x64/cpu_isa_traits.hpp"
-#include "cpu/x64/platform.hpp"
 #elif DNNL_AARCH64
 #include "cpu/aarch64/cpu_isa_traits.hpp"
-#if defined(DNNL_AARCH64_USE_ACL)
-// For checking if fp16 isa is supported on the platform
-#include "arm_compute/core/CPP/CPPTypes.h"
-#endif
 #elif DNNL_RV64
 #include "cpu/rv64/cpu_isa_traits.hpp"
+#endif
+
+#if defined(DNNL_USE_ACL)
+// For checking if fp16 isa is supported on the platform
+#include "arm_compute/core/CPP/CPPTypes.h"
+// For setting the number of threads for ACL
+#include "src/common/cpuinfo/CpuInfo.h"
 #endif
 
 // For DNNL_X64 build we compute the timestamp using rdtsc. Use std::chrono for
@@ -132,7 +134,7 @@ bool has_data_type_support(data_type_t data_type) {
 #if DNNL_X64
             return x64::mayiuse(x64::avx512_core_fp16)
                     || x64::mayiuse(x64::avx2_vnni_2);
-#elif defined(DNNL_AARCH64_USE_ACL)
+#elif defined(DNNL_USE_ACL)
             return arm_compute::CPUInfo::get().has_fp16();
 #elif DNNL_RV64
             return rv64::mayiuse(rv64::zvfh);
@@ -164,7 +166,7 @@ bool has_training_support(data_type_t data_type) {
 #if defined(USE_CBLAS) && defined(BLAS_HAS_SBGEMM) && defined(__MMA__)
             return true;
 #endif
-#elif defined(DNNL_AARCH64_USE_ACL)
+#elif defined(DNNL_USE_ACL)
             return arm_compute::CPUInfo::get().has_bf16();
 #else
             return false;
@@ -172,7 +174,7 @@ bool has_training_support(data_type_t data_type) {
         case data_type::f16:
 #if DNNL_X64
             return x64::mayiuse(x64::avx512_core_fp16);
-#elif defined(DNNL_AARCH64_USE_ACL)
+#elif defined(DNNL_USE_ACL)
             return arm_compute::CPUInfo::get().has_fp16();
 #elif DNNL_RV64
             return rv64::mayiuse(rv64::zvfh);
@@ -270,9 +272,16 @@ unsigned get_per_core_cache_size(int level) {
             default: return 0U;
         }
     };
+
 #if DNNL_X64
-    if (x64::cpu().getDataCacheLevels() == 0) return guess(level);
-    return x64::platform::get_per_core_cache_size(level);
+    using namespace x64;
+    if (cpu().getDataCacheLevels() == 0) return guess(level);
+
+    if (level > 0 && (unsigned)level <= cpu().getDataCacheLevels()) {
+        unsigned l = level - 1;
+        return cpu().getDataCacheSize(l) / cpu().getCoresSharingDataCache(l);
+    } else
+        return 0;
 #elif DNNL_AARCH64
     const auto num_caches
             = static_cast<int>(aarch64::cpu().getLastDataCacheLevel());
@@ -296,8 +305,8 @@ unsigned get_per_core_cache_size(int level) {
 unsigned get_num_cores() {
 #if DNNL_X64
     return x64::cpu().getNumCores(Xbyak::util::CoreLevel);
-#elif DNNL_AARCH64
-    return aarch64::cpu().getNumCores(Xbyak_aarch64::util::CoreLevel);
+#elif defined(DNNL_USE_ACL)
+    return arm_compute::cpuinfo::num_threads_hint();
 #else
     return 1;
 #endif

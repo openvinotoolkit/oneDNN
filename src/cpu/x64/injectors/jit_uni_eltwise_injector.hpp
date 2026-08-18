@@ -174,7 +174,8 @@ private:
         _cmp_ge_os = jit_generator_t::_cmp_nlt_us,
         _cmp_gt_os = jit_generator_t::_cmp_nle_us,
         _op_floor = jit_generator_t::_op_floor,
-        _op_mxcsr = jit_generator_t::_op_mxcsr
+        _op_mxcsr = jit_generator_t::_op_mxcsr,
+        _op_near = jit_generator_t::_op_near
     };
 
     const bool is_avx512_ = is_superset(isa, avx512_core);
@@ -245,6 +246,9 @@ private:
     void round_compute_vector_fwd(const Vmm &vmm_src);
     void hardswish_compute_vector_fwd(const Vmm &vmm_src);
     void hardsigmoid_compute_vector_fwd(const Vmm &vmm_src);
+    void hsigmoid_compute_vector_fwd(const Vmm &vmm_src);
+    void round_half_to_even_compute_vector_fwd(const Vmm &vmm_src);
+    void round_half_away_from_zero_compute_vector_fwd(const Vmm &vmm_src);
 
     void exp_compute_vector_bwd(const Vmm &vmm_src);
     void relu_compute_vector_bwd(const Vmm &vmm_src);
@@ -298,6 +302,7 @@ private:
         tanh_pol_table, // table of polynomial coefficients
         soft_relu_one_twenty_six, // 126.f
         soft_relu_mantissa_sign_mask, // mask for mantissa bits and sign
+        soft_relu_twenty, // 20.f
         soft_relu_pol, // see correspondent table for float values
         gelu_tanh_fitting_const, // 0.044715f
         gelu_tanh_fitting_const_times_three, // 0.134145f
@@ -324,6 +329,7 @@ private:
         log_five_bit_offset, // 5 bits off (31 = 2^5 - 1)
         log_pol, // see correspondent table for float values
         log_predefined_vals, // see correspondent table for float values
+        hsigmoid, // hsigmoid
         undef_key,
     };
 
