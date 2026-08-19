@@ -273,7 +273,7 @@ jit_brgemm_ip_conf_t::get_desired_weights_tag() const {
                                     OdhwI4i8o4i)}};
         }
     } else if (jbgp.weights_decompression
-            && one_of(jbgp.orig_wei_dt, nf4, s4, u4)) {
+            && one_of(jbgp.orig_wei_dt, nf4, s4, u4, f4_e2m1)) {
         if (jbgp.with_src_dynamic_quant) {
             return {{64,
                             pick(n_sp_dims, OI16i64o4i, OIw16i64o4i,
@@ -723,8 +723,15 @@ status_t jit_brgemm_ip_fwd_conf_t::init_conf(cpu_isa_t isa,
         jbgp.gemm_batch_size = nb_k_blocking;
     }
 
-    if (jbgp.with_src_dynamic_quant) {
-        if ((jbgp.nb_ic_blocking * k_blk) % jbgp.src_quant_group_size != 0) {
+    // Current implementation of grouped weights decompression algorithm requires K size to be aligned on group size.
+    // Besides that "batched" usage of brgemm block is not covered, so forcing the value to 1.
+    if (jbgp.with_grouped_weights_decompression
+            || jbgp.with_src_dynamic_quant) {
+        auto min_ic_group_size = std::min(jbgp.wei_scales_ic_group_size,
+                jbgp.wei_zero_points_ic_group_size);
+        min_ic_group_size
+                = std::min(min_ic_group_size, jbgp.src_quant_group_size);
+        if ((jbgp.nb_ic_blocking * k_blk) % min_ic_group_size != 0) {
             jbgp.nb_ic_blocking = 64;
         }
         jbgp.K = k_blk * jbgp.nb_ic_blocking;
@@ -740,7 +747,6 @@ status_t jit_brgemm_ip_fwd_conf_t::init_conf(cpu_isa_t isa,
         min_ic_group_size
                 = std::min(min_ic_group_size, jbgp.src_quant_group_size);
         if (jbgp.K % min_ic_group_size != 0 || jbgp.gemm_batch_size != 1) {
-            jbgp.nthr_ic_b = 1;
             jbgp.nb_ic_blocking = min_ic_group_size / jbgp.ic_block;
             jbgp.K = jbgp.ic_block * jbgp.nb_ic_blocking;
             jbgp.gemm_batch_size = 1;
@@ -1480,11 +1486,12 @@ status_t jit_brgemm_ip_conf_t::init_conf_base(cpu_isa_t isa,
 
     jbgp.weights_decompression
             = (one_of(jbgp.src_dt, f32, bf16)
-                      && one_of(jbgp.wei_dt, u8, s8, nf4, s4, u4))
+                      && one_of(jbgp.wei_dt, u8, s8, nf4, s4, u4, f4_e2m1))
             || (jbgp.src_dt == f32 && one_of(jbgp.wei_dt, f16, bf16));
     jbgp.wei_decomp_algo = weights_decomp_kind_t::immediate;
     jbgp.orig_wei_dt = jbgp.wei_dt;
     jbgp.with_grouped_weights_decompression = false;
+    jbgp.wei_decomp_scales_dt = data_type::undef;
     jbgp.wei_decomp_zero_points_dt = data_type::undef;
     jbgp.with_src_dynamic_quant = false;
     if (jbgp.weights_decompression) {
@@ -1797,7 +1804,8 @@ void jit_brgemm_ip_conf_t::init_scratchpad_base(
         }
         if (jbgp.wei_decomp_scales_buffer_size)
             scratchpad.book(key_decompression_scales,
-                    jbgp.wei_decomp_scales_buffer_size, sizeof(float));
+                    jbgp.wei_decomp_scales_buffer_size,
+                    types::data_type_size(jbgp.wei_decomp_scales_dt));
         if (jbgp.wei_decomp_zero_points_buffer_size)
             scratchpad.book(key_decompression_zero_points,
                     jbgp.wei_decomp_zero_points_buffer_size,

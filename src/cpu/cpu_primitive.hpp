@@ -49,7 +49,8 @@
                     "Scales buffer for arg %d is missing", (arg)); \
             const auto scales_d \
                     = ctx.memory_mdw(DNNL_ARG_ATTR_SCALES | (arg)); \
-            VCHECK_ATTR(scales_d.data_type() == data_type::f32 \
+            VCHECK_ATTR(utils::one_of(scales_d.data_type(), data_type::f32, \
+                                data_type::e8m0) \
                             && (scales_d.ndims() == 1 \
                                     || scales_d.ndims() == 2), \
                     "Unsupported scales data type"); \

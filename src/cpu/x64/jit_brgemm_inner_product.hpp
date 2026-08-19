@@ -62,7 +62,7 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
             const bool is_int8 = one_of(src_dt, u8, s8);
             const bool is_wei_decomp
                     = (one_of(src_dt, f32, bf16)
-                              && one_of(wei_dt, u8, s8, nf4, s4, u4))
+                              && one_of(wei_dt, u8, s8, nf4, s4, u4, f4_e2m1))
                     || (src_dt == f32 && one_of(wei_dt, f16, bf16));
 
             using skip_mask_t = primitive_attr_t::skip_mask_t;
@@ -253,7 +253,7 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
             jcp.ic_internal_size = pd()->jbgp_.wei_dt == data_type::bf16
                             || utils::one_of(pd()->jbgp_.orig_wei_dt,
                                     data_type::nf4, data_type::s4,
-                                    data_type::u4)
+                                    data_type::u4, data_type::f4_e2m1)
                     ? 2
                     : 1;
             jcp.with_scales = !pd()->attr()
@@ -270,6 +270,7 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
                     == 1;
             jcp.weights_dt = pd()->jbgp_.orig_wei_dt;
             jcp.decomp_buffer_dt = pd()->jbgp_.wei_dt;
+            jcp.scales_dt = pd()->jbgp_.wei_decomp_scales_dt;
             jcp.zero_points_dt = pd()->jbgp_.wei_decomp_zero_points_dt;
 
             if (is_superset(pd()->jbgp_.isa, avx512_core)) {
