@@ -114,8 +114,8 @@ struct jit_brgemm_kernel_t : public jit_base_brgemm_kernel_t {
             const auto k_mask = !brg.is_gemv ? ld_tail_mask : gemv_partial_mask;
 
             const binary_injector::rhs_arg_static_params_t rhs_sp {
-                    vmm_tmp(0).getIdx(), this->r14, this->r15, this->r13,
-                    preserve_gpr, preserve_vmm,
+                    vmm_tmp(0).getIdx(), this->r14,
+                    this->r15, this->r13, preserve_gpr, preserve_vmm,
                     GET_OFF(post_ops_binary_rhs_arg_vec), GET_OFF(data_C_ptr_),
                     dst_md_wrapper, tail_size, k_mask,
                     use_exact_tail_scalar_bcast};
@@ -334,16 +334,12 @@ private:
         }
 
         if (brg.with_wei_decomp_zero_points
-                && brg.wei_decomp_zero_points_stride == 0) {
+                && brg.wei_decomp_zero_points_stride == 0
+                && !brg.with_src_dyn_quant) {
             used_vregs += 1;
         }
 
-        if (brg.with_src_dyn_quant) { used_vregs += 2; }
-
-        if (brg.with_src_dyn_quant && brg.with_wei_decomp_zero_points
-                && brg.wei_decomp_zero_points_stride != 0) {
-            used_vregs += brg.ld_block2;
-        }
+        if (brg.with_src_dyn_quant) { used_vregs += 1; }
         return isa_num_vregs(brg.isa_impl) - used_vregs;
     }
 
@@ -486,7 +482,8 @@ private:
             dim_t ldb_and_bdb_offset, bool is_ld_tail, bool is_bdb_tail);
     void apply_zp_s8s8_compensation(
             int bd_block, int ld_block, bool is_ld_tail);
-    void apply_per_mn_compensation(int bd_block, int ld_block, bool is_ld_tail);
+    void apply_per_mn_compensation(
+            int bd_block, int ld_block, bool is_ld_tail);
     void apply_alpha_beta(
             int bd_block, int ld_block, bool is_ld_tail, bool is_bdb_tail);
     void apply_wei_scales(int bd_block, int ld_block2, bool is_ld_tail,
@@ -494,8 +491,8 @@ private:
     void apply_src_scales_per_k(int bd_block, int ld_block2,
             bool dq2ps_required, bool &dq2ps_cvt_done);
     void apply_scales(int bd_block, int ld_block2, bool is_ld_tail);
-    void apply_post_ops(int bd_block, int ld_block2, dim_t ldb_and_bdb_offset,
-            bool is_ld_tail, bool is_bdb_tail);
+    void apply_post_ops(int bd_block, int ld_block2,
+            dim_t ldb_and_bdb_offset, bool is_ld_tail, bool is_bdb_tail);
     void gemv_apply_bias(int bd_block, bool is_bdb_tail);
     void gemv_apply_wei_scales(int bd_block, bool is_bdb_tail);
 
@@ -521,15 +518,15 @@ private:
             bool is_rd_tail, bool is_ld_tail, dim_t vpad,
             dim_t rows_for_rd_tail);
     void gemv_microkernel(bool is_bdb_tail, int ld_block, bool is_rd_tail);
-    void gemm_microkernel_amx(int bd_block2, bool is_bdb_tail, int ld_block2,
-            bool is_rd_tail, bool is_ld_tail, bool last_bdb);
+    void gemm_microkernel_amx(int bd_block2, bool is_bdb_tail,
+            int ld_block2, bool is_rd_tail, bool is_ld_tail, bool last_bdb);
     void gemm_microkernel_dyn_quant(dim_t bd_block2, bool is_bdb_tail,
             dim_t ld_block, bool is_rd_tail, bool is_ld_tail, dim_t vpad,
             dim_t rows_for_rd_tail);
 
-    void bs_loop(int bd_block2, bool is_bdb_tail, int ld_block, bool is_ld_tail,
-            bool first_bdb, bool last_bdb, int rows_for_rd_tail,
-            bool skip_accumulation);
+    void bs_loop(int bd_block2, bool is_bdb_tail, int ld_block,
+            bool is_ld_tail, bool first_bdb, bool last_bdb,
+            int rows_for_rd_tail, bool skip_accumulation);
 
     void ldb_loop(int bd_block2, bool is_bdb_tail, int ld_block,
             dim_t ldb_loop_length, bool is_reg_tail, bool is_ld_tail,
@@ -539,18 +536,19 @@ private:
 
     void generate() override;
 
-    bool gemv_is_tail_acc(int bd, int bd_end, bool is_bdb_tail) const noexcept;
+    bool gemv_is_tail_acc(
+            int bd, int bd_end, bool is_bdb_tail) const noexcept;
     int gemv_elems_per_vector_acc() const noexcept;
 
     dim_t A_offset(int bd, int rd, bool is_amx = false) const noexcept;
-    dim_t B_offset(dim_t ld, dim_t rd, bool is_amx = false) const noexcept;
+    dim_t B_offset(int ld, int rd, bool is_amx = false) const noexcept;
     dim_t C_offset(int bd, int ld) const noexcept;
     dim_t D_offset(int bd, int ld) const noexcept;
 
     dim_t rdb_A_offset() const noexcept;
     dim_t rdb_B_offset() const noexcept;
 
-    dim_t ldb_B_offset(dim_t ld_block2, bool is_tail = false) const noexcept;
+    dim_t ldb_B_offset(int ld_block2, bool is_tail = false) const noexcept;
     dim_t ldb_C_offset(int ld_block2, bool is_tail = false) const noexcept;
     dim_t ldb_D_offset(int ld_block2, bool is_tail = false) const noexcept;
     dim_t ldb_po_offset(int ld_block2, bool is_tail = false) const noexcept;
@@ -568,7 +566,7 @@ private:
     dim_t bd_compensation_offset(int ld, int bd) const noexcept;
     dim_t wei_scales_offset(int ld, bool is_tail = false) const noexcept;
     dim_t decomp_wei_scales_offset(
-            dim_t ld, bool is_tail = false) const noexcept;
+            int ld, bool is_tail = false) const noexcept;
     dim_t zp_comp_a_offset(int ld, bool is_tail = false) const noexcept;
     dim_t bd_zp_comp_a_offset(int ld, int bd) const noexcept;
     dim_t bdb_zp_comp_a_offset(int bd_block2) const noexcept;
@@ -583,7 +581,7 @@ private:
             int ld_block2, bool is_tail = false) const noexcept;
     dim_t bdb_per_mn_comp_offset(int bd_block2) const noexcept;
 
-    dim_t wei_zp_offset(dim_t ld, bool is_tail = false) const noexcept;
+    dim_t wei_zp_offset(int ld, bool is_tail = false) const noexcept;
 
     bool vpad_exist = false;
     bool need_comp_pads = false;
@@ -639,11 +637,14 @@ dim_t jit_brgemm_kernel_t<Wmm>::A_offset(
 
 template <typename Wmm>
 dim_t jit_brgemm_kernel_t<Wmm>::B_offset(
-        dim_t ld, dim_t rd, bool is_amx) const noexcept {
-    int typesize_scale = one_of(brg.dt_b, data_type::nf4, data_type::s4,
-                                 data_type::u4, data_type::f4_e2m1)
-            ? 2
-            : 1;
+        int ld, int rd, bool is_amx) const noexcept {
+    int typesize_scale = [&]() {
+        if (brg.dt_b == data_type::u2) return 4;
+        if (one_of(brg.dt_b, data_type::nf4, data_type::s4, data_type::u4,
+                    data_type::f4_e2m1))
+            return 2;
+        return 1;
+    }();
     if (is_amx) {
         return brg.typesize_B * (brg.rd_step * ld * brg.ld_block)
                 / typesize_scale;
@@ -699,15 +700,16 @@ dim_t jit_brgemm_kernel_t<Wmm>::rdb_B_offset() const noexcept {
 
 template <typename Wmm>
 dim_t jit_brgemm_kernel_t<Wmm>::ldb_B_offset(
-        dim_t ld_block2, bool is_tail) const noexcept {
-    int typesize_scale = one_of(brg.dt_b, data_type::nf4, data_type::s4,
-                                 data_type::u4, data_type::f4_e2m1)
-            ? 2
-            : 1;
-    return (is_tail)
-            ? brg.typesize_B * brg.ldb_tail * brg.ld_step / typesize_scale
-            : brg.typesize_B * ld_block2 * brg.ld_block * brg.ld_step
-                    / typesize_scale;
+        int ld_block2, bool is_tail) const noexcept {
+    int typesize_scale = [&]() {
+        if (brg.dt_b == data_type::u2) return 4;
+        if (one_of(brg.dt_b, data_type::nf4, data_type::s4, data_type::u4,
+                    data_type::f4_e2m1))
+            return 2;
+        return 1;
+    }();
+    return (is_tail) ? brg.typesize_B * brg.ldb_tail * brg.ld_step / typesize_scale
+                     : brg.typesize_B * ld_block2 * brg.ld_block * brg.ld_step / typesize_scale;
 }
 
 template <typename Wmm>
@@ -815,14 +817,16 @@ dim_t jit_brgemm_kernel_t<Wmm>::zp_comp_a_offset(
 
 template <typename Wmm>
 dim_t jit_brgemm_kernel_t<Wmm>::decomp_wei_scales_offset(
-        dim_t ld, bool is_tail) const noexcept {
-    return (is_tail) ? sizeof(float) * brg.ldb_tail
-                     : sizeof(float) * ld * brg.ld_block;
+        int ld, bool is_tail) const noexcept {
+    return (is_tail)
+            ? types::data_type_size(brg.wei_decomp_scales_dt) * brg.ldb_tail
+            : types::data_type_size(brg.wei_decomp_scales_dt) * ld
+                    * brg.ld_block;
 }
 
 template <typename Wmm>
 dim_t jit_brgemm_kernel_t<Wmm>::wei_zp_offset(
-        dim_t ld, bool is_tail) const noexcept {
+        int ld, bool is_tail) const noexcept {
     return (is_tail) ? types::data_type_size(brg.wei_decomp_zero_points_dt)
                     * brg.ldb_tail
                      : types::data_type_size(brg.wei_decomp_zero_points_dt) * ld
@@ -1058,14 +1062,16 @@ void jit_brgemm_kernel_t<Wmm>::ldb_regs_shift(int ld_block2, bool is_tail) {
         reg_aux_wei_scales.save();
     }
 
-    if (brg.with_wei_decomp) {
+    if (brg.with_wei_decomp_scales && brg.wei_decomp_scales_stride != 0) {
         reg_aux_wei_dscales.restore();
         add(reg_aux_wei_dscales,
                 (is_tail) ? decomp_wei_scales_offset(1, true)
                           : decomp_wei_scales_offset(ld_block2));
         reg_aux_wei_dscales.save();
         reg_aux_wei_dscales.saveTo(reg_aux2_wei_dscales);
-
+    }
+    if (brg.with_wei_decomp_zero_points
+            && brg.wei_decomp_zero_points_stride != 0) {
         reg_aux_wei_zp.restore();
         add(reg_aux_wei_zp,
                 (is_tail) ? wei_zp_offset(1, true) : wei_zp_offset(ld_block2));
@@ -1168,14 +1174,16 @@ void jit_brgemm_kernel_t<Wmm>::copy_post_ops_stack_values_to_aux(
             reg_wei_zp.saveTo(reg_aux2_wei_zp);
         }
     }
-    if (brg.with_grouped_wei_decomp) {
-        reg_ic.restore();
-        reg_ic.saveTo(reg_aux_ic);
-    }
     if (brg.with_src_dyn_quant) {
         reg_src_dscales.restore();
         reg_src_dscales.saveTo(reg_aux_src_dscales);
         reg_src_dscales.saveTo(reg_aux2_src_dscales);
+
+        if (brg.with_wei_decomp_zero_points) {
+            reg_src_grouped_sum.restore();
+            reg_src_grouped_sum.saveTo(reg_aux_src_grouped_sum);
+            reg_src_grouped_sum.saveTo(reg_aux2_src_grouped_sum);
+        }
     }
     if (brg.zp_type_b != brgemm_broadcast_t::none) {
         reg_zp_comp_b.restore();
@@ -1250,6 +1258,9 @@ void jit_brgemm_kernel_t<Wmm>::read_params() {
     if (brg.with_src_dyn_quant) {
         mov(reg_src_dscales, ptr[param1 + GET_OFF(ptr_src_dscales)]);
         reg_src_dscales.save();
+
+        mov(reg_src_grouped_sum, ptr[param1 + GET_OFF(ptr_src_grouped_sum)]);
+        reg_src_grouped_sum.save();
     }
 
     if (brg.zp_type_c != brgemm_broadcast_t::none) {
@@ -1269,17 +1280,13 @@ void jit_brgemm_kernel_t<Wmm>::read_params() {
 
     if (brg.is_runtime_ldc) {
         mov(reg_stride_ld_block, ptr[param1 + GET_OFF(dynamic_LDC)]);
-        // typesize_C is always 1/2/4/8, so this shift amount is provably
-        // bounded regardless of typesize_C's declared (dim_t) type.
-        if (brg.typesize_C > 1) shl(reg_stride_ld_block, brg.typesize_C >> 1);
+        if (brg.typesize_C > 1) shl(reg_stride_ld_block, (brg.typesize_C >> 1));
         reg_stride_ld_block.save();
     }
 
     if (brg.is_runtime_ldd) {
         mov(reg_D_shift_bytes, ptr[param1 + GET_OFF(dynamic_LDD)]);
-        // typesize_D is always 1/2/4/8, so this shift amount is provably
-        // bounded regardless of typesize_D's declared (dim_t) type.
-        if (brg.typesize_D > 1) shl(reg_D_shift_bytes, brg.typesize_D >> 1);
+        if (brg.typesize_D > 1) shl(reg_D_shift_bytes, (brg.typesize_D >> 1));
         reg_D_shift_bytes.save();
     }
 
@@ -1601,8 +1608,7 @@ void jit_brgemm_kernel_t<Wmm>::gemv_apply_bias(int bd_block, bool is_bdb_tail) {
  *   broadcast dimension.
  */
 template <typename Wmm>
-void jit_brgemm_kernel_t<Wmm>::gemv_apply_wei_scales(
-        int bd_block, bool is_bdb_tail) {
+void jit_brgemm_kernel_t<Wmm>::gemv_apply_wei_scales(int bd_block, bool is_bdb_tail) {
 
     reg_aux_wei_scales.restore();
 
@@ -1739,14 +1745,14 @@ void jit_brgemm_kernel_t<Wmm>::apply_alpha_beta(
                     uni_vaddps(vmm_masked, vmm, ptr_C);
             } else {
                 vmaskmovps(vmm_prev_dst, vmm_tail_mask(), ptr_C);
-                if (brg.is_integer_acc())
+                if (brg.is_integer_acc() && !brg.with_src_dyn_quant)
                     uni_vpaddd(vmm, vmm, vmm_prev_dst);
                 else
                     uni_vaddps(vmm, vmm, vmm_prev_dst);
             }
         } else {
             assert(!brg.is_gemv && "int8 data type is not supported for gemv");
-            const int ld_size = is_tail ? brg.ldb_tail : brg.ld_block;
+            const dim_t ld_size = is_tail ? brg.ldb_tail : brg.ld_block;
             cvt2ps(brg.dt_c, vmm_prev_dst, ptr_C, is_tail, false, k_mask,
                     ld_size);
             if (brg.beta == 1.f)
@@ -2888,7 +2894,8 @@ void jit_brgemm_kernel_t<Wmm>::maybe_tileloadd_nt(matrix_kind_t matrix_kind,
         const int typesize_B
                 = brg.is_input_convert() ? sizeof(int16_t) : brg.typesize_B;
         int rd_step = 4 / typesize_A;
-        int rd_block = (!brg.rdb && brg.rdb_tail) ? brg.rdb_tail : brg.rd_block;
+        int rd_block
+                = (!brg.rdb && brg.rdb_tail) ? brg.rdb_tail : brg.rd_block;
         if (brg.is_input_convert()) {
             const auto vnni_granularity
                     = data_type_vnni_granularity(data_type::f16);
@@ -3078,8 +3085,9 @@ void jit_brgemm_kernel_t<Wmm>::dot_product(Vmm v1, Vmm v2, Vmm v3) {
 }
 
 template <typename Wmm>
-void jit_brgemm_kernel_t<Wmm>::compute_int8_compensation(int rd_loop, int bd_b,
-        int bd_e, int bd_block, int ld_block2, bool is_ld_tail, int vpad) {
+void jit_brgemm_kernel_t<Wmm>::compute_int8_compensation(int rd_loop,
+        int bd_b, int bd_e, int bd_block, int ld_block2,
+        bool is_ld_tail, int vpad) {
     assert(brg.is_int8);
 
     auto compensation_padding = [this, ld_block2](Vmm vmm_load, Vmm vmm_tmp,
@@ -3334,23 +3342,6 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel_dyn_quant(dim_t bd_block2,
         if (brg.req_s8s8_compensation) uni_vpaddb(v1, v1, vmm_inp_shift());
     };
 
-    auto vmm_accm_tmp = [&](int ld_block, int bd, int ld) {
-        int idx = max_effective_vregs - 1 - (brg.ld_block2 * brg.bd_block)
-                - ld_block - (bd * ld_block + ld);
-        return Vmm(idx);
-    };
-
-    auto vmm_zero_point = [&](int ld) {
-        int idx = isa_num_vregs(brg.isa_impl) - 3 - ld;
-        return Vmm(idx);
-    };
-
-    static const int8_t negative_one[64] = {-1, -1, -1, -1, -1, -1, -1, -1, -1,
-            -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-            -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-            -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-            -1, -1, -1, -1};
-
     static const int8_t mask_low_half[64] = {0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F,
             0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F,
             0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F,
@@ -3362,56 +3353,20 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel_dyn_quant(dim_t bd_block2,
     reg_bdb_loop.save();
     reg_ldb_loop.save();
 
-    reg64_t reg_local_wei_scales;
-    reg_bdb_loop.restoreTo(reg_local_wei_scales);
-    reg64_t reg_local_wei_zp;
-    reg_ldb_loop.restoreTo(reg_local_wei_zp);
+    auto &reg_ptr = reg_bdb_loop;
+    auto vmm_mask_low_half = Vmm(isa_num_vregs(brg.isa_impl) - 1);
 
-    auto reg_ptr = reg_local_wei_scales;
-
-    if (brg.with_wei_decomp_zero_points) {
-        mov(reg_local_wei_zp, ptr[rsp + reg_aux2_wei_zp.booking()]);
-        if (brg.wei_decomp_zero_points_stride == 0) {
-            auto reg_ptr_8 = Reg8(reg_ptr.getIdx());
-            mov(reg_ptr_8, ptr[reg_local_wei_zp]);
-            uni_vpbroadcastb(vmm_zero_point(0), reg_ptr_8);
-        } else {
-            static const int8_t index_table[64] = {0x00, 0x00, 0x00, 0x00, 0x04,
-                    0x04, 0x04, 0x04, 0x08, 0x08, 0x08, 0x08, 0x0C, 0x0C, 0x0C,
-                    0x0C, 0x00, 0x00, 0x00, 0x00, 0x04, 0x04, 0x04, 0x04, 0x08,
-                    0x08, 0x08, 0x08, 0x0C, 0x0C, 0x0C, 0x0C, 0x00, 0x00, 0x00,
-                    0x00, 0x04, 0x04, 0x04, 0x04, 0x08, 0x08, 0x08, 0x08, 0x0C,
-                    0x0C, 0x0C, 0x0C, 0x00, 0x00, 0x00, 0x00, 0x04, 0x04, 0x04,
-                    0x04, 0x08, 0x08, 0x08, 0x08, 0x0C, 0x0C, 0x0C, 0x0C};
-
-            auto vmm_indexes = Vmm(isa_num_vregs(brg.isa_impl) - 1);
-            mov(reg_ptr, (size_t)index_table);
-            uni_vmovups(vmm_indexes, ptr[reg_ptr]);
-
-            for (int ld = 0; ld < ld_block2; ld++) {
-                uni_vpmovzxbd(vmm_zero_point(ld),
-                        ptr[reg_local_wei_zp
-                                + ld * brg.ld_block
-                                        * types::data_type_size(
-                                                brg.wei_decomp_zero_points_dt)]);
-                vpshufb(vmm_zero_point(ld), vmm_zero_point(ld), vmm_indexes);
-            }
-        }
-    }
-
-    auto vmm_neg_one = Vmm(isa_num_vregs(brg.isa_impl) - 1);
-    mov(reg_ptr, (size_t)negative_one);
-    uni_vmovups(vmm_neg_one, ptr[reg_ptr]);
-
-    auto vmm_mask_low_half = Vmm(isa_num_vregs(brg.isa_impl) - 2);
     mov(reg_ptr, (size_t)mask_low_half);
     uni_vmovups(vmm_mask_low_half, ptr[reg_ptr]);
 
-    mov(reg_local_wei_scales, ptr[rsp + reg_aux2_wei_dscales.booking()]);
-
+    const int vec_size = vreg_traits_t<Vmm>::vlen;
+    auto accums_stack_space = bd_e * ld_block2 * vec_size;
+    sub(rsp, accums_stack_space);
     for (int bd = bd_b; bd < bd_e; bd++) {
         for (int ld = 0; ld < ld_block2; ld++) {
-            auto vmm_accm = vmm_accm_tmp(ld_block2, bd, ld);
+            auto vmm_accm = accm(static_cast<int>(ld_block2), bd, ld);
+            vmovups(ptr[rsp + (bd * ld_block2 + ld) * vec_size], vmm_accm);
+
             uni_vxorps(vmm_accm, vmm_accm, vmm_accm);
         }
     }
@@ -3445,64 +3400,102 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel_dyn_quant(dim_t bd_block2,
                         have_to_load_bytes && bd_by_load_bytes, brg.dt_a);
             }
             if (prefetch_count_B < ld_block2) {
+                int typesize_scale = brg.dt_b == data_type::u4 ? 2 : 1;
                 prefetcht0(ptr[reg_aux_B + B_offset(prefetch_count_B++, rd)
-                        + brg.LDB * brg.rd_block * brg.typesize_B]);
+                        + brg.LDB * brg.rd_block * brg.typesize_B
+                                / typesize_scale]);
             }
             for (int ld = 0; ld < ld_block2; ld++) {
-                auto vmm = vmm_accm_tmp(ld_block2, bd, ld);
+                auto vmm = accm(static_cast<int>(ld_block2), bd, ld);
                 vpdpbusd(vmm, load(ld), bcst(),
                         is_superset(brg.isa_impl, avx512_core) ? EvexEncoding
                                                                : VexEncoding);
             }
-            if (brg.with_wei_decomp_zero_points) {
-                uni_vpxor(bcst(), bcst(), vmm_neg_one);
-                uni_vpsubb(bcst(), bcst(), vmm_neg_one);
-                for (int ld = 0; ld < ld_block2; ld++) {
-                    auto vmm = vmm_accm_tmp(ld_block2, bd, ld);
-                    Vmm vmm_zp = brg.wei_decomp_zero_points_stride == 0
-                            ? vmm_zero_point(0)
-                            : vmm_zero_point(ld);
-                    vpdpbusd(vmm, vmm_zp, bcst(),
-                            is_superset(brg.isa_impl, avx512_core)
-                                    ? EvexEncoding
-                                    : VexEncoding);
+        }
+    }
+
+    auto vmm_zero_point = [&](int ld) { return load(ld); };
+
+    auto &reg_local_wei_zp = reg_ldb_loop;
+    auto &reg_local_src_grouped_sum = reg_bdb_loop;
+    auto vmm_tmp = Vmm(isa_num_vregs(brg.isa_impl) - 1);
+    auto vmm_src_grouped_sum = bcst();
+
+    if (brg.with_wei_decomp_zero_points) {
+        mov(reg_local_wei_zp,
+                ptr[rsp + reg_aux2_wei_zp.booking() + accums_stack_space]);
+        if (brg.wei_decomp_zero_points_stride == 0) {
+            Vmm vmm_zp = vmm_zero_point(0);
+            auto reg_ptr_32 = Reg32(reg_ptr.getIdx());
+            movzx(reg_ptr_32, ptr[reg_local_wei_zp]);
+            uni_vmovq(Xmm(vmm_zp.getIdx()), reg_ptr);
+            uni_vbroadcastss(vmm_zp, Xmm(vmm_zp.getIdx()));
+        }
+
+        mov(reg_local_src_grouped_sum,
+                ptr[rsp + reg_aux2_src_grouped_sum.booking()
+                        + accums_stack_space]);
+        for (int bd = bd_b; bd < bd_e; bd++) {
+            uni_vbroadcastss(vmm_src_grouped_sum,
+                    ptr[reg_local_src_grouped_sum
+                            + bd * brg.src_grouped_sum_stride
+                                    * sizeof(int32_t)]);
+            for (int ld = 0; ld < ld_block2; ld++) {
+                Vmm vmm_zp = brg.wei_decomp_zero_points_stride == 0
+                        ? vmm_zero_point(0)
+                        : vmm_zero_point(ld);
+                if (bd == bd_b && brg.wei_decomp_zero_points_stride != 0) {
+                    uni_vpmovzxbd(vmm_zp,
+                            ptr[reg_local_wei_zp
+                                    + ld * brg.ld_block
+                                            * types::data_type_size(
+                                                    brg.wei_decomp_zero_points_dt)]);
                 }
+
+                auto vmm_accm = accm(static_cast<int>(ld_block2), bd, ld);
+                uni_vpmulld(vmm_tmp, vmm_src_grouped_sum, vmm_zp);
+                uni_vpsubd(vmm_accm, vmm_accm, vmm_tmp);
             }
         }
     }
 
-    auto reg_local_src_scales = reg_local_wei_zp;
+    auto wei_scale = [&](int ld) { return load(ld); };
+
+    auto &reg_local_src_scales = reg_ldb_loop;
+    auto &reg_local_wei_scales = reg_bdb_loop;
     auto vmm_src_scales = bcst();
-    mov(reg_local_src_scales, ptr[rsp + reg_aux2_src_dscales.booking()]);
+
+    mov(reg_local_wei_scales,
+            ptr[rsp + reg_aux2_wei_dscales.booking() + accums_stack_space]);
+    mov(reg_local_src_scales,
+            ptr[rsp + reg_aux2_src_dscales.booking() + accums_stack_space]);
+    if (brg.wei_decomp_scales_stride == 0) {
+        uni_vbroadcastss(wei_scale(0), ptr[reg_local_wei_scales]);
+    }
 
     for (int bd = bd_b; bd < bd_e; bd++) {
         uni_vbroadcastss(vmm_src_scales,
                 ptr[reg_local_src_scales
                         + bd * brg.src_scales_stride * sizeof(float)]);
         for (int ld = 0; ld < ld_block2; ld++) {
-            const bool is_tail = is_ld_tail && ld + 1 == ld_block2;
-            if (brg.wei_decomp_scales_stride == 0) {
-                load_scales_to_vmm(brg.wei_decomp_scales_dt, load(ld),
-                        ptr[reg_local_wei_scales], is_tail, true);
-            } else {
-                load_scales_to_vmm(brg.wei_decomp_scales_dt, load(ld),
+            auto vmm_wei_scale = brg.wei_decomp_scales_stride == 0
+                    ? wei_scale(0)
+                    : wei_scale(ld);
+            if (bd == bd_b && brg.wei_decomp_scales_stride != 0) {
+                uni_vmovups(vmm_wei_scale,
                         ptr[reg_local_wei_scales
-                                + ld * brg.ld_block
-                                        * types::data_type_size(
-                                                brg.wei_decomp_scales_dt)],
-                        is_tail, false);
+                                + ld * brg.ld_block * sizeof(float)]);
             }
-        }
-        for (int ld = 0; ld < ld_block2; ld++) {
-            auto vmm_accm_aux = vmm_accm_tmp(ld_block2, bd, ld);
-            auto vmm_accm = accm(ld_block2, bd, ld);
 
-            uni_vcvtdq2ps(vmm_accm_aux, vmm_accm_aux);
-            uni_vmulps(vmm_accm_aux, vmm_accm_aux, vmm_src_scales);
-            uni_vfmadd231ps(vmm_accm, vmm_accm_aux, load(ld));
+            auto vmm_accm = accm(static_cast<int>(ld_block2), bd, ld);
+            uni_vcvtdq2ps(vmm_accm, vmm_accm);
+            uni_vmulps(vmm_tmp, vmm_accm, vmm_src_scales);
+            uni_vmovups(vmm_accm, ptr[rsp + (bd * ld_block2 + ld) * vec_size]);
+            uni_vfmadd231ps(vmm_accm, vmm_tmp, vmm_wei_scale);
         }
     }
 
+    add(rsp, accums_stack_space);
     reg_ldb_loop.restore();
     reg_bdb_loop.restore();
 
@@ -3755,9 +3748,6 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(dim_t bd_block2,
                     }
                 };
 
-                reg_bdb_loop.save();
-                reg_ldb_loop.save();
-
                 auto load_scales = [&](Vmm vmm_scales, Xbyak::Address addr) {
                     if (brg.wei_decomp_scales_stride == 0) {
                         switch (brg.wei_decomp_scales_dt) {
@@ -3792,8 +3782,8 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(dim_t bd_block2,
                     }
                 };
 
-                reg_bdb_loop.restore();
-                reg_ldb_loop.restore();
+                reg_bdb_loop.save();
+                reg_ldb_loop.save();
 
                 auto vmm_zero_points = Vmm(isa_num_vregs(brg.isa_impl) - 1);
                 auto vmm_mask8 = Vmm(isa_num_vregs(brg.isa_impl) - 1);
@@ -4099,8 +4089,136 @@ template <typename Wmm>
 void jit_brgemm_kernel_t<Wmm>::bs_loop(int bd_block2, bool is_bdb_tail,
         int ld_block2, bool is_ld_tail, bool first_bdb, bool last_bdb,
         int rows_for_rd_tail, bool skip_accumulation) {
+    auto ic_group_shift_generic = [&]() {
+        if ((brg.with_grouped_wei_decomp
+                    && (brg.wei_decomp_scales_stride != 0
+                            || brg.wei_decomp_zero_points_stride != 0))
+                || brg.with_src_dyn_quant) {
+            auto &reg_local_ic = reg_aux_D;
+            auto &reg_local_wei_params = reg_bdb_loop;
+            auto &reg_local_ic_group = reg_ldb_loop;
+
+            auto ic_group_shift = [&](int src_offs, int dst_offs,
+                                          int group_size, int stride) {
+                reg_aux_ic.restoreTo(reg_local_ic);
+                mov(reg_local_ic_group, group_size);
+                xor_(rdx, rdx);
+                idiv(reg_local_ic_group);
+                imul(reg_local_ic, reg_local_ic, stride);
+
+                mov(reg_local_wei_params, ptr[rsp + src_offs]);
+                add(reg_local_wei_params, reg_local_ic);
+                mov(ptr[rsp + dst_offs], reg_local_wei_params);
+            };
+
+            reg_bdb_loop.save();
+            reg_aux_D.saveTo(reg_aux2_D);
+            reg_ldb_loop.save();
+            reg_a_offset.save(); // preserve rdx for idiv
+
+            if (brg.with_wei_decomp_scales
+                    && brg.wei_decomp_scales_stride != 0) {
+                ic_group_shift(reg_aux_wei_dscales.booking(),
+                        reg_aux2_wei_dscales.booking(),
+                        brg.wei_decomp_scales_group_size,
+                        brg.wei_decomp_scales_stride
+                                * types::data_type_size(
+                                        brg.wei_decomp_scales_dt));
+            }
+
+            if (brg.with_wei_decomp_zero_points
+                    && brg.wei_decomp_zero_points_stride != 0) {
+                ic_group_shift(reg_aux_wei_zp.booking(),
+                        reg_aux2_wei_zp.booking(),
+                        brg.wei_decomp_zero_points_group_size,
+                        brg.wei_decomp_zero_points_stride
+                                * types::data_type_size(
+                                        brg.wei_decomp_zero_points_dt));
+            }
+
+            if (brg.with_src_dyn_quant) {
+                ic_group_shift(reg_aux_src_dscales.booking(),
+                        reg_aux2_src_dscales.booking(),
+                        brg.src_scales_group_size, sizeof(float));
+
+                if (brg.with_wei_decomp_zero_points) {
+                    ic_group_shift(reg_aux_src_grouped_sum.booking(),
+                            reg_aux2_src_grouped_sum.booking(),
+                            brg.src_sum_group_size, sizeof(int32_t));
+                }
+            }
+
+            reg_aux_ic.restoreTo(reg_local_ic);
+
+            add(reg_local_ic, brg.rd_block);
+            reg_local_ic.saveTo(reg_aux_ic);
+
+            reg_bdb_loop.restore();
+            reg_aux2_D.restoreTo(reg_aux_D);
+            reg_ldb_loop.restore();
+            reg_a_offset.restore();
+        }
+    };
+
+    auto ic_group_shift_opt = [&](int rb) {
+        if ((brg.with_grouped_wei_decomp
+                    && (brg.wei_decomp_scales_stride != 0
+                            || brg.wei_decomp_zero_points_stride != 0))
+                || brg.with_src_dyn_quant) {
+            reg_rdb_loop.saveTo(reg_bdb_loop);
+            auto &reg_ptr = reg_rdb_loop;
+
+            auto ic_group_shift = [&](int src_offs, int dst_offs,
+                                          int group_size, int stride) {
+                if ((rb + 1) * brg.rd_block % group_size == 0) {
+                    mov(reg_ptr, ptr[rsp + src_offs]);
+                    add(reg_ptr, stride);
+                    mov(ptr[rsp + dst_offs], reg_ptr);
+                }
+            };
+
+            if (brg.with_wei_decomp_scales
+                    && brg.wei_decomp_scales_stride != 0) {
+                ic_group_shift(reg_aux2_wei_dscales.booking(),
+                        reg_aux2_wei_dscales.booking(),
+                        brg.wei_decomp_scales_group_size,
+                        brg.wei_decomp_scales_stride
+                                * types::data_type_size(
+                                        brg.wei_decomp_scales_dt));
+            }
+
+            if (brg.with_wei_decomp_zero_points
+                    && brg.wei_decomp_zero_points_stride != 0) {
+                ic_group_shift(reg_aux2_wei_zp.booking(),
+                        reg_aux2_wei_zp.booking(),
+                        brg.wei_decomp_zero_points_group_size,
+                        brg.wei_decomp_zero_points_stride
+                                * types::data_type_size(
+                                        brg.wei_decomp_zero_points_dt));
+            }
+
+            if (brg.with_src_dyn_quant) {
+                ic_group_shift(reg_aux2_src_dscales.booking(),
+                        reg_aux2_src_dscales.booking(),
+                        brg.src_scales_group_size, sizeof(float));
+
+                if (brg.with_wei_decomp_zero_points) {
+                    ic_group_shift(reg_aux2_src_grouped_sum.booking(),
+                            reg_aux2_src_grouped_sum.booking(),
+                            brg.src_sum_group_size, sizeof(int32_t));
+                }
+            }
+
+            reg_bdb_loop.restoreTo(reg_rdb_loop);
+        }
+    };
 
     auto bs_loop_body = [&](int vpad, bool last_bdb) {
+        if (brg.with_grouped_wei_decomp) {
+            reg_ic.restore();
+            reg_ic.saveTo(reg_aux_ic);
+        }
+
         set_A_B_matrices();
 
         int bd_block = (is_bdb_tail) ? brg.bdb_tail : brg.bd_block;
@@ -4115,88 +4233,83 @@ void jit_brgemm_kernel_t<Wmm>::bs_loop(int bd_block2, bool is_bdb_tail,
             gemm_microkernel_amx(bd_block2, is_bdb_tail, ld_block2, is_rd_tail,
                     is_ld_tail, last_bdb);
         } else {
-            if (brg.rdb > 0) {
-                Label rdb_loop_label;
-                mov(reg_rdb_loop, brg.rdb);
-                L_aligned(rdb_loop_label, 64);
-                {
-                    if ((brg.with_grouped_wei_decomp
-                                && (brg.wei_decomp_scales_stride != 0
-                                        || brg.wei_decomp_zero_points_stride
-                                                != 0))
-                            || brg.with_src_dyn_quant) {
-                        auto &reg_local_ic = reg_aux_D;
-                        auto &reg_local_wei_params = reg_bdb_loop;
-                        auto &reg_local_ic_group = reg_ldb_loop;
+            ic_group_shift_generic();
 
-                        auto ic_group_shift
-                                = [&](int src_offs, int dst_offs,
-                                          int group_size, int stride) {
-                            auto &reg_local_ic = reg_aux_D;
-                            auto &reg_local_ic_group = reg_ldb_loop;
-                            xor_(rdx, rdx);
-                            idiv(reg_local_ic_group);
-                            imul(reg_local_ic, reg_local_ic, stride);
+            auto rdb_group = brg.rd_block;
+            auto rd_size = brg.rdb * brg.rd_block + brg.rdb_tail;
+            if (brg.wei_decomp_scales_group_size < rd_size)
+                rdb_group = nstl::max(
+                        rdb_group, brg.wei_decomp_scales_group_size);
+            if (brg.wei_decomp_zero_points_group_size < rd_size)
+                rdb_group = nstl::max(
+                        rdb_group, brg.wei_decomp_zero_points_group_size);
+            if (brg.with_src_dyn_quant) {
+                rdb_group = nstl::max(rdb_group, brg.src_scales_group_size);
+                if (brg.with_wei_decomp_zero_points) {
+                    rdb_group = nstl::max(rdb_group, brg.src_sum_group_size);
+                }
+            }
+            rdb_group = rdb_group / brg.rd_block;
+            auto rbd_blocks = brg.rdb / rdb_group;
+            auto max_rdb_unroll = 8;
 
-                            mov(reg_local_wei_params, ptr[rsp + src_offs]);
-                            add(reg_local_wei_params, reg_local_ic);
-                            mov(ptr[rsp + dst_offs], reg_local_wei_params);
-                        };
+            if (brg.with_wei_decomp && rdb_group <= max_rdb_unroll) {
+                if (rbd_blocks > 0) {
+                    Label rdb_loop_label;
+                    mov(reg_rdb_loop, rbd_blocks);
+                    L_aligned(rdb_loop_label, 64);
+                    {
+                        for (int rb = 0; rb < rdb_group; rb++) {
+                            gemm_microkernel(bd_block2, is_bdb_tail, ld_block2,
+                                    false, is_ld_tail, vpad, rows_for_rd_tail);
 
-                        reg_bdb_loop.save();
-                        reg_aux_D.saveTo(reg_aux2_D);
-                        reg_ldb_loop.save();
-                        reg_a_offset.save(); // preserve rdx for idiv
+                            add(reg_aux_A, rdb_A_offset());
+                            add(reg_aux_B, rdb_B_offset());
 
-                        if (brg.with_wei_decomp_scales
-                                && brg.wei_decomp_scales_stride != 0) {
-                            ic_group_shift(reg_aux_wei_dscales.booking(),
-                                    reg_aux2_wei_dscales.booking(),
-                                    brg.wei_decomp_scales_group_size,
-                                    brg.wei_decomp_scales_stride
-                                            * types::data_type_size(
-                                                    brg.wei_decomp_scales_dt));
+                            ic_group_shift_opt(rb);
                         }
 
-                        if (brg.with_wei_decomp_zero_points
-                                && brg.wei_decomp_zero_points_stride != 0) {
-                            ic_group_shift(reg_aux_src_dscales.booking(),
-                                    reg_aux2_src_dscales.booking(),
-                                    brg.wei_decomp_zero_points_group_size,
-                                    brg.wei_decomp_zero_points_stride
-                                            * types::data_type_size(
-                                                    brg.wei_decomp_zero_points_dt));
-                        }
-
-                        if (brg.with_src_dyn_quant) {
-                            ic_group_shift(reg_aux_src_grouped_sum.booking(),
-                                    reg_aux2_src_grouped_sum.booking(),
-                                    brg.src_scales_group_size, sizeof(float));
-                        }
-
-                        reg_aux_ic.restoreTo(reg_local_ic);
-                        add(reg_local_ic, brg.rd_block);
-                        reg_local_ic.saveTo(reg_aux_ic);
-
-                        reg_bdb_loop.restore();
-                        reg_aux2_D.restoreTo(reg_aux_D);
-                        reg_ldb_loop.restore();
-                        reg_a_offset.restore();
+                        dec(reg_rdb_loop);
+                        cmp(reg_rdb_loop, 0);
                     }
+                    jg(rdb_loop_label, T_NEAR);
+                }
 
-                    const bool is_rd_tail = false;
-                    if (brg.is_gemv)
-                        gemv_microkernel(is_bdb_tail, ld_block2, is_rd_tail);
-                    else
-                        gemm_microkernel(bd_block2, is_bdb_tail, ld_block2,
-                                is_rd_tail, is_ld_tail, vpad, rows_for_rd_tail);
+                for (int rb = static_cast<int>(rbd_blocks) * rdb_group; rb < brg.rdb; rb++) {
+                    gemm_microkernel(bd_block2, is_bdb_tail, ld_block2, false,
+                            is_ld_tail, vpad, rows_for_rd_tail);
 
                     add(reg_aux_A, rdb_A_offset());
                     add(reg_aux_B, rdb_B_offset());
 
-                    dec(reg_rdb_loop);
-                    cmp(reg_rdb_loop, 0);
-                    jg(rdb_loop_label, T_NEAR);
+                    ic_group_shift_opt(rb);
+
+                    reg_bdb_loop.restoreTo(reg_rdb_loop);
+                }
+            } else {
+                if (brg.rdb > 0) {
+                    Label rdb_loop_label;
+                    mov(reg_rdb_loop, brg.rdb);
+                    L_aligned(rdb_loop_label, 64);
+                    {
+                        const bool is_rd_tail = false;
+                        if (brg.is_gemv)
+                            gemv_microkernel(
+                                    is_bdb_tail, ld_block2, is_rd_tail);
+                        else
+                            gemm_microkernel(bd_block2, is_bdb_tail, ld_block2,
+                                    is_rd_tail, is_ld_tail, vpad,
+                                    rows_for_rd_tail);
+
+                        add(reg_aux_A, rdb_A_offset());
+                        add(reg_aux_B, rdb_B_offset());
+
+                        ic_group_shift_generic();
+
+                        dec(reg_rdb_loop);
+                        cmp(reg_rdb_loop, 0);
+                        jg(rdb_loop_label, T_NEAR);
+                    }
                 }
             }
         }
@@ -4253,7 +4366,7 @@ void jit_brgemm_kernel_t<Wmm>::bs_loop(int bd_block2, bool is_bdb_tail,
                 } else
                     xor_(reg_aux_A_vpad, reg_aux_A_vpad);
 
-                for (int vpad = vpad_first; vpad <= vpad_last; vpad++) {
+                for (auto vpad = vpad_first; vpad <= vpad_last; vpad++) {
                     const auto label_vpad = vpad - vpad_first;
                     L(Vpad_loop_iter_label[label_vpad]);
                     if (!first_bdb && vpad > 0) continue;
@@ -4299,8 +4412,8 @@ void jit_brgemm_kernel_t<Wmm>::bs_loop(int bd_block2, bool is_bdb_tail,
 
 template <typename Wmm>
 void jit_brgemm_kernel_t<Wmm>::ldb_loop(int bd_block2, bool is_bdb_tail,
-        int ld_block2, dim_t ldb_loop_length, bool is_reg_tail, bool is_ld_tail,
-        bool first_bdb, bool last_bdb, int rows_for_rd_tail,
+        int ld_block2, dim_t ldb_loop_length, bool is_reg_tail,
+        bool is_ld_tail, bool first_bdb, bool last_bdb, int rows_for_rd_tail,
         bool skip_accumulation) {
 
     Label ldb_loop_label;
@@ -4378,9 +4491,10 @@ void jit_brgemm_kernel_t<Wmm>::bdb_loop() {
         }
     };
 
-    auto bdb_loop_body = [this, do_ldb_loop](int bd_block2, bool is_bdb_tail,
-                                 bool first_bdb, bool last_bdb,
-                                 int rows_for_rd_tail, bool skip_accumulation) {
+    auto bdb_loop_body
+            = [this, do_ldb_loop](int bd_block2, bool is_bdb_tail,
+                      bool first_bdb, bool last_bdb, dim_t rows_for_rd_tail,
+                      bool skip_accumulation) {
         do_ldb_loop(bd_block2, is_bdb_tail, first_bdb, last_bdb,
                 rows_for_rd_tail, skip_accumulation);
 
@@ -4433,6 +4547,12 @@ void jit_brgemm_kernel_t<Wmm>::bdb_loop() {
                     bd_block2 * brg.bd_block * brg.src_scales_stride
                             * sizeof(float));
             reg_src_dscales.save();
+
+            reg_src_grouped_sum.restore();
+            add(reg_src_grouped_sum,
+                    bd_block2 * brg.bd_block * brg.src_grouped_sum_stride
+                            * sizeof(int32_t));
+            reg_src_grouped_sum.save();
         }
 
         advance_bd_block2_post_op_regs(bd_block2);
