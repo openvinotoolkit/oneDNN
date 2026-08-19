@@ -2561,9 +2561,8 @@ status_t init_1x1_conf(jit_brgemm_conv_conf_t &jcp, cpu_isa_t isa,
         const dim_t n_vnni_blocks = utils::div_up(jcp.ic, jcp.vnni_block);
         const dim_t ic_block = nstl::min<dim_t>(jcp.acc_simd_w, n_vnni_blocks)
                 * jcp.vnni_block;
-
-        jcp.extendable_k
-                = !jcp.is_tf32 && jcp.ic > jcp.simd_w && jcp.ic % jcp.simd_w;
+        // WA: extendable_k caused extra error in this AMX path.
+        jcp.extendable_k = false;
 
         const bool do_zeropad = !(jcp.is_bf32 || jcp.is_tf32)
                 && !jcp.extendable_k
