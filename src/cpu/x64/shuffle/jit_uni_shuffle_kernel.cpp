@@ -424,7 +424,7 @@ void jit_uni_shuffle_kernel_t<isa>::append_zero_padding(
             ? padding_size_ - (conf_.simd_w - conf_.simd_tail)
             : padding_size_;
     const auto off_start = padding_start * conf_.dt_size;
-    const auto padding_to_add = padding_end * conf_.dt_size;
+    const auto padding_to_add = static_cast<int>(padding_end * conf_.dt_size);
 
     if (!padding_to_add) return;
 
