@@ -198,7 +198,18 @@ struct jit_uni_reorder_kernel_f32_t : public kernel_t, public jit_generator_t {
                 && utils::one_of(p.beta, 0.f, 1.f) /* anything else? */
                 && simple_impl_desc_init(p, nullptr) && mayiuse(sse41)
                 && IMPLICATION(bf16 == p.itype, mayiuse(avx2))
-                && IMPLICATION((bf16 == p.otype) && (bf16 != p.itype),
+                // Even when itype == otype == bf16, this kernel needs
+                // avx512_core/avx2_vnni_2 to produce a bf16 output IF it will
+                // route the value through an f32 intermediate: tr8x8_avx2()
+                // (see tr8x8_applicable()) always does so unconditionally,
+                // and process_unroll_generic() (see interim_f32_needed())
+                // does so for scale/beta/zero-point/compensation problems.
+                // Without one of those ISA features, bf16_emu_ (built only
+                // when mayiuse(avx512_core) holds, see the ctor below) is
+                // null and cvt2odt() would dereference it.
+                && IMPLICATION((bf16 == p.otype)
+                                && (tr8x8_applicable(p)
+                                        || interim_f32_needed(p)),
                         mayiuse(avx512_core) || mayiuse(avx2_vnni_2))
                 && IMPLICATION(utils::one_of(f16, p.itype, p.otype),
                         mayiuse(avx512_core_fp16) || mayiuse(avx2))
@@ -561,7 +572,11 @@ struct jit_uni_reorder_kernel_f32_t : public kernel_t, public jit_generator_t {
         }
     }
 
-    bool can_do_tr8x8() {
+    // Shared with applicable(), which needs to know -- before this kernel is
+    // even constructed -- whether tr8x8_avx2() (see below) would end up
+    // being used for a given problem, hence the free-standing, prb_t-only
+    // signature instead of a member function reading prb_/compensation_needed_.
+    static bool tr8x8_applicable(const prb_t &p) {
         using namespace data_type;
 
         static constexpr size_t desirable_node_size = 8;
@@ -570,18 +585,19 @@ struct jit_uni_reorder_kernel_f32_t : public kernel_t, public jit_generator_t {
         // This process relies on swapping the two innermost dimensions.
         // Therefore, the input stride in the second node and output stride in
         // first node have to be equal to 1.
-        return mayiuse(avx2) && prb_.ndims >= 2
-                && ((utils::one_of(prb_.itype, u8, s8, f8_e5m2, f8_e4m3, s32,
-                             f32, bf16, f16)
-                        && utils::one_of(prb_.otype, u8, s8, f8_e5m2, f8_e4m3,
-                                s32, f32, bf16, f16)))
-                && utils::everyone_is(desirable_node_size, prb_.n(0), prb_.n(1))
-                && utils::everyone_is(desirable_stride, prb_.os(0), prb_.is(1))
-                && !prb_.is_tail_present
-                && prb_.src_scale_type == scale_type_t::NONE
-                && prb_.dst_scale_type == scale_type_t::NONE && prb_.beta == 0.f
-                && !compensation_needed_;
+        return mayiuse(avx2) && p.ndims >= 2
+                && ((utils::one_of(p.itype, u8, s8, f8_e5m2, f8_e4m3, s32, f32,
+                             bf16, f16)
+                        && utils::one_of(p.otype, u8, s8, f8_e5m2, f8_e4m3, s32,
+                                f32, bf16, f16)))
+                && utils::everyone_is(desirable_node_size, p.n(0), p.n(1))
+                && utils::everyone_is(desirable_stride, p.os(0), p.is(1))
+                && !p.is_tail_present && p.src_scale_type == scale_type_t::NONE
+                && p.dst_scale_type == scale_type_t::NONE && p.beta == 0.f
+                && !(p.req_s8s8_comp || p.req_asymmetric_comp);
     }
+
+    bool can_do_tr8x8() { return tr8x8_applicable(prb_); }
 
     bool process_unroll_tr8x8(const int ndims, const int len) {
         if (!can_do_tr8x8()) return false;
@@ -838,7 +854,7 @@ struct jit_uni_reorder_kernel_f32_t : public kernel_t, public jit_generator_t {
         const int load_tail_step
                 = !can_load_xmm && can_store_xmm ? ur_step : load_step;
 
-        const bool interim_f32 = interim_f32_needed();
+        const bool interim_f32 = interim_f32_needed(prb_);
 
         const bool need_saturation
                 = (utils::one_of(prb_.otype, u8, s8, s32) && interim_f32);
@@ -1242,17 +1258,19 @@ struct jit_uni_reorder_kernel_f32_t : public kernel_t, public jit_generator_t {
         }
     }
 
-    bool interim_f32_needed() {
+    // Shared with applicable(); see the comment on tr8x8_applicable() above.
+    static bool interim_f32_needed(const prb_t &p) {
         using namespace data_type;
 
-        return utils::one_of(f32, prb_.itype, prb_.otype)
-                || prb_.src_scale_type != scale_type_t::NONE
-                || prb_.dst_scale_type != scale_type_t::NONE || prb_.beta != 0.f
-                || ((prb_.req_src_zp || prb_.req_dst_zp)
-                                ? !(prb_.itype == s32 && prb_.otype == s32)
+        return utils::one_of(f32, p.itype, p.otype)
+                || p.src_scale_type != scale_type_t::NONE
+                || p.dst_scale_type != scale_type_t::NONE || p.beta != 0.f
+                || ((p.req_src_zp || p.req_dst_zp)
+                                ? !(p.itype == s32 && p.otype == s32)
                                 : false)
-                || (prb_.itype != f32 && compensation_needed_)
-                || prb_.scale_adjust != 1.f;
+                || (p.itype != f32
+                        && (p.req_s8s8_comp || p.req_asymmetric_comp))
+                || p.scale_adjust != 1.f;
     }
 
     void process_unroll_generic(
@@ -1270,7 +1288,7 @@ struct jit_uni_reorder_kernel_f32_t : public kernel_t, public jit_generator_t {
 
         int curr = 0; // will switch between 0 and 1
 
-        const bool interim_f32 = interim_f32_needed();
+        const bool interim_f32 = interim_f32_needed(prb_);
 
         if (prb_.req_src_zp) {
             uni_vbroadcastss(xmm_src_zp_, PARAM(src_zp));
