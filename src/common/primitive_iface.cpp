@@ -143,32 +143,37 @@ status_t primitive_execute(
 
     if (get_verbose(verbose_t::exec_profile,
                 prim_kind2_comp_kind(pd->impl()->kind()))) {
+        const bool is_cpu
+                = primitive_iface->engine()->kind() == engine_kind::cpu;
+        auto get_pd_info = [&]() {
+            if (pd->impl()->has_runtime_dims_or_strides()) {
+                // Take out mds from `ctx` here to avoid primitive_desc dependency
+                // on `exec_ctx_t` type.
+                // TODO: invariant arg names for training?
+                const auto pd_src_md = pd->impl()->invariant_src_md();
+                const auto src_md = ctx.memory_mdw(DNNL_ARG_SRC, pd_src_md).md_;
+                const auto pd_wei_md = pd->impl()->invariant_wei_md();
+                const auto wei_md
+                        = ctx.memory_mdw(DNNL_ARG_WEIGHTS, pd_wei_md).md_;
+                const auto pd_bia_md = pd->impl()->invariant_bia_md();
+                const auto bia_md
+                        = ctx.memory_mdw(DNNL_ARG_BIAS, pd_bia_md).md_;
+                const auto pd_dst_md = pd->impl()->invariant_dst_md();
+                const auto dst_md = ctx.memory_mdw(DNNL_ARG_DST, pd_dst_md).md_;
+                return pd->info_with_runtime_dims(
+                        src_md, wei_md, bia_md, dst_md);
+            }
+            return std::string(pd->info());
+        };
         std::string pd_info;
+        if (!is_cpu) pd_info = get_pd_info();
 
-        if (pd->impl()->has_runtime_dims_or_strides()) {
-            // Take out mds from `ctx` here to avoid primitive_desc dependency
-            // on `exec_ctx_t` type.
-            // TODO: invariant arg names for training?
-            const auto pd_src_md = pd->impl()->invariant_src_md();
-            const auto src_md = ctx.memory_mdw(DNNL_ARG_SRC, pd_src_md).md_;
-            const auto pd_wei_md = pd->impl()->invariant_wei_md();
-            const auto wei_md = ctx.memory_mdw(DNNL_ARG_WEIGHTS, pd_wei_md).md_;
-            const auto pd_bia_md = pd->impl()->invariant_bia_md();
-            const auto bia_md = ctx.memory_mdw(DNNL_ARG_BIAS, pd_bia_md).md_;
-            const auto pd_dst_md = pd->impl()->invariant_dst_md();
-            const auto dst_md = ctx.memory_mdw(DNNL_ARG_DST, pd_dst_md).md_;
-            pd_info = pd->info_with_runtime_dims(
-                    src_md, wei_md, bia_md, dst_md);
-        } else {
-            pd_info = pd->info();
-        }
-
-        if (!stream->is_verbose_profiler_enabled()) {
+        if (is_cpu || !stream->is_verbose_profiler_enabled()) {
             bool block_on_wait = true;
 #if DNNL_CPU_RUNTIME == DNNL_RUNTIME_THREADPOOL
             dnnl::threadpool_interop::threadpool_iface *tp;
             auto st = stream->get_threadpool(&tp);
-            const bool is_async_cpu = st == status::success && tp
+            const bool is_async_cpu = !is_cpu && st == status::success && tp
                     && (tp->get_flags()
                             & dnnl::threadpool_interop::threadpool_iface::
                                     ASYNCHRONOUS)
@@ -181,6 +186,7 @@ status_t primitive_execute(
             status = stream->enqueue_primitive(primitive_iface, ctx);
             if (block_on_wait) stream->wait();
             double duration_ms = get_msec() - start_ms;
+            if (is_cpu) pd_info = get_pd_info();
             VPROF(start_ms, primitive, exec, VERBOSE_profile, pd_info.c_str(),
                     duration_ms);
         } else {
