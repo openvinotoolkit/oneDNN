@@ -208,15 +208,15 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                 src_dscales_ptr[mb * ic_groups + ic_groups - 1] = dscale;
                 if (is_bf16_src) {
                     for (int ic = vec_loop_end; ic < jbgp.ic; ic++) {
-                        qsrc_ptr[mb * jbgp.ic + ic] = std::round(
+                        qsrc_ptr[mb * jbgp.ic + ic] = static_cast<int8_t>(std::round(
                                 static_cast<float>(
                                         src_ptr_bf16[mb * jbgp.ic + ic])
-                                * qscale);
+                                * qscale));
                     }
                 } else {
                     for (int ic = vec_loop_end; ic < jbgp.ic; ic++) {
-                        qsrc_ptr[mb * jbgp.ic + ic] = std::round(
-                                src_ptr_f32[mb * jbgp.ic + ic] * qscale);
+                        qsrc_ptr[mb * jbgp.ic + ic] = static_cast<int8_t>(std::round(
+                                src_ptr_f32[mb * jbgp.ic + ic] * qscale));
                     }
                 }
             }
@@ -425,7 +425,7 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                     const comp_tile_len_type *compressed_tile_lengths_ptr
                             = reinterpret_cast<const comp_tile_len_type *>(
                                     weights);
-                    int compressed_weights_offset = wei_offset / 4096;
+                    int compressed_weights_offset = static_cast<int>(wei_offset / 4096);
 
                     auto dcomp_params = brgemm_decomp_kernel_params_t();
                     dcomp_params.ptr_B = weights + jbgp.weights_starting_offset

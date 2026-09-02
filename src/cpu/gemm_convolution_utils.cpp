@@ -122,7 +122,7 @@ void ref_pp_kernel_t::operator()(float *dst_orig, float *dst, const float *bias,
             auto &post_op = p.entry_[i];
             // todo: sum?
             if (post_op.is_eltwise()) {
-                parallel_nd(oc_work, [&](const int oc) {
+                parallel_nd(oc_work, [&](const dim_t oc) {
                     float b = need_bias ? bias[oc_start + oc] : 0;
                     float *d_ = dst + oc * oc_stride;
                     for (int oS = 0; oS < len; ++oS) {
@@ -142,7 +142,7 @@ void ref_pp_kernel_t::operator()(float *dst_orig, float *dst, const float *bias,
                 auto depthwise_bias = depthwise_base
                         + post_op.depthwise.offset[post_op.depthwise.shifts];
 
-                parallel_nd(oc_work, [&](const int oc) {
+                parallel_nd(oc_work, [&](const dim_t oc) {
                     float b = need_bias ? bias[oc_start + oc] : 0;
                     float *d_ = dst + oc * oc_stride;
                     for (int oS = 0; oS < len; ++oS) {
@@ -176,26 +176,26 @@ void ref_pp_kernel_t::operator()(float *dst_orig, float *dst, const float *bias,
                 auto posh = quantization_base
                         + post_op.quantization.offset[quant.output_shift];
 
-                parallel_nd(oc_work, [&](const int oc) {
+                parallel_nd(oc_work, [&](const dim_t oc) {
                     float b = need_bias ? bias[oc_start + oc] : 0;
                     float *d_ = dst + oc * oc_stride;
 
-                    int cl_idx = !quant.per_channel[quant.crop_low]
+                    const dim_t cl_idx = !quant.per_channel[quant.crop_low]
                             ? 0
                             : oc_start + oc;
-                    int ch_idx = !quant.per_channel[quant.crop_high]
+                    const dim_t ch_idx = !quant.per_channel[quant.crop_high]
                             ? 0
                             : oc_start + oc;
-                    int isc_idx = !quant.per_channel[quant.inp_scale]
+                    const dim_t isc_idx = !quant.per_channel[quant.inp_scale]
                             ? 0
                             : oc_start + oc;
-                    int ish_idx = !quant.per_channel[quant.inp_shift]
+                    const dim_t ish_idx = !quant.per_channel[quant.inp_shift]
                             ? 0
                             : oc_start + oc;
-                    int osc_idx = !quant.per_channel[quant.output_scale]
+                    const dim_t osc_idx = !quant.per_channel[quant.output_scale]
                             ? 0
                             : oc_start + oc;
-                    int osh_idx = !quant.per_channel[quant.output_shift]
+                    const dim_t osh_idx = !quant.per_channel[quant.output_shift]
                             ? 0
                             : oc_start + oc;
 
@@ -218,7 +218,7 @@ void ref_pp_kernel_t::operator()(float *dst_orig, float *dst, const float *bias,
     }
 
     if (need_bias) {
-        parallel_nd(oc_work, [&](const int oc) {
+        parallel_nd(oc_work, [&](const dim_t oc) {
             float b = bias[oc_start + oc];
             float *d_ = dst + oc * oc_stride;
             PRAGMA_OMP_SIMD()

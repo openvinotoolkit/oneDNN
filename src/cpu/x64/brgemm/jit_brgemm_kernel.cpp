@@ -4336,7 +4336,7 @@ void jit_brgemm_kernel_t<Wmm>::bs_loop(int bd_block2, bool is_bdb_tail,
                     jg(rdb_loop_label, T_NEAR);
                 }
 
-                for (int rb = rbd_blocks * rdb_group; rb < brg.rdb; rb++) {
+                for (int rb = static_cast<int>(rbd_blocks * rdb_group); rb < brg.rdb; rb++) {
                     gemm_microkernel(bd_block2, is_bdb_tail, ld_block2, false,
                             is_ld_tail, vpad, rows_for_rd_tail);
 

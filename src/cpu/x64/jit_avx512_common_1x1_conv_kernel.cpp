@@ -176,7 +176,7 @@ void jit_avx512_common_1x1_conv_kernel_t::apply_postops(
     const dim_t ur) {
     std::map<size_t, int> vmm_idx_off;
     iterate(load_loop_blk, ur,
-            [&](const bool, const int i_load, const int i_ur) {
+            [&](const bool, const dim_t i_load, const dim_t i_ur) {
         vmm_idx_off.insert({vreg_accum_idx(load_loop_blk, i_load, i_ur),
                 i_load * jcp.load_block * sizeof(float)});
     });

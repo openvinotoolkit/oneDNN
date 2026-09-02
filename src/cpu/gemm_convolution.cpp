@@ -599,7 +599,7 @@ status_t gemm_convolution_bwd_data_t::execute_backward_data_ncsp(
                                         + post_op.depthwise.offset
                                                   [post_op.depthwise.shifts]
                                 : nullptr;
-                        parallel_nd(jcp.ic, [&](const int ic) {
+                        parallel_nd(jcp.ic, [&](const dim_t ic) {
                             for (int id = 0; id < jcp.id; ++id) {
                                 data_t *d_ = _diff_src + ic * jcp.id * jcp.is
                                         + id * jcp.is;

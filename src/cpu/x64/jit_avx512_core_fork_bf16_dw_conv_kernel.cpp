@@ -52,7 +52,7 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::load_src(
                 uni_vpxor(zmm_acc, zmm_acc, zmm_acc);
             }
             if (this->jcp.with_sum) {
-                int o_off = ch * ocb_stride + ow * ow_stride;
+                auto o_off = static_cast<int>(ch * ocb_stride + ow * ow_stride);
                 if (jcp.dst_dt == data_type::bf16) {
                     const Zmm zmm_prev_dst_msk = mask_flag
                             ? zmm_prev_dst | ktail_mask | T_z
@@ -73,9 +73,9 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::load_src(
 void jit_avx512_fork_dw_conv_fwd_kernel_bf16::apply_filter(
         int ur_ch_blocks, int ur_w, bool last_ch_block_flag) {
     int ch_block = jcp.ch_block;
-    int dilate_h = jcp.dilate_h + 1;
-    int dilate_w = jcp.dilate_w + 1;
-    int stride_w = jcp.stride_w;
+    const auto dilate_h = static_cast<int>(jcp.dilate_h + 1);
+    const auto dilate_w = static_cast<int>(jcp.dilate_w + 1);
+    const auto stride_w = static_cast<int>(jcp.stride_w);
 
     const auto src_layout_nxc = is_src_layout_nxc();
     const auto iw_stride = src_layout_nxc ? jcp.ngroups : ch_block;
@@ -106,7 +106,7 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::apply_filter(
             for (int ch = 0; ch < ur_ch_blocks; ch++) {
                 const bool mask_flag
                         = last_ch_block_flag && ch == ur_ch_blocks - 1;
-                int ker_off = ch * jcp.kh * jcp.kw * ch_block;
+                const auto ker_off = static_cast<int>(ch * jcp.kh * jcp.kw * ch_block);
                 const Zmm zmm_ker_reg_msk = mask_flag
                         ? zmm_ker_reg | ktail_mask | T_z
                         : zmm_ker_reg;
@@ -117,7 +117,7 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::apply_filter(
                             ? zmm_src_reg | ktail_mask | T_z
                             : zmm_src_reg;
                     Zmm zmm_acc = get_acc_reg(ch * ur_w + ow);
-                    int inp_off = ch * icb_stride + ow * stride_w * iw_stride;
+                    const auto inp_off = static_cast<int>(ch * icb_stride + ow * stride_w * iw_stride);
                     /* zero-extend bf16 to packed 32-bit int */
                     vpmovzxwd(zmm_src_reg_msk,
                             ptr[aux1_reg_input + inp_off * jcp.typesize_in]);
@@ -151,9 +151,9 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::apply_filter(
 void jit_avx512_fork_dw_conv_fwd_kernel_bf16::apply_filter_unrolled(
         int ur_ch_blocks, int ur_w, bool last_ch_block_flag) {
     int ch_blk = jcp.ch_block;
-    int dilate_h = jcp.dilate_h + 1;
-    int dilate_w = jcp.dilate_w + 1;
-    int stride_w = jcp.stride_w;
+    const auto dilate_h = static_cast<int>(jcp.dilate_h + 1);
+    const auto dilate_w = static_cast<int>(jcp.dilate_w + 1);
+    const auto stride_w = static_cast<int>(jcp.stride_w);
 
     const auto src_layout_nxc = is_src_layout_nxc();
     const auto iw_stride = src_layout_nxc ? jcp.ngroups : ch_blk;
@@ -172,7 +172,7 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::apply_filter_unrolled(
         for (int ch = 0; ch < ur_ch_blocks; ch++) {
             const bool mask_flag = last_ch_block_flag && ch == ur_ch_blocks - 1;
             for (int kw = 0; kw < jcp.kw; kw++) {
-                int ker_off = ch * jcp.kh * jcp.kw * ch_blk + kw * ch_blk;
+                const auto ker_off = static_cast<int>(ch * jcp.kh * jcp.kw * ch_blk + kw * ch_blk);
                 const Zmm zmm_ker_reg_msk = mask_flag
                         ? zmm_ker_reg | ktail_mask | T_z
                         : zmm_ker_reg;
@@ -184,8 +184,8 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::apply_filter_unrolled(
                             ? zmm_src_reg | ktail_mask | T_z
                             : zmm_src_reg;
                     Zmm zmm_acc = get_acc_reg(ch * ur_w + ow);
-                    int inp_off = ch * icb_stride + ow * stride_w * iw_stride
-                            + kw * dilate_w * iw_stride;
+                    const auto inp_off = static_cast<int>(ch * icb_stride + ow * stride_w * iw_stride
+                            + kw * dilate_w * iw_stride);
                     /* zero-extend bf16 to packed 32-bit int */
                     vpmovzxwd(zmm_src_reg_msk,
                             ptr[aux_reg_input + inp_off * jcp.typesize_in]);
@@ -379,7 +379,7 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::store_dst(
             for (int ch = 0; ch < ur_ch_blocks; ch++) {
                 bool mask_flag = last_ch_block_flag && ch == ur_ch_blocks - 1;
                 for (int ow = 0; ow < ur_w; ow++) {
-                    int o_off = ch * ocb_stride + ow * ow_stride;
+                    const auto o_off = static_cast<int>(ch * ocb_stride + ow * ow_stride);
                     Zmm zmm_dst = get_acc_reg(ch * ur_w + ow);
                     Zmm zmm_dst_msk
                             = mask_flag ? zmm_dst | ktail_mask : zmm_dst;
@@ -420,7 +420,7 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::store_dst(
                     bool mask_flag
                             = last_ch_block_flag && ch == ur_ch_blocks - 1;
                     for (int ow = 0; ow < ur_w; ow++) {
-                        int o_off = ch * ocb_stride + ow * ow_stride;
+                        const auto o_off = static_cast<int>(ch * ocb_stride + ow * ow_stride);
                         Zmm zmm_dst = get_acc_reg(ch * ur_w + ow);
 
                         /* down-convert f32 output to bf16 */
@@ -473,10 +473,10 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::compute_loop(
 
     if (ch_loop) {
         Label ch_loop_label, ch_tail_label, skip_ch_tail_label;
-        const int nb_ch = jcp.oc / jcp.ch_block;
-        const int nb_ch_blocking_tail
-                = jcp.nb_ch - utils::rnd_dn(nb_ch, jcp.nb_ch_blocking);
-        const int ch_step = jcp.nb_ch_blocking * jcp.ch_block;
+        const auto nb_ch = static_cast<int>(jcp.oc / jcp.ch_block);
+        const auto nb_ch_blocking_tail
+                = static_cast<int>(jcp.nb_ch - utils::rnd_dn(nb_ch, jcp.nb_ch_blocking));
+        const auto ch_step = static_cast<int>(jcp.nb_ch_blocking * jcp.ch_block);
 
         push(aux_reg_ch_blocks);
         mov(aux_reg_ch_blocks, reg_ch_blocks);
@@ -610,8 +610,8 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::generate() {
         // need to tune if no need to preserve it
         static constexpr bool preserve_vmm = true;
         static constexpr size_t helper_vmm_idx = 31;
-        const size_t tail_size = jcp.oc_without_padding
-                % (cpu_isa_traits_t<avx512_core>::vlen / sizeof(float));
+        const int tail_size = static_cast<int>(jcp.oc_without_padding
+                % (cpu_isa_traits_t<avx512_core>::vlen / sizeof(float)));
         static constexpr bool use_exact_tail_scalar_bcast = false;
         const binary_injector::rhs_arg_static_params_t rhs_sp {helper_vmm_idx,
                 r10, r11, r12, preserve_gpr, preserve_vmm,
@@ -730,14 +730,14 @@ inline void jit_avx512_fork_dw_conv_bwd_data_kernel_bf16::load_ddst(
 
 inline void jit_avx512_fork_dw_conv_bwd_data_kernel_bf16::apply_filter(
         int ur_ch_blocks, int ur_str_w) {
-    int kw = jcp.kw;
-    int kh = jcp.kh;
-    int ow = jcp.ow;
-    int oh = jcp.oh;
+    int kw = static_cast<int>(jcp.kw);
+    int kh = static_cast<int>(jcp.kh);
+    int ow = static_cast<int>(jcp.ow);
+    int oh = static_cast<int>(jcp.oh);
 
     int ch_blk = jcp.ch_block;
-    int stride_h = jcp.stride_h;
-    int stride_w = jcp.stride_w;
+    int stride_h = static_cast<int>(jcp.stride_h);
+    int stride_w = static_cast<int>(jcp.stride_w);
 
     Label iter_exit_label;
 
@@ -799,9 +799,9 @@ inline void jit_avx512_fork_dw_conv_bwd_data_kernel_bf16::apply_filter(
 inline void jit_avx512_fork_dw_conv_bwd_data_kernel_bf16::store_dsrc(
         int ur_ch_blocks, int ur_str_w) {
     int ch_blk = jcp.ch_block;
-    int iw = jcp.iw;
-    int ih = jcp.ih;
-    int stride_w = jcp.stride_w;
+    int iw = static_cast<int>(jcp.iw);
+    int ih = static_cast<int>(jcp.ih);
+    int stride_w = static_cast<int>(jcp.stride_w);
 
     if (jcp.dsrc_dt == data_type::bf16 && (!isa_has_bf16(jcp.isa)))
         bf16_emu_->init_vcvtneps2bf16();

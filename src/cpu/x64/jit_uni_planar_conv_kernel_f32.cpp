@@ -287,16 +287,16 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::load_src(int ur_h, int ur_w) {
 template <cpu_isa_t isa>
 void jit_uni_planar_conv_fwd_kernel_f32<isa>::filter_unrolled(
         int ur_h, int ur_w) {
-    int iw = jcp.iw;
-    int ih = jcp.ih;
-    int id = jcp.id;
-    int stride_w = jcp.stride_w;
-    int dilate_w = jcp.dilate_w + 1;
-    int ic_blk = jcp.ic_block;
-    int kw = jcp.kw;
-    int kh = jcp.kh;
-    int kd = jcp.kd;
-    int ow_blk = jcp.ow_block;
+    int iw = static_cast<int>(jcp.iw);
+    int ih = static_cast<int>(jcp.ih);
+    int id = static_cast<int>(jcp.id);
+    int stride_w = static_cast<int>(jcp.stride_w);
+    int dilate_w = static_cast<int>(jcp.dilate_w + 1);
+    int ic_blk = static_cast<int>(jcp.ic_block);
+    int kw = static_cast<int>(jcp.kw);
+    int kh = static_cast<int>(jcp.kh);
+    int kd = static_cast<int>(jcp.kd);
+    int ow_blk = static_cast<int>(jcp.ow_block);
 
     for (int ki = 0; ki < kw; ki++) {
         for (int ifm2 = 0; ifm2 < ic_blk; ifm2++) {
@@ -325,15 +325,15 @@ template <cpu_isa_t isa>
 void jit_uni_planar_conv_fwd_kernel_f32<isa>::filter(int ur_h) {
     Label iter_exit_label;
 
-    int iw = jcp.iw;
-    int ih = jcp.ih;
-    int id = jcp.id;
-    int dilate_w = jcp.dilate_w + 1;
-    int ic_blk = jcp.ic_block;
-    int kw = jcp.kw;
-    int kh = jcp.kh;
-    int kd = jcp.kd;
-
+    int iw = static_cast<int>(jcp.iw);
+    int ih = static_cast<int>(jcp.ih);
+    int id = static_cast<int>(jcp.id);
+    int dilate_w = static_cast<int>(jcp.dilate_w + 1);
+    int ic_blk = static_cast<int>(jcp.ic_block);
+    int kw = static_cast<int>(jcp.kw);
+    int kh = static_cast<int>(jcp.kh);
+    int kd = static_cast<int>(jcp.kd);
+    int ow_blk = static_cast<int>(jcp.ow_block);
     cmp(reg_kw, 0);
     je(iter_exit_label, T_NEAR);
 
@@ -373,10 +373,10 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::filter(int ur_h) {
 
 template <cpu_isa_t isa>
 void jit_uni_planar_conv_fwd_kernel_f32<isa>::apply_filter(int ur_h, int ur_w) {
-    int iw = jcp.iw;
-    int kw = jcp.kw;
-    int dilate_h = jcp.dilate_h + 1;
-    int dilate_d = jcp.dilate_h + 1;
+    int iw = static_cast<int>(jcp.iw);
+    int kw = static_cast<int>(jcp.kw);
+    int dilate_h = static_cast<int>(jcp.dilate_h + 1);
+    int dilate_d = static_cast<int>(jcp.dilate_h + 1);
     const int inp_mult_h = dilate_h;
     const int inp_mult_d = dilate_d;
 
@@ -557,7 +557,7 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::solve_common(int ur_h) {
         }
     };
 
-    int left_border_end = nstl::min(div_up(jcp.l_pad, jcp.stride_w), jcp.ow);
+    int left_border_end = static_cast<int>(nstl::min(div_up(jcp.l_pad, jcp.stride_w), jcp.ow));
     L(left_border_label);
     {
         cmp(reg_ow, left_border_end);
@@ -577,9 +577,9 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::solve_common(int ur_h) {
     }
 
     int main_loop_end
-            = (jcp.iw - (jcp.kw - 1) * (jcp.dilate_w + 1) + jcp.l_pad - 1)
+            = static_cast<int>((jcp.iw - (jcp.kw - 1) * (jcp.dilate_w + 1) + jcp.l_pad - 1)
                     / jcp.stride_w
-            + 1;
+            + 1);
     L(main_loop_unrolled_label);
     {
         cmp(reg_ow, main_loop_end - jcp.nb_ow_blocking * jcp.ow_block);
@@ -589,7 +589,7 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::solve_common(int ur_h) {
         mov(aux_reg_kernel_h, reg_kernel);
         mov(reg_kw, jcp.kw);
 
-        solve_loop(jcp.nb_ow_blocking, jcp.nb_ow_blocking * jcp.ow_block);
+        solve_loop(jcp.nb_ow_blocking, jcp.nb_ow_blocking * static_cast<int>(jcp.ow_block));
 
         add(reg_ow, jcp.nb_ow_blocking * jcp.ow_block);
         jmp(main_loop_unrolled_label, T_NEAR);
@@ -604,13 +604,13 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::solve_common(int ur_h) {
         mov(aux_reg_kernel_h, reg_kernel);
         mov(reg_kw, jcp.kw);
 
-        solve_loop(1, jcp.ow_block); // vectorized
+        solve_loop(1, static_cast<int>(jcp.ow_block)); // vectorized
 
         add(reg_ow, jcp.ow_block);
         jmp(main_loop_label, T_NEAR);
     }
 
-    int right_border_end = jcp.ow;
+    int right_border_end = static_cast<int>(jcp.ow);
     L(right_border_label);
     {
         cmp(reg_ow, right_border_end);

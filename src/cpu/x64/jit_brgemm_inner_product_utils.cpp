@@ -825,7 +825,7 @@ status_t jit_brgemm_ip_fwd_conf_t::init_conf(cpu_isa_t isa,
     // to avoid cache concurrent write access from different threads
     size_t sc_size = sizeof(brgemm_batch_element_t);
     jbgp.adjusted_batch_size
-            = div_up(rnd_up(jbgp.gemm_batch_size * sc_size, 4096), sc_size);
+            = static_cast<size_t>(div_up(rnd_up(jbgp.gemm_batch_size * sc_size, 4096), sc_size));
 
     if ((is_amx_xf16 || jbgp.is_bf32) && adjust_thread_balance()) {
         // Adjust oc_block to improve thread balancing
@@ -895,7 +895,7 @@ status_t jit_brgemm_ip_fwd_conf_t::init_conf(cpu_isa_t isa,
     const auto LDA = jbgp.use_buffer_a
             ? static_cast<dim_t>(jbgp.K) * jbgp.gemm_batch_size
             : static_cast<dim_t>(jbgp.ic_without_padding) * jbgp.ks();
-    jbgp.LDA = LDA;
+    jbgp.LDA = static_cast<int>(LDA);
     jbgp.LDB = jbgp.N;
     jbgp.LDD = jbgp.oc_without_padding;
     jbgp.LDC = jbgp.LDD;
@@ -1105,7 +1105,7 @@ status_t jit_brgemm_ip_bwd_d_conf_t::init_conf(cpu_isa_t isa,
     // to avoid cache concurrent write access from different threads
     size_t sc_size = sizeof(brgemm_batch_element_t);
     jbgp.adjusted_batch_size
-            = div_up(rnd_up(jbgp.gemm_batch_size * sc_size, 4096), sc_size);
+            = static_cast<int>(div_up(rnd_up(jbgp.gemm_batch_size * sc_size, 4096), sc_size));
 
     jbgp.use_buffer = jbgp.src_dt != jbgp.acc_dt || jbgp.nthr_oc_b > 1;
 
@@ -1442,7 +1442,7 @@ status_t jit_brgemm_ip_bwd_w_conf_t::init_conf(cpu_isa_t isa,
     // to avoid cache concurrent write access from different threads
     size_t sc_size = sizeof(brgemm_batch_element_t);
     jbgp.adjusted_batch_size
-            = div_up(rnd_up(jbgp.gemm_batch_size * sc_size, 4096), sc_size);
+            = static_cast<int>(div_up(rnd_up(jbgp.gemm_batch_size * sc_size, 4096), sc_size));
 
     jbgp.use_buffer = IMPLICATION(!has_weights_buffer, jbgp.nthr_mb > 1);
 
@@ -1723,9 +1723,9 @@ status_t jit_brgemm_ip_conf_t::init_conf_base(cpu_isa_t isa,
             int total_blocks = (jbgp.oc * jbgp.ic) / 4096;
             using comp_tile_len_type = int;
             jbgp.weights_starting_offset
-                    = ceil((float)total_blocks * sizeof(comp_tile_len_type)
+                    = static_cast<int>(ceil((float)total_blocks * sizeof(comp_tile_len_type)
                               / 64.0)
-                    * 64;
+                    * 64);
             jbgp.weight_comp_bitmask_off
                     = jbgp.weights_starting_offset + jbgp.ic * jbgp.oc;
         }

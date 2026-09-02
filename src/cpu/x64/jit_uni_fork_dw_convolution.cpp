@@ -69,12 +69,12 @@ void jit_uni_fork_dw_convolution_fwd_t<isa, src_type,
             bias = const_cast<float *>(bias_in);
     }
 
-    int dil_d = jcp.dilate_d + 1;
-    int dil_h = jcp.dilate_h + 1;
-    int dil_w = jcp.dilate_w + 1;
-    int str_d = jcp.stride_d;
-    int str_h = jcp.stride_h;
-    int str_w = jcp.stride_w;
+    int dil_d = static_cast<int>(jcp.dilate_d + 1);
+    int dil_h = static_cast<int>(jcp.dilate_h + 1);
+    int dil_w = static_cast<int>(jcp.dilate_w + 1);
+    int str_d = static_cast<int>(jcp.stride_d);
+    int str_h = static_cast<int>(jcp.stride_h);
+    int str_w = static_cast<int>(jcp.stride_w);
 
     const auto is_src_layout_nxc = one_of(
             jcp.src_tag, format_tag::nwc, format_tag::nhwc, format_tag::ndhwc);

@@ -67,7 +67,7 @@ void _jit_uni_planar_convolution_fwd_t<isa>::execute_forward(
     }
 
     int threads_count = dnnl_get_max_threads();
-    int ohb_size = div_up(jcp.oh, threads_count);
+    int ohb_size = div_up(static_cast<int>(jcp.oh), threads_count);
 
     auto kernel_params = [&](int n, int g, int icb, int oc, int od, int oh,
                                  int oh_blocks) {
@@ -134,15 +134,15 @@ void _jit_uni_planar_convolution_fwd_t<isa>::execute_forward(
         for (int n = 0; n < jcp.mb; n++) {
             int icbb = 0;
             while (icbb < jcp.nb_ic) {
-                int icb_step = jcp.nb_ic_blocking;
-                int icb_step_rem = jcp.nb_ic - icbb;
-                if (icb_step_rem < jcp.nb_ic_blocking_max)
+                int icb_step = static_cast<int>(jcp.nb_ic_blocking);
+                int icb_step_rem = static_cast<int>(jcp.nb_ic - icbb);
+                if (icb_step_rem < static_cast<int>(jcp.nb_ic_blocking_max))
                     icb_step = icb_step_rem;
 
                 for (int icb = icbb; icb < icbb + icb_step; ++icb) {
                     for (int odb = 0; odb < (jcp.dilate_d + 1); odb++) {
                         for (int od = odb; od < jcp.od;
-                                od += (jcp.dilate_d + 1)) {
+                                od += static_cast<int>(jcp.dilate_d + 1)) {
                             int oh_idx_off = ithr * ohb_size;
                             for (int oh_idx = 0; oh_idx < ohb_size; oh_idx++) {
                                 if ((oh_idx_off + oh_idx) >= jcp.oh

@@ -1782,7 +1782,7 @@ struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
         auto wrap_qz = [=](data_t<type_o> &out, data_t<type_i> inp, float alpha,
                                float beta) {
             if (f32bf16)
-                out = alpha * inp + (beta ? beta * out : 0);
+                out = static_cast<data_t<type_o>>(alpha * inp + (beta ? beta * out : 0));
             else
                 out = _qz<type_i, type_o>()(inp, out, alpha, beta);
         };
@@ -1805,7 +1805,7 @@ struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
                         const auto pad_start = block + l * l_blk_stride;
                         const auto pad_end = blksize + l * l_blk_stride;
                         PRAGMA_OMP_SIMD()
-                        for (int i = pad_start; i < pad_end; ++i) {
+                        for (auto i = pad_start; i < pad_end; ++i) {
                             o[i] = 0;
                         }
                     }
@@ -1826,7 +1826,7 @@ struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
                         const auto pad_start = block + l * l_blk_stride;
                         const auto pad_end = blksize + l * l_blk_stride;
                         PRAGMA_OMP_SIMD()
-                        for (int i = pad_start; i < pad_end; ++i) {
+                        for (auto i = pad_start; i < pad_end; ++i) {
                             o[i] = 0;
                         }
                     }
@@ -1840,8 +1840,8 @@ struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
                     : ndims >= 4 ? (md).blk_off(h0, h1, m2) \
                                  : /* ndims >= 3 ? */ (md).blk_off(h0, h1))
 
-        const int i_mult = order_keep ? blksize : 1;
-        const int o_mult = order_keep ? 1 : blksize;
+        const int i_mult = order_keep ? static_cast<int>(blksize) : 1;
+        const int o_mult = order_keep ? 1 : static_cast<int>(blksize);
 
         if (blk_idx == 0) {
             const dim_t BH0 = pdims[0] / blksize;
@@ -1849,7 +1849,7 @@ struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
                     [=](dim_t bh0, dim_t h1, dim_t m0, dim_t m1, dim_t m2) {
                 auto i = &input[off(input_d, bh0 * i_mult, h1, m0, m1, m2)];
                 auto o = &output[off(output_d, bh0 * o_mult, h1, m0, m1, m2)];
-                const int block = nstl::min<int>(blksize, H0 - bh0 * blksize);
+                const int block = nstl::min<int>(static_cast<int>(blksize), static_cast<int>(H0 - bh0 * blksize));
                 ker(i, o, block);
             });
         } else if (blk_idx == 1) {
@@ -1858,7 +1858,7 @@ struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
                     [=](dim_t h0, dim_t bh1, dim_t m0, dim_t m1, dim_t m2) {
                 auto i = &input[off(input_d, h0, bh1 * i_mult, m0, m1, m2)];
                 auto o = &output[off(output_d, h0, bh1 * o_mult, m0, m1, m2)];
-                const int block = nstl::min<int>(blksize, H1 - bh1 * blksize);
+                const int block = nstl::min<int>(static_cast<int>(blksize), static_cast<int>(H1 - bh1 * blksize));
                 ker(i, o, block);
             });
         } else {
@@ -1964,7 +1964,7 @@ struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
         auto wrap_qz = [=](data_t<type_o> &out, data_t<type_i> inp, float alpha,
                                float beta) {
             if (f32bf16)
-                out = alpha * inp + (beta ? beta * out : 0);
+                out = static_cast<data_t<type_o>>(alpha * inp + (beta ? beta * out : 0));
             else
                 out = _qz<type_i, type_o>()(inp, out, alpha, beta);
         };
@@ -2088,9 +2088,9 @@ struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
         DECLARE_COMMON_PARAMS();
 
         const auto &dims = input_d.dims();
-        const int C = dims[1];
-        const int H = dims[2];
-        const int W = dims[3];
+        const int C = static_cast<int>(dims[1]);
+        const int H = static_cast<int>(dims[2]);
+        const int W = static_cast<int>(dims[3]);
 
         int nbits = 8;
         const int CB = utils::div_up(C, nbits);
@@ -2145,13 +2145,13 @@ struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
         const auto &pdims
                 = order_keep ? output_d.padded_dims() : input_d.padded_dims();
 
-        const int G = w_groups ? dims[0] : 1;
-        const int OC = dims[w_groups + 0];
-        const int NB_OC = pdims[w_groups + 0] / blksize_o;
-        const int IC = dims[w_groups + 1];
-        const int NB_IC = pdims[w_groups + 1] / blksize_i;
-        const int H = dims[w_groups + 2];
-        const int W = dims[w_groups + 3];
+        const int G = w_groups ? static_cast<int>(dims[0]) : 1;
+        const int OC = static_cast<int>(dims[w_groups + 0]);
+        const int NB_OC = static_cast<int>(pdims[w_groups + 0] / blksize_o);
+        const int IC = static_cast<int>(dims[w_groups + 1]);
+        const int NB_IC = static_cast<int>(pdims[w_groups + 1] / blksize_i);
+        const int H = static_cast<int>(dims[w_groups + 2]);
+        const int W = static_cast<int>(dims[w_groups + 3]);
 
         constexpr int i_mult_o = blksize_o;
         constexpr int i_mult_i = blksize_i;
@@ -2231,19 +2231,19 @@ struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
 
         for (int i = 0; i < output_d.blocking_desc().inner_nblks; i++) {
             if (output_d.blocking_desc().inner_idxs[i] == 0)
-                blksize_o *= output_d.blocking_desc().inner_blks[i];
+                blksize_o *= static_cast<int>(output_d.blocking_desc().inner_blks[i]);
             else
-                blksize_i *= output_d.blocking_desc().inner_blks[i];
+                blksize_i *= static_cast<int>(output_d.blocking_desc().inner_blks[i]);
         }
 
         const auto &dims = input_d.dims();
         const auto &pdims
                 = order_keep ? output_d.padded_dims() : input_d.padded_dims();
 
-        const int OC = dims[0];
-        const int NB_OC = pdims[0] / blksize_o;
-        const int IC = dims[1];
-        const int NB_IC = pdims[1] / blksize_i;
+        const int OC = static_cast<int>(dims[0]);
+        const int NB_OC = static_cast<int>(pdims[0] / blksize_o);
+        const int IC = static_cast<int>(dims[1]);
+        const int NB_IC = static_cast<int>(pdims[1] / blksize_i);
 
         int i_mult_o = blksize_o;
         int i_mult_i = blksize_i;
@@ -2366,19 +2366,19 @@ struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
 
         for (int i = 0; i < output_d.blocking_desc().inner_nblks; i++) {
             if (output_d.blocking_desc().inner_idxs[i] == 0)
-                blksize_o *= output_d.blocking_desc().inner_blks[i];
+                blksize_o *= static_cast<int>(output_d.blocking_desc().inner_blks[i]);
             else
-                blksize_i *= output_d.blocking_desc().inner_blks[i];
+                blksize_i *= static_cast<int>(output_d.blocking_desc().inner_blks[i]);
         }
 
         const auto &dims = input_d.dims();
         const auto &pdims
                 = order_keep ? output_d.padded_dims() : input_d.padded_dims();
 
-        const int OC = dims[0];
-        const int NB_OC = pdims[0] / blksize_o;
-        const int IC = dims[1];
-        const int NB_IC = pdims[1] / blksize_i;
+        const int OC = static_cast<int>(dims[0]);
+        const int NB_OC = static_cast<int>(pdims[0] / blksize_o);
+        const int IC = static_cast<int>(dims[1]);
+        const int NB_IC = static_cast<int>(pdims[1] / blksize_i);
 
         const int i_mult_o = blksize_o;
         const int i_mult_i = blksize_i;
@@ -2503,20 +2503,20 @@ struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
 
         for (int i = 0; i < output_d.blocking_desc().inner_nblks; i++) {
             if (output_d.blocking_desc().inner_idxs[i] == 1)
-                blksize_b *= output_d.blocking_desc().inner_blks[i];
+                blksize_b *= static_cast<int>(output_d.blocking_desc().inner_blks[i]);
             else if (output_d.blocking_desc().inner_idxs[i] == 2)
-                blksize_c *= output_d.blocking_desc().inner_blks[i];
+                blksize_c *= static_cast<int>(output_d.blocking_desc().inner_blks[i]);
         }
 
         const auto &dims = input_d.dims();
         const auto &pdims
                 = order_keep ? output_d.padded_dims() : input_d.padded_dims();
 
-        const int A = dims[0];
-        const int B = dims[1];
-        const int NB_B = pdims[1] / blksize_b;
-        const int C = dims[2];
-        const int NB_C = pdims[2] / blksize_c;
+        const int A = static_cast<int>(dims[0]);
+        const int B = static_cast<int>(dims[1]);
+        const int NB_B = static_cast<int>(pdims[1] / blksize_b);
+        const int C = static_cast<int>(dims[2]);
+        const int NB_C = static_cast<int>(pdims[2] / blksize_c);
 
         const int i_mult_b = blksize_b;
         const int i_mult_c = blksize_c;
@@ -2671,7 +2671,7 @@ struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
                     const auto o_off = output_d.off_l(idx);
                     const uint8_t idx_val
                             = extract_half_byte(u8_input[i_off / 2], i_off % 2);
-                    output[o_off] = lookup[idx_val];
+                    output[o_off] = _qz_a1b0<data_type::f32, type_o>()(lookup[idx_val]);
                 }
             }
         });
@@ -3088,7 +3088,7 @@ struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
         input += input_d.blk_off(0);
         output += output_d.blk_off(0);
 
-        const int N = input_d.dims()[0];
+        const int N = static_cast<int>(input_d.dims()[0]);
         const dim_t is = input_d.blocking_desc().strides[0];
         const dim_t os = output_d.blocking_desc().strides[0];
         const dim_t nelems_no_d0 = nelems_no_dim_0(input_d);

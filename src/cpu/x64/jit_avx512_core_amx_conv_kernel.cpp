@@ -1448,7 +1448,7 @@ void jit_avx512_core_amx_fwd_kernel_t::apply_postops(const Zmm &zmm_out,
         }
 
         postops_injector_->compute_vector_range(
-                {(size_t)vmm_idx}, rhs_arg_params, ddp, qdp);
+                {vmm_idx}, rhs_arg_params, ddp, qdp);
 
         if ((jcp.with_depthwise || jcp.with_quantization)
                 && jcp.src_zero_point) {
@@ -1499,7 +1499,7 @@ void jit_avx512_core_amx_fwd_kernel_t::store_output_vector_bf16(
 
     static constexpr auto skip_sum_injection = nullptr;
     apply_postops(zmm_out, skip_sum_injection, skip_sum_injection, addr, off,
-            mask_flag, ocb);
+            mask_flag, static_cast<int>(ocb));
 
     if (jcp.dst_dt == data_type::bf16) {
         store_output_ymm_bf16(zmm_out.getIdx(), addr, mask_flag);
@@ -1582,7 +1582,7 @@ void jit_avx512_core_amx_fwd_kernel_t::store_output_vector_int8(
 
     if (jcp.with_bias) vaddps(zmm_out, zmm_out, zmm_bias);
 
-    apply_postops(zmm_out, p_sum_scale, p_sum_zp, addr, off, mask_flag, ocb);
+    apply_postops(zmm_out, p_sum_scale, p_sum_zp, addr, off, mask_flag, static_cast<int>(ocb));
 
     if (jcp.with_dst_scales) {
         mov(reg_ptr_dst_scales, ptr[param1 + GET_OFF(dst_scales)]);

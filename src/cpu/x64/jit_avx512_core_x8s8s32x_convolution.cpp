@@ -784,7 +784,7 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_3d_dw(
             ? reinterpret_cast<int32_t *>(&w[offset])
             : (jcp.with_input_zp) ? output_compensation
                                   : 0;
-    int nb_groups = jcp.nb_ch / jcp.nb_ch_blocking;
+    int nb_groups = static_cast<int>(jcp.nb_ch / jcp.nb_ch_blocking);
     int group_block = jcp.ch_block;
 
     parallel_nd(jcp.mb, jcp.od, jcp.oh, jcp.nb_ow, nb_groups,
@@ -800,11 +800,11 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_3d_dw(
         int gb = gg * jcp.nb_ch_blocking;
         int g = gb * group_block;
 
-        int id_s = -jcp.f_pad + od_s * jcp.stride_d;
+        int id_s = static_cast<int>(-jcp.f_pad + od_s * jcp.stride_d);
 
-        int ih_s = -jcp.t_pad + oh_s * jcp.stride_h;
-        int ow_s = owb * jcp.ow_block;
-        int iw_s = ow_s * jcp.stride_w;
+        int ih_s = static_cast<int>(-jcp.t_pad + oh_s * jcp.stride_h);
+        int ow_s = static_cast<int>(owb * jcp.ow_block);
+        int iw_s = static_cast<int>(ow_s * jcp.stride_w);
 
         auto bias_w = bias ? bias + (bias_d.blk_off(g) * bia_dt_size) : 0;
         const int32_t *compensation_w = (jcp.signed_input || jcp.with_input_zp)
