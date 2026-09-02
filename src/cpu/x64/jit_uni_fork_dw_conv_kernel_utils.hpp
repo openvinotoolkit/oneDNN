@@ -253,7 +253,7 @@ status_t jit_uni_fork_dw_conv_fwd_kernel<isa, kernel_dt>::init_conf(
     jcp.nb_ch_blocking = one_of(isa, avx512_core, avx512_core) ? 4
             : isa == avx2                                      ? 3
                                                                : 2;
-    if (jcp.nb_ch < jcp.nb_ch_blocking) jcp.nb_ch_blocking = jcp.nb_ch;
+    if (jcp.nb_ch < jcp.nb_ch_blocking) jcp.nb_ch_blocking = static_cast<int>(jcp.nb_ch);
 
     jcp.bia_dt = jcp.with_bias ? cd.bias_desc.data_type : data_type::undef;
 
@@ -424,7 +424,7 @@ status_t jit_uni_fork_dw_conv_bwd_data_kernel<isa, kernel_dt>::init_conf(
     jcp.nb_ch_blocking = one_of(isa, avx512_core, avx512_core) ? 4
             : isa == avx2                                      ? 3
                                                                : 2;
-    if (jcp.nb_ch < jcp.nb_ch_blocking) jcp.nb_ch_blocking = jcp.nb_ch;
+    if (jcp.nb_ch < jcp.nb_ch_blocking) jcp.nb_ch_blocking = static_cast<int>(jcp.nb_ch);
 
     return status::success;
 }

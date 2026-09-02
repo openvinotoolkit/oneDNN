@@ -77,7 +77,7 @@ void jit_uni_fork_dw_conv_fwd_kernel_f32<isa>::load_src(
                     uni_vpxor(vmm_acc, vmm_acc, vmm_acc);
                 }
 
-                int o_off = ch * ocb_stride + ow * ow_stride + i * vlen_numbers;
+                int o_off = static_cast<int>(ch * ocb_stride + ow * ow_stride + i * vlen_numbers);
                 if (this->jcp.with_sum) {
                     if (is_tail_load) {
                         if (this->jcp.with_bias) {
@@ -108,10 +108,10 @@ template <cpu_isa_t isa>
 void jit_uni_fork_dw_conv_fwd_kernel_f32<isa>::apply_filter(
         int ur_ch_blocks, int ur_w, bool is_ch_tail) {
     int ch_blk = jcp.ch_block;
-    int dilate_d = jcp.dilate_d + 1;
-    int dilate_h = jcp.dilate_h + 1;
-    int dilate_w = jcp.dilate_w + 1;
-    int stride_w = jcp.stride_w;
+    int dilate_d = static_cast<int>(jcp.dilate_d + 1);
+    int dilate_h = static_cast<int>(jcp.dilate_h + 1);
+    int dilate_w = static_cast<int>(jcp.dilate_w + 1);
+    int stride_w = static_cast<int>(jcp.stride_w);
 
     const auto src_layout_nxc = is_src_layout_nxc();
     const auto iw_stride = src_layout_nxc ? jcp.ngroups : ch_blk;
@@ -169,15 +169,15 @@ void jit_uni_fork_dw_conv_fwd_kernel_f32<isa>::apply_filter(
                     if ((ch + 1 == ur_ch_blocks) && is_ch_tail
                             && c_tail <= i * vlen_numbers)
                         continue;
-                    int ker_off = ch * jcp.kd * jcp.kh * jcp.kw * ch_blk
-                            + i * vlen_numbers;
+                    int ker_off = static_cast<int>(ch * jcp.kd * jcp.kh * jcp.kw * ch_blk
+                            + i * vlen_numbers);
                     Vmm vmm_ker = get_ker_reg(0);
                     uni_vmovups(vmm_ker,
                             ptr[aux1_reg_kernel + ker_off * sizeof(float)]);
 
                     for (int ow = 0; ow < ur_w; ow++) {
-                        int inp_off = ch * icb_stride
-                                + ow * stride_w * iw_stride + i * vlen_numbers;
+                        int inp_off = static_cast<int>(ch * icb_stride
+                                + ow * stride_w * iw_stride + i * vlen_numbers);
                         Vmm vmm_src = get_src_reg(0);
                         if (is_tail_load) {
                             load_tail(vmm_src, aux1_reg_input,
@@ -239,10 +239,10 @@ template <cpu_isa_t isa>
 void jit_uni_fork_dw_conv_fwd_kernel_f32<isa>::apply_filter_unrolled(
         int ur_ch_blocks, int ur_w, bool is_ch_tail) {
     int ch_blk = jcp.ch_block;
-    int dilate_d = jcp.dilate_d + 1;
-    int dilate_h = jcp.dilate_h + 1;
-    int dilate_w = jcp.dilate_w + 1;
-    int stride_w = jcp.stride_w;
+    int dilate_d = static_cast<int>(jcp.dilate_d + 1);
+    int dilate_h = static_cast<int>(jcp.dilate_h + 1);
+    int dilate_w = static_cast<int>(jcp.dilate_w + 1);
+    int stride_w = static_cast<int>(jcp.stride_w);
 
     const auto src_layout_nxc = is_src_layout_nxc();
     const auto iw_stride = src_layout_nxc ? jcp.ngroups : ch_blk;
@@ -290,17 +290,17 @@ void jit_uni_fork_dw_conv_fwd_kernel_f32<isa>::apply_filter_unrolled(
                         && c_tail <= i * vlen_numbers)
                     continue;
                 for (int kw = 0; kw < jcp.kw; kw++) {
-                    int ker_off = ch * jcp.kd * jcp.kh * jcp.kw * ch_blk
-                            + kw * ch_blk + i * vlen_numbers;
+                    int ker_off = static_cast<int>(ch * jcp.kd * jcp.kh * jcp.kw * ch_blk
+                            + kw * ch_blk + i * vlen_numbers);
 
                     Vmm vmm_ker = get_ker_reg(0);
                     uni_vmovups(vmm_ker,
                             ptr[aux_reg_kernel + ker_off * sizeof(float)]);
 
                     for (int ow = 0; ow < ur_w; ow++) {
-                        int inp_off = ch * icb_stride
+                        int inp_off = static_cast<int>(ch * icb_stride
                                 + ow * stride_w * iw_stride
-                                + kw * dilate_w * iw_stride + i * vlen_numbers;
+                                + kw * dilate_w * iw_stride + i * vlen_numbers);
 
                         Vmm vmm_src = get_src_reg(0);
                         if (is_tail_load) {
@@ -633,7 +633,7 @@ void jit_uni_fork_dw_conv_fwd_kernel_f32<isa>::store_dst(
                     && c_tail <= i * vlen_numbers)
                 continue;
             for (int ow = 0; ow < ur_w; ow++) {
-                int o_off = ch * ocb_stride + ow * ow_stride + i * vlen_numbers;
+                int o_off = static_cast<int>(ch * ocb_stride + ow * ow_stride + i * vlen_numbers);
                 Vmm vmm_dst
                         = get_acc_reg(i * ur_ch_blocks * ur_w + ch * ur_w + ow);
 
@@ -681,8 +681,8 @@ void jit_uni_fork_dw_conv_fwd_kernel_f32<isa>::compute_loop(
 
     if (ch_loop) {
         Label ch_loop_label, ch_tail_label, skip_ch_tail_label;
-        const int ch_block_tail = jcp.nb_ch
-                - (utils::rnd_dn(jcp.oc / jcp.ch_block, jcp.nb_ch_blocking));
+        const int ch_block_tail = static_cast<int>(jcp.nb_ch
+                - (utils::rnd_dn(jcp.oc / jcp.ch_block, jcp.nb_ch_blocking)));
         const int ch_step = jcp.nb_ch_blocking * jcp.ch_block;
 
         push(aux_reg_ch_blocks);
@@ -818,8 +818,8 @@ void jit_uni_fork_dw_conv_fwd_kernel_f32<isa>::generate() {
         static constexpr bool preserve_gpr = true;
         static constexpr bool preserve_vmm = true;
         static constexpr size_t helper_vmm_idx = 2;
-        size_t tail_size = jcp.oc_without_padding
-                % (cpu_isa_traits_t<isa>::vlen / sizeof(float));
+        const auto tail_size = static_cast<int>(jcp.oc_without_padding
+                % (cpu_isa_traits_t<isa>::vlen / sizeof(float)));
         static constexpr bool use_exact_tail_scalar_bcast = false;
         const binary_injector::rhs_arg_static_params_t rhs_sp {helper_vmm_idx,
                 r10, r11, r12, preserve_gpr, preserve_vmm,
@@ -880,7 +880,7 @@ void jit_uni_fork_dw_conv_fwd_kernel_f32<isa>::generate() {
     }
 
     if (is_src_layout_nxc()) {
-        loop_body(jcp.nb_ch);
+        loop_body(static_cast<int>(jcp.nb_ch));
     } else {
         cmp(reg_ch_blocks, (jcp.nb_ch_blocking - 1) * jcp.ch_block);
         jle(ch_blocks_tail ? ch_blocks_tail_label : exit_label, T_NEAR);
@@ -928,14 +928,14 @@ inline void jit_uni_fork_dw_conv_bwd_data_kernel_f32<isa>::load_ddst(
 template <cpu_isa_t isa>
 inline void jit_uni_fork_dw_conv_bwd_data_kernel_f32<isa>::apply_filter(
         int ur_ch_blocks, int ur_str_w) {
-    int kw = jcp.kw;
-    int kh = jcp.kh;
-    int ow = jcp.ow;
-    int oh = jcp.oh;
+    int kw = static_cast<int>(jcp.kw);
+    int kh = static_cast<int>(jcp.kh);
+    int ow = static_cast<int>(jcp.ow);
+    int oh = static_cast<int>(jcp.oh);
 
     int ch_blk = jcp.ch_block;
-    int stride_h = jcp.stride_h;
-    int stride_w = jcp.stride_w;
+    int stride_h = static_cast<int>(jcp.stride_h);
+    int stride_w = static_cast<int>(jcp.stride_w);
 
     Label iter_exit_label;
 
@@ -1039,9 +1039,9 @@ template <cpu_isa_t isa>
 inline void jit_uni_fork_dw_conv_bwd_data_kernel_f32<isa>::store_dsrc(
         int ur_ch_blocks, int ur_str_w) {
     int ch_blk = jcp.ch_block;
-    int iw = jcp.iw;
-    int ih = jcp.ih;
-    int stride_w = jcp.stride_w;
+    int iw = static_cast<int>(jcp.iw);
+    int ih = static_cast<int>(jcp.ih);
+    int stride_w = static_cast<int>(jcp.stride_w);
 
     int repeats = isa == sse41 ? 2 : 1;
     for (int i = 0; i < repeats; i++) {

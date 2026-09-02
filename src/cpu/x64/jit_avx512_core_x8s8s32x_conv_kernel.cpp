@@ -221,9 +221,11 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::apply_postops(dim_t ur_w,
     if (jcp.with_eltwise || jcp.with_binary || jcp.with_sum
             || jcp.with_depthwise || jcp.with_quantization) {
         std::map<size_t, int> vmm_idx_off;
-        iterate(nb_oc_block, ur_w, [&](const bool, const int k, const int j) {
+        iterate(nb_oc_block, ur_w,
+            [&](const bool, const dim_t k, const dim_t j) {
             vmm_idx_off.insert(
-                    {vmm_out_idx(j, k), k * oc_block * sizeof(float)});
+                    {vmm_out_idx(j, k),
+                        static_cast<int>(k * oc_block * sizeof(float))});
         });
         depthwise_injector::dynamic_params_t ddp {zmm_d_weights.getIdx(),
                 zmm_d_bias.getIdx(), reg_d_weights, reg_d_bias,

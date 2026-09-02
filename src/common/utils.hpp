@@ -411,7 +411,8 @@ template <typename T, typename U>
 inline typename remove_reference<T>::type max_div(const T a, const U b) {
     U div = b;
     while (div > 1) {
-        if (a % div == 0) return div;
+        if (a % div == 0)
+            return static_cast<typename remove_reference<T>::type>(div);
         div--;
     }
     return static_cast<typename remove_reference<T>::type>(div);
@@ -433,7 +434,7 @@ inline typename remove_reference<U>::type this_block_size(
     assert(offset < max);
     // TODO (Roma): can't use nstl::max() due to circular dependency... we
     // need to fix this
-    const T block_boundary = offset + block_size;
+    const T block_boundary = offset + static_cast<T>(block_size);
     if (block_boundary > max)
         return max - offset;
     else

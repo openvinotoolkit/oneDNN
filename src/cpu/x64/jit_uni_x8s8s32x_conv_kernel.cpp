@@ -531,7 +531,7 @@ void jit_uni_x8s8s32x_fwd_kernel_vmm_t<isa, Vmm>::compute_ker_dw(int ur_w,
                 && (h_padded || get_ow_start(0, pad_l) != 0
                         || get_ow_end(ur_w, jcp.kw - 1, pad_r) != ur_w)) {
             load_data(data_type::u8, vmm_shift, reg_input_zp, ci * jcp.ch_block,
-                    get_blocking_size());
+                    static_cast<int>(get_blocking_size()));
         }
 
         const bool mask_flag = last_ic_block_flag != no_last_block

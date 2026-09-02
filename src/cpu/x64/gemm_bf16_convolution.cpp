@@ -981,7 +981,7 @@ status_t gemm_bf16_convolution_bwd_data_t<diff_src_data_type>::
                                 + post_op.depthwise
                                           .offset[post_op.depthwise.shifts];
 
-                        parallel_nd(jcp.ic, [&](const int ic) {
+                        parallel_nd(jcp.ic, [&](dim_t ic) {
                             for (int id = 0; id < jcp.id; ++id) {
                                 acc_data_t *d_ = acc + ic * jcp.id * jcp.is
                                         + id * jcp.is;
