@@ -322,22 +322,22 @@ status_t brgemm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
 
         auto wei_scales = attr->scales_.get(DNNL_ARG_WEIGHTS);
         brg->with_wei_decomp_scales = !wei_scales.has_default_values();
-        brg->wei_decomp_scales_group_size = wei_d.dims()[1];
+        brg->wei_decomp_scales_group_size = static_cast<int>(wei_d.dims()[1]);
         if (brg->with_wei_decomp_scales) {
             brg->wei_decomp_scales_dt = wei_scales.get_data_type();
             if (!one_of(brg->wei_decomp_scales_dt, f32, e8m0))
                 return status::unimplemented;
 
             auto ld_dim = wei_scales.get_dims()[0];
-            brg->wei_decomp_scales_stride = ld_dim > 1 ? ld_dim : 0;
+            brg->wei_decomp_scales_stride = ld_dim > 1 ? static_cast<int>(ld_dim) : 0;
             brg->wei_decomp_scales_group_size
-                    = wei_d.dims()[1] / wei_scales.get_dims()[1];
+                    = static_cast<int>(wei_d.dims()[1] / wei_scales.get_dims()[1]);
             brg->with_grouped_wei_decomp |= wei_scales.get_dims()[1] != 1;
         }
 
         brg->with_wei_decomp_zero_points
                 = !attr->zero_points_.has_default_values(DNNL_ARG_WEIGHTS);
-        brg->wei_decomp_zero_points_group_size = wei_d.dims()[1];
+        brg->wei_decomp_zero_points_group_size = static_cast<int>(wei_d.dims()[1]);
         if (brg->with_wei_decomp_zero_points) {
             brg->wei_decomp_zero_points_dt
                     = attr->zero_points_.get_data_type(DNNL_ARG_WEIGHTS);
@@ -345,29 +345,29 @@ status_t brgemm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
                 return status::unimplemented;
 
             auto ld_dim = attr->zero_points_.get_dims(DNNL_ARG_WEIGHTS)[0];
-            brg->wei_decomp_zero_points_stride = ld_dim > 1 ? ld_dim : 0;
-            brg->wei_decomp_zero_points_group_size = wei_d.dims()[1]
-                    / attr->zero_points_.get_dims(DNNL_ARG_WEIGHTS)[1];
+            brg->wei_decomp_zero_points_stride = ld_dim > 1 ? static_cast<int>(ld_dim) : 0;
+            brg->wei_decomp_zero_points_group_size = static_cast<int>(wei_d.dims()[1]
+                    / attr->zero_points_.get_dims(DNNL_ARG_WEIGHTS)[1]);
             brg->with_grouped_wei_decomp
                     |= attr->zero_points_.get_dims(DNNL_ARG_WEIGHTS)[1] != 1;
         }
     }
 
-    brg->src_scales_group_size = wei_d.dims()[1];
+    brg->src_scales_group_size = static_cast<int>(wei_d.dims()[1]);
     if (brg->with_src_dyn_quant) {
-        brg->src_scales_group_size = attr->src_dyn_quant_params_.get();
+        brg->src_scales_group_size = static_cast<int>(attr->src_dyn_quant_params_.get());
         brg->with_grouped_wei_decomp = true;
         brg->src_scales_stride
-                = div_up(wei_d.dims()[1], brg->src_scales_group_size);
+                = static_cast<int>(div_up(wei_d.dims()[1], brg->src_scales_group_size));
     }
 
     CHECK(brgemm_desc_finalize(brg));
 
-    brg->src_sum_group_size = wei_d.dims()[1];
+    brg->src_sum_group_size = static_cast<int>(wei_d.dims()[1]);
     if (brg->with_src_dyn_quant) {
         brg->src_sum_group_size = brg->rd_block;
         brg->src_grouped_sum_stride
-                = div_up(wei_d.dims()[1], brg->src_sum_group_size);
+                = static_cast<int>(div_up(wei_d.dims()[1], brg->src_sum_group_size));
     }
 
     // avx2_vnni_2 kernel with xf16 data type requires blocked weights.

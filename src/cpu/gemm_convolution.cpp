@@ -280,9 +280,9 @@ status_t gemm_convolution_fwd_t::execute_forward_ncsp(
             if (st != status::success) return st;
 
             if (pp_kernel_ && curr.ic == jcp.ic - step.ic) {
-                (*pp_kernel_)(dst_orig, _dst, bias, m,
+                (*pp_kernel_)(dst_orig, _dst, bias, static_cast<int>(m),
                         static_cast<int>(curr.g * jcp.oc + curr.oc),
-                        static_cast<int>(step.oc), M,
+                        static_cast<int>(step.oc), static_cast<int>(M),
                         post_ops_binary_rhs_arg_vec);
             }
 
@@ -599,7 +599,7 @@ status_t gemm_convolution_bwd_data_t::execute_backward_data_ncsp(
                                         + post_op.depthwise.offset
                                                   [post_op.depthwise.shifts]
                                 : nullptr;
-                        parallel_nd(jcp.ic, [&](const int ic) {
+                        parallel_nd(jcp.ic, [&](const dim_t ic) {
                             for (int id = 0; id < jcp.id; ++id) {
                                 data_t *d_ = _diff_src + ic * jcp.id * jcp.is
                                         + id * jcp.is;

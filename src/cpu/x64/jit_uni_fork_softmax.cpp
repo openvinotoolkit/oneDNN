@@ -69,7 +69,7 @@ status_t jit_uni_fork_softmax_fwd_t<isa>::execute(const exec_ctx_t &ctx) const {
 
         parallel(0, ker);
     } else {
-        int ou_blocks = div_up(outer_size, jpp.outer_block);
+        int ou_blocks = static_cast<int>(div_up(outer_size, jpp.outer_block));
         const size_t work_amount = ou_blocks;
 
         auto ker = [&](const int ithr, const int nthr) {
