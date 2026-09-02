@@ -914,7 +914,7 @@ status_t brgemm_blocking_vmm(brgemm_desc_t *brg) {
                     = (few_regs && adj_ld_block2 == 4) || hint_n_bcast_1_load;
             max_bcast_block = calculate_max_bcast_block(brg, adj_ld_block2);
             const auto bdb_tail = brg->bcast_dim % max_bcast_block;
-            min_bcast_block = bdb_tail > 0 ? bdb_tail : max_bcast_block;
+            min_bcast_block = bdb_tail > 0 ? static_cast<int>(bdb_tail) : max_bcast_block;
             if (min_bcast_block >= max_vpad) break;
         }
         // bcast block in brgemm kernel should be greater than virtual

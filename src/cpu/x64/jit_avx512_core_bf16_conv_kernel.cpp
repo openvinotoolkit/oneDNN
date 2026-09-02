@@ -1455,14 +1455,14 @@ void jit_avx512_core_bf16_bwd_data_kernel_vmm_t<Vmm>::generate() {
         }
     }
 
-    int iw = jcp.iw;
-    int kw = jcp.kw;
+    int iw = static_cast<int>(jcp.iw);
+    int kw = static_cast<int>(jcp.kw);
     int ur_w = jcp.ur_w;
-    int nb_iw = jcp.nb_iw;
-    int iw_block = jcp.iw_block;
+    int nb_iw = static_cast<int>(jcp.nb_iw);
+    int iw_block = static_cast<int>(jcp.iw_block);
     int ur_w_tail = jcp.ur_w_tail;
-    int dilate_w = jcp.dilate_w + 1;
-    int stride_w = jcp.stride_w;
+    int dilate_w = static_cast<int>(jcp.dilate_w + 1);
+    int stride_w = static_cast<int>(jcp.stride_w);
 
     const auto dst_shift = get_diff_dst_offset(ur_w / stride_w, 0);
     const auto src_shift = get_diff_src_offset(ur_w, 0);
