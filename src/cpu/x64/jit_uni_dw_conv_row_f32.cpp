@@ -78,7 +78,7 @@ void jit_uni_dw_conv_row_f32<isa>::apply_filter(int ur_w, int kw_size) {
     };
 
     int ch_blk = jcp.ch_block;
-    int stride_w = jcp.stride_w;
+    int stride_w = static_cast<int>(jcp.stride_w);
 
     Label exit_label;
 
@@ -486,7 +486,7 @@ void jit_uni_dw_conv_row_f32<isa>::loop_body(int oc_step) {
     L(left_pad_label);
     {
         int ur_w = 1;
-        int kw = jcp.iw == 1 ? jcp.kw - 2 : jcp.kw - 1;
+        int kw = static_cast<int>(jcp.iw == 1 ? jcp.kw - 2 : jcp.kw - 1);
 
         mov(aux_reg_input0, reg_input0);
         mov(aux_reg_input1, reg_input1);
@@ -513,7 +513,7 @@ void jit_uni_dw_conv_row_f32<isa>::loop_body(int oc_step) {
     L(unrolled_w_label);
     {
         int ur_w = jcp.ur_w;
-        int kw = jcp.kw;
+        int kw = static_cast<int>(jcp.kw);
 
         cmp(reg_ur_w, ur_w);
         jle(tail_w_label, T_NEAR);
@@ -540,7 +540,7 @@ void jit_uni_dw_conv_row_f32<isa>::loop_body(int oc_step) {
     L(tail_w_label);
     {
         int ur_w = 1;
-        int kw = jcp.kw;
+        int kw = static_cast<int>(jcp.kw);
 
         cmp(reg_ur_w, ur_w);
         if (jcp.ow > 1)
@@ -571,7 +571,7 @@ void jit_uni_dw_conv_row_f32<isa>::loop_body(int oc_step) {
         L(right_pad_label);
         {
             int ur_w = 1;
-            int kw = jcp.kw - ((jcp.stride_w == 1) ? 1 : jcp.iw % jcp.stride_w);
+            int kw = static_cast<int>(jcp.kw - ((jcp.stride_w == 1) ? 1 : jcp.iw % jcp.stride_w));
 
             mov(aux_reg_input0, reg_input0);
             mov(aux_reg_input1, reg_input1);

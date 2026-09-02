@@ -855,7 +855,7 @@ void jit_pp_ker_t<isa>::generate() {
         jl(main_loop_end, T_NEAR);
 
         dim_t OC_loop, OC_tail;
-        if (OC_ < max_OC_loop_unroll_ * vlen) {
+        if (OC_ < static_cast<size_t>(max_OC_loop_unroll_ * vlen)) {
             // Fully unroll small loops
             OC_loop = 0;
             OC_tail = OC_;

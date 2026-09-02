@@ -39,7 +39,7 @@ union float_raw {
 
 static float bf16tof32(bfloat16_t bf16) {
     union float_raw t = {0};
-    t.i[1] = bf16;
+    t.i[1] = bf16.raw_bits_;
     t.i[0] = 0;
     return t.f;
 }
@@ -47,7 +47,7 @@ static float bf16tof32(bfloat16_t bf16) {
 static bfloat16_t f32tobf16(float f32) {
     union float_raw t = {0};
     t.f = f32;
-    return t.i[1];
+    return bfloat16_t(t.i[1], true);
 }
 
 inline bfloat16_t bf16_scale_shift_fwd(

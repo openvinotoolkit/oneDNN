@@ -239,8 +239,8 @@ void jit_avx2_1x1_convolution_with_dw_conv_fwd_t::execute_forward(
 
             int ocb = static_cast<int>(ocbb * jcp.nb_load_blocking);
 
-            const int load_step = step(jcp.nb_load_blocking, jcp.nb_load - ocb,
-                    jcp.nb_load_blocking_max);
+            const auto load_step = static_cast<int>(step(jcp.nb_load_blocking, jcp.nb_load - ocb,
+                    jcp.nb_load_blocking_max));
 
             if (iwork == start || oh == 0) {
                 bcast_step = nstl::min(1, end - iwork);
