@@ -201,6 +201,7 @@ private:
     const reg64_t reg_zp_a_input_shift = r9;
 
     const reg64_t reg_BS_loop = rax;
+    const reg64_savable_t reg_dividend {regscratchpad_, rax};
     // const reg64_t reg_rdb_loop = rbx;
     const reg64_savable_t reg_rdb_loop {regscratchpad_, rbx};
     const reg64_t reg_BS = abi_not_param1;
@@ -4159,15 +4160,20 @@ void jit_brgemm_kernel_t<Wmm>::bs_loop(dim_t bd_block2, bool is_bdb_tail,
 
             auto ic_group_shift = [&](int src_offs, int dst_offs,
                                           int group_size, int stride) {
-                reg_aux_ic.restoreTo(reg_local_ic);
+                // idiv always consumes RDX:RAX and writes its quotient to
+                // RAX. Keep the computation in a dedicated RAX scratch
+                // register instead of relying on reg_local_ic's allocation.
+                reg_dividend.save();
+                reg_aux_ic.restoreTo(reg_dividend);
                 mov(reg_local_ic_group, group_size);
                 xor_(rdx, rdx);
                 idiv(reg_local_ic_group);
-                imul(reg_local_ic, reg_local_ic, stride);
+                imul(reg_dividend, reg_dividend, stride);
 
                 mov(reg_local_wei_params, ptr[rsp + src_offs]);
-                add(reg_local_wei_params, reg_local_ic);
+                add(reg_local_wei_params, reg_dividend);
                 mov(ptr[rsp + dst_offs], reg_local_wei_params);
+                reg_dividend.restore();
             };
 
             reg_bdb_loop.save();
