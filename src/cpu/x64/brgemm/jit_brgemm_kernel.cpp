@@ -345,6 +345,16 @@ private:
         }
 
         if (brg.with_src_dyn_quant) { used_vregs += 1; }
+
+        if (brg.dt_b == data_type::u3) {
+            const int non_dyn_quant_extra = brg.isa_impl == avx2 ? 1 : 3;
+            used_vregs += brg.with_src_dyn_quant
+                    ? (is_superset(brg.isa_impl, avx512_core)
+                                    ? 3 * brg.ld_block2 + 1
+                                    : 2)
+                    : brg.ld_block2 + non_dyn_quant_extra
+                            + (brg.is_u3_zp_fold() ? 1 : 0);
+        }
         return isa_num_vregs(brg.isa_impl) - used_vregs;
     }
 
@@ -654,6 +664,8 @@ dim_t jit_brgemm_kernel_t<Wmm>::B_offset(
         }
     }();
     if (is_amx) {
+        if (brg.dt_b == data_type::u3)
+            return brg.typesize_B * (brg.rd_step * ld * brg.ld_block) * 3 / 8;
         return brg.typesize_B * (brg.rd_step * ld * brg.ld_block)
                 / typesize_scale;
     } else {
@@ -661,10 +673,11 @@ dim_t jit_brgemm_kernel_t<Wmm>::B_offset(
         // Note: Offsets for elements within vnni_granularity are expected to be
         // handled within gemm_microkernel (for ex: odd-even converts).
         // hence no `rd % brg.ld_step`
-        return brg.typesize_B
+        const dim_t num = brg.typesize_B
                 * (rdb0 * brg.ld_step * brg.LDB
-                        + brg.ld_step * ld * brg.ld_block)
-                / typesize_scale;
+                        + brg.ld_step * ld * brg.ld_block);
+        if (brg.dt_b == data_type::u3) return num * 3 / 8;
+        return num / typesize_scale;
     }
 }
 
@@ -702,6 +715,12 @@ dim_t jit_brgemm_kernel_t<Wmm>::rdb_B_offset() const noexcept {
         if (brg.dt_b == data_type::u2) return 4;
         return 1;
     }();
+    if (brg.dt_b == data_type::u3) {
+        if (brg.is_gemv && brg.gemv_acc_is_vector())
+            return static_cast<dim_t>(brg.rd_block) * brg.typesize_B * 3 / 8;
+        return static_cast<dim_t>(brg.typesize_B) * brg.rd_block * brg.LDB * 3
+                / 8;
+    }
     if (brg.is_gemv && brg.gemv_acc_is_vector())
         return static_cast<dim_t>(brg.rd_block) * brg.typesize_B
                 / typesize_scale;
@@ -722,6 +741,12 @@ dim_t jit_brgemm_kernel_t<Wmm>::ldb_B_offset(
             return 1;
         }
     }();
+    if (brg.dt_b == data_type::u3) {
+        return (is_tail)
+                ? brg.typesize_B * brg.ldb_tail * brg.ld_step * 3 / 8
+                : brg.typesize_B * ld_block2 * brg.ld_block * brg.ld_step * 3
+                        / 8;
+    }
     return (is_tail)
             ? brg.typesize_B * brg.ldb_tail * brg.ld_step / typesize_scale
             : brg.typesize_B * ld_block2 * brg.ld_block * brg.ld_step
@@ -3375,6 +3400,18 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel_dyn_quant(dim_t bd_block2,
             0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03,
             0x03, 0x03, 0x03, 0x03};
 
+    static const struct u3_masks_t {
+        uint8_t m[5][64];
+        u3_masks_t() {
+            const uint8_t v[5] = {0x07, 0x03, 0x01, 0x04, 0x06};
+            for (int i = 0; i < 5; i++)
+                for (int j = 0; j < 64; j++)
+                    m[i][j] = v[i];
+        }
+    } u3_masks;
+    constexpr int u3_mask_03 = 64, u3_mask_01 = 128, u3_mask_04 = 192,
+                  u3_mask_06 = 256;
+
     reg_bdb_loop.save();
     reg_ldb_loop.save();
 
@@ -3386,6 +3423,9 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel_dyn_quant(dim_t bd_block2,
         uni_vmovups(vmm_mask_low, ptr[reg_ptr]);
     } else if (brg.dt_b == data_type::u2) {
         mov(reg_ptr, (size_t)mask_low_2_bits);
+        uni_vmovups(vmm_mask_low, ptr[reg_ptr]);
+    } else if (brg.dt_b == data_type::u3) {
+        mov(reg_ptr, (size_t)u3_masks.m);
         uni_vmovups(vmm_mask_low, ptr[reg_ptr]);
     }
 
@@ -3418,6 +3458,75 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel_dyn_quant(dim_t bd_block2,
                 int idx = (rd % 16) / 4;
                 uni_vpsrld(vmm_load, vmm_load, 6 - 2 * idx);
                 uni_vandps(vmm_load, vmm_load, vmm_mask_low);
+            } else if (brg.dt_b == data_type::u3) {
+                const int idx = (rd % 32) / 4;
+                constexpr int grp_plane_bytes = 32;
+                constexpr int grp_bytes = 3 * grp_plane_bytes;
+                const bool is_zmm = vec_size == 2 * grp_plane_bytes;
+                auto raw_plane = [&](int r) {
+                    return Vmm(max_effective_vregs + r * ld_block2 + ld);
+                };
+                auto plane_addr = [&](int r) {
+                    return ptr[reg_aux_B + B_offset(ld, rd)
+                            + r * grp_plane_bytes];
+                };
+                auto vmm_tmp = is_zmm
+                        ? Vmm(max_effective_vregs + 3 * ld_block2)
+                        : Vmm(isa_num_vregs(brg.isa_impl) - 2);
+                if (is_zmm && idx == 0) {
+                    for (int r = 0; r < 3; r++) {
+                        const auto vidx = raw_plane(r).getIdx();
+                        const auto off
+                                = B_offset(ld, rd) + r * grp_plane_bytes;
+                        vmovdqu32(Xbyak::Ymm(vidx), ptr[reg_aux_B + off]);
+                        vinserti64x4(Xbyak::Zmm(vidx), Xbyak::Zmm(vidx),
+                                ptr[reg_aux_B + off + grp_bytes], 1);
+                    }
+                }
+                auto srl = [&](const Vmm &dst, int r, int sh) {
+                    if (is_zmm)
+                        uni_vpsrld(dst, raw_plane(r), sh);
+                    else {
+                        uni_vmovups(dst, plane_addr(r));
+                        uni_vpsrld(dst, dst, sh);
+                    }
+                };
+                auto sll = [&](const Vmm &dst, int r, int sh) {
+                    if (is_zmm)
+                        uni_vpslld(dst, raw_plane(r), sh);
+                    else {
+                        uni_vmovups(dst, plane_addr(r));
+                        uni_vpslld(dst, dst, sh);
+                    }
+                };
+                const int bit = 3 * idx, row = bit / 8, off = bit % 8;
+                if (off + 3 <= 8) {
+                    if (off == 0) {
+                        if (is_zmm)
+                            uni_vandps(vmm_load, raw_plane(row), vmm_mask_low);
+                        else
+                            uni_vandps(vmm_load, vmm_mask_low, plane_addr(row));
+                    } else {
+                        srl(vmm_load, row, off);
+                        uni_vandps(vmm_load, vmm_load, vmm_mask_low);
+                    }
+                } else {
+                    const int n_lo = 8 - off;
+                    const auto lo_mask
+                            = ptr[reg_ptr + (n_lo == 2 ? u3_mask_03 : u3_mask_01)];
+                    srl(vmm_load, row, off);
+                    sll(vmm_tmp, row + 1, n_lo);
+                    if (is_zmm) {
+                        vpternlogd(vmm_load, vmm_tmp, lo_mask, 0xe4);
+                        uni_vandps(vmm_load, vmm_load, vmm_mask_low);
+                    } else {
+                        const auto hi_mask = ptr[reg_ptr
+                                + (n_lo == 2 ? u3_mask_04 : u3_mask_06)];
+                        uni_vandps(vmm_load, vmm_load, lo_mask);
+                        uni_vandps(vmm_tmp, vmm_tmp, hi_mask);
+                        uni_vorps(vmm_load, vmm_load, vmm_tmp);
+                    }
+                }
             } else {
                 assert(!"unsupported combination");
             }
@@ -3908,10 +4017,32 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(dim_t bd_block2,
                         uni_vmovups(vmm_lookup, ptr[reg_ptr]);
                         vmm_zero_points = Vmm(isa_num_vregs(brg.isa_impl) - 2);
                     }
+                } else if (brg.dt_b == data_type::u3
+                        && !brg.with_src_dyn_quant && brg.isa_impl != avx2) {
+                    static const int32_t mask7[16] = {7, 7, 7, 7, 7, 7, 7, 7,
+                            7, 7, 7, 7, 7, 7, 7, 7};
+                    mov(reg_ptr, (size_t)mask7);
+                    uni_vmovups(Vmm(max_effective_vregs + 2), ptr[reg_ptr]);
+                    if (cpu().has(Xbyak::util::Cpu::tAVX512_VBMI)) {
+                        static const uint8_t idx_table[64] = {0, 16, 32, 0, 1,
+                                17, 33, 1, 2, 18, 34, 2, 3, 19, 35, 3, 4, 20,
+                                36, 4, 5, 21, 37, 5, 6, 22, 38, 6, 7, 23, 39,
+                                7, 8, 24, 40, 8, 9, 25, 41, 9, 10, 26, 42, 10,
+                                11, 27, 43, 11, 12, 28, 44, 12, 13, 29, 45, 13,
+                                14, 30, 46, 14, 15, 31, 47, 15};
+                        mov(reg_ptr, (size_t)idx_table);
+                        uni_vmovups(
+                                Vmm(max_effective_vregs), ptr[reg_ptr]);
+                    }
                 }
 
                 reg_aux2_wei_dscales.restoreTo(reg_local_wei_scales);
                 reg_aux2_wei_zp.restoreTo(reg_local_wei_zp);
+
+                const bool u3_zp_fold
+                        = brg.is_u3_zp_fold() && brg.bd_block == 1;
+                auto vmm_sumx = Vmm(max_effective_vregs
+                        + (brg.isa_impl == avx2 ? 1 : 3) + brg.ld_block2);
 
                 if (brg.with_wei_decomp_zero_points
                         && brg.wei_decomp_zero_points_stride == 0) {
@@ -3957,6 +4088,72 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(dim_t bd_block2,
                             } else {
                                 uni_vpslld(vmm_load, vmm_load, 24 + 2 * idx);
                                 uni_vpsrld(vmm_load, vmm_load, 30);
+                            }
+                            uni_vcvtdq2ps(vmm_load, vmm_load);
+                        } else if (brg.dt_b == data_type::u3) {
+                            const int n_lanes = vreg_traits_t<Vmm>::vlen / 4;
+                            const int idx = rd % 8;
+                            const auto row_addr = [&](int r) {
+                                return ptr[reg_aux_B + B_offset(ld, rd)
+                                        + r * n_lanes];
+                            };
+                            if (brg.isa_impl == avx2) {
+                                auto vmm_tmp = Vmm(max_effective_vregs);
+                                auto vmm_word = Vmm(max_effective_vregs + 1 + ld);
+                                if (idx == 0) {
+                                    uni_vpmovzxbd(vmm_word, row_addr(0));
+                                    for (int r = 1; r < 3; r++) {
+                                        uni_vpmovzxbd(vmm_tmp, row_addr(r));
+                                        uni_vpslld(vmm_tmp, vmm_tmp, 8 * r);
+                                        uni_vorps(vmm_word, vmm_word, vmm_tmp);
+                                    }
+                                }
+                                if (idx == 7) {
+                                    uni_vpsrld(vmm_load, vmm_word, 21);
+                                } else {
+                                    uni_vpslld(vmm_load, vmm_word, 29 - 3 * idx);
+                                    uni_vpsrld(vmm_load, vmm_load, 29);
+                                }
+                            } else if (cpu().has(
+                                               Xbyak::util::Cpu::tAVX512_VBMI)) {
+                                auto vmm_idx_table = Vmm(max_effective_vregs);
+                                auto vmm_mask = Vmm(max_effective_vregs + 2);
+                                auto vmm_word
+                                        = Vmm(max_effective_vregs + 3 + ld);
+                                if (idx == 0) {
+                                    uni_vmovups(vmm_word, row_addr(0));
+                                    vpermb(vmm_word, vmm_idx_table, vmm_word);
+                                }
+                                if (idx == 0) {
+                                    vpandd(vmm_load, vmm_word, vmm_mask);
+                                } else {
+                                    uni_vpsrld(vmm_load, vmm_word, 3 * idx);
+                                    vpandd(vmm_load, vmm_load, vmm_mask);
+                                }
+                            } else {
+                                auto vmm_row1 = Vmm(max_effective_vregs);
+                                auto vmm_row2 = Vmm(max_effective_vregs + 1);
+                                auto vmm_mask = Vmm(max_effective_vregs + 2);
+                                auto vmm_word
+                                        = Vmm(max_effective_vregs + 3 + ld);
+                                if (idx == 0) {
+                                    uni_vpmovzxbd(vmm_word, row_addr(0));
+                                    uni_vpmovzxbd(vmm_row1, row_addr(1));
+                                    uni_vpslld(vmm_row1, vmm_row1, 8);
+                                    uni_vpmovzxbd(vmm_row2, row_addr(2));
+                                    uni_vpslld(vmm_row2, vmm_row2, 16);
+                                    vpternlogd(
+                                            vmm_word, vmm_row1, vmm_row2, 0xfe);
+                                }
+                                if (idx == 7) {
+                                    uni_vpsrld(vmm_load, vmm_word, 21);
+                                } else {
+                                    if (idx > 0)
+                                        uni_vpsrld(vmm_load, vmm_word, 3 * idx);
+                                    const auto &masked
+                                            = idx > 0 ? vmm_load : vmm_word;
+                                    vpandd(vmm_load, masked, vmm_mask);
+                                }
                             }
                             uni_vcvtdq2ps(vmm_load, vmm_load);
                         } else if (brg.dt_b == data_type::nf4) {
@@ -4007,7 +4204,7 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(dim_t bd_block2,
                             assert(!"unsupported combination");
                         }
 
-                        if (brg.with_wei_decomp_zero_points) {
+                        if (brg.with_wei_decomp_zero_points && !u3_zp_fold) {
                             if (brg.wei_decomp_zero_points_stride == 0) {
                                 uni_vsubps(vmm_load, vmm_load, vmm_zero_points);
                             } else {
@@ -4045,6 +4242,21 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(dim_t bd_block2,
                                 broadcast_A(bcst(bd), bd, rd);
                             }
                         }
+                        if (u3_zp_fold) {
+                            const auto a_addr = ptr[reg_aux_A + A_offset(bd, rd)];
+                            if (rd == 0) {
+                                if (is_emdbd)
+                                    uni_vbroadcastss(vmm_sumx, a_addr);
+                                else
+                                    uni_vmovups(vmm_sumx, bcst());
+                            } else {
+                                if (is_emdbd)
+                                    uni_vaddps(vmm_sumx, vmm_sumx,
+                                            ptr_b[reg_aux_A + A_offset(bd, rd)]);
+                                else
+                                    uni_vaddps(vmm_sumx, vmm_sumx, bcst());
+                            }
+                        }
                         if (prefetch_count_B < ld_block2) {
                             prefetcht0(ptr[reg_aux_B
                                     + B_offset(prefetch_count_B++, rd)
@@ -4077,6 +4289,9 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(dim_t bd_block2,
                     for (int ld = 0; ld < ld_block2; ld++) {
                         auto vmm_accm_tmp = accm_tmp(ld_block2, 0, ld);
                         auto vmm_accm = accm(ld_block2, 0, ld);
+                        if (u3_zp_fold)
+                            uni_vfnmadd231ps(
+                                    vmm_accm_tmp, vmm_zero_points, vmm_sumx);
                         if (brg.wei_decomp_scales_stride == 0) {
                             load_scales(bcst(), ptr[reg_local_wei_scales]);
                         } else {
