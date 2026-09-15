@@ -2468,6 +2468,114 @@ struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
     }
 };
 
+// U3 bit-plane repack for the src-dynamic-quant VNNI path. Input is tight
+// LSB-packed u3 (8 values / 3 bytes). Output is split into 3 bit-planes so the
+// microkernel reconstructs value = bit2*4 + bit1*2 + bit0 with plain shifts.
+// Layout (matches jit_brgemm_kernel B_offset for u3 with ld_block=8, LDB=OC_pad,
+// vec_size=32): group = (ic_group*num_oc_groups + oc_group)*3*VLEN bytes; within
+// a group, bit-plane r at +r*VLEN; within a plane, OC d at +d*4, byte_b=ic%4,
+// pack idx = (ic%32)/4 stored MSB-first (bit 7-pack).
+template <SIMPLE_REORDER_TEMPL_DECL>
+struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
+        typename utils::enable_if<tag_i == format_tag::any
+                && tag_traits_t<tag_o>::block_dims == bd::_AB
+                && type_i == data_type::u3 && type_i == type_o>::type> {
+    static status_t is_applicable(const memory_desc_wrapper &input_d,
+            const memory_desc_wrapper &output_d, const primitive_attr_t *attr) {
+        if (!(!input_d.has_runtime_dims_or_strides()
+                    && simple_attr_check(attr, false, true)
+                    && (order_keep ? output_d.matches_tag(tag_o)
+                                            && input_d.is_plain()
+                                   : input_d.matches_tag(tag_o)
+                                            && output_d.is_plain())))
+            return status::invalid_arguments;
+
+        if (output_d.blocking_desc().inner_nblks != 3
+                || !utils::one_of(output_d.blocking_desc().inner_blks[2], 2, 4)
+                || output_d.blocking_desc().inner_idxs[2] != 1)
+            return status::invalid_arguments;
+
+        return status::success;
+    }
+
+    GET_SCRATCHPAD_SIZE_ZERO();
+
+    static status_t execute(const cpu_reorder_pd_t *pd, const exec_ctx_t &ctx) {
+        DECLARE_COMMON_PARAMS();
+
+        // Read a tight LSB-packed u3 value (matches ov::element::iterator<u3>).
+        auto get_u3 = [](const uint8_t *base, size_t idx) -> uint8_t {
+            const size_t bit = idx * 3;
+            const size_t byte = bit >> 3;
+            const size_t shift = bit & 7u;
+            uint16_t bits = static_cast<uint16_t>(base[byte]);
+            if (shift + 3u > 8u)
+                bits |= static_cast<uint16_t>(base[byte + 1]) << 8u;
+            return static_cast<uint8_t>((bits >> shift) & 0x7u);
+        };
+
+        const auto &dims = input_d.dims();
+        const int OC = dims[0];
+        const int IC = dims[1];
+
+        int blksize_o = 1, blksize_i = 1;
+        for (int i = 0; i < output_d.blocking_desc().inner_nblks; i++) {
+            if (output_d.blocking_desc().inner_idxs[i] == 0)
+                blksize_o *= output_d.blocking_desc().inner_blks[i];
+            else
+                blksize_i *= output_d.blocking_desc().inner_blks[i];
+        }
+        const auto &pdims = order_keep ? output_d.padded_dims()
+                                       : input_d.padded_dims();
+        const int NB_OC = pdims[0] / blksize_o;
+        const int NB_IC = pdims[1] / blksize_i;
+
+        const auto in_strides = input_d.blocking_desc().strides;
+        const uint8_t *input_u8 = reinterpret_cast<const uint8_t *>(input);
+        uint8_t *output_u8 = reinterpret_cast<uint8_t *>(output);
+
+        const int VLEN = 32;   // avx2 ymm bytes = bit-plane stride
+        const int OC_GRP = 8;  // ld_block (avx2 accum width)
+        // Block byte size = blksize_o * blksize_i * 3 / 8 (tight u3).
+        const size_t block_bytes = (size_t)blksize_o * blksize_i * 3 / 8;
+
+        parallel_nd(NB_OC, NB_IC, [&](int nb_oc, int nb_ic) {
+            // blk_off returns the block's base in elements; * 3/8 -> bytes.
+            const size_t base = (size_t)output_d.blk_off<false>(nb_oc, nb_ic)
+                    * 3 / 8;
+            for (size_t b = 0; b < block_bytes; b++)
+                output_u8[base + b] = 0;
+            const int oc_block
+                    = nstl::min(blksize_o, OC - nb_oc * blksize_o);
+            const int ic_block
+                    = nstl::min(blksize_i, IC - nb_ic * blksize_i);
+            for (int oc_local = 0; oc_local < oc_block; oc_local++) {
+                const int ld = oc_local / OC_GRP;  // oc-subgroup
+                const int d = oc_local % OC_GRP;   // dword within subgroup
+                for (int ic_local = 0; ic_local < ic_block; ic_local++) {
+                    const int oc = nb_oc * blksize_o + oc_local;
+                    const int ic = nb_ic * blksize_i + ic_local;
+                    const size_t in_idx = (size_t)oc * in_strides[0]
+                            + (size_t)ic * in_strides[1];
+                    const uint8_t val = get_u3(input_u8, in_idx);
+                    const int byte_b = ic_local % 4;
+                    const int pack_idx = ic_local / 4;
+                    const int bit_pos = 7 - pack_idx;
+                    // within-block byte = ld*96 + r*32 + d*4 + byte_b
+                    for (int r = 0; r < 3; r++) {
+                        const size_t dst = base + (size_t)ld * (3 * VLEN)
+                                + (size_t)r * VLEN + (size_t)d * 4 + byte_b;
+                        const uint8_t bit = (val >> r) & 1u;
+                        output_u8[dst] |= static_cast<uint8_t>(bit << bit_pos);
+                    }
+                }
+            }
+        });
+
+        return status::success;
+    }
+};
+
 template <SIMPLE_REORDER_TEMPL_DECL>
 struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
         typename utils::enable_if<tag_i == format_tag::any

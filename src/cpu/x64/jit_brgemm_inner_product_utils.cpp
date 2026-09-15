@@ -331,6 +331,45 @@ jit_brgemm_ip_conf_t::get_desired_weights_tag() const {
                                         OIdhw4i8o4i)}};
             }
         }
+    } else if (jbgp.weights_decompression && jbgp.orig_wei_dt == u3) {
+        // u3 uses the same blocked tags as u2 (dyn-quant VNNI path). The u3
+        // reorder repacks into 3 bit-planes within the (tight) u3-sized buffer.
+        if (jbgp.with_src_dynamic_quant) {
+            return {{64,
+                            pick(n_sp_dims, OI16i64o2i, OIw16i64o2i,
+                                    OIhw16i64o2i, OIdhw16i64o2i)},
+                    {48,
+                            pick(n_sp_dims, OI16i48o2i, OIw16i48o2i,
+                                    OIhw16i48o2i, OIdhw16i48o2i)},
+                    {32,
+                            pick(n_sp_dims, OI16i32o2i, OIw16i32o2i,
+                                    OIhw16i32o2i, OIdhw16i32o2i)},
+                    {16,
+                            pick(n_sp_dims, OI16i16o2i, OIw16i16o2i,
+                                    OIhw16i16o2i, OIdhw16i16o2i)}};
+        } else {
+            if (is_superset(jbgp.isa, avx512_core)) {
+                return {{64,
+                                pick(n_sp_dims, OI16i64o4i, OIw16i64o4i,
+                                        OIhw16i64o4i, OIdhw16i64o4i)},
+                        {32,
+                                pick(n_sp_dims, OI16i32o4i, OIw16i32o4i,
+                                        OIhw16i32o4i, OIdhw16i32o4i)},
+                        {16,
+                                pick(n_sp_dims, OI16i16o4i, OIw16i16o4i,
+                                        OIhw16i16o4i, OIdhw16i16o4i)}};
+            } else {
+                return {{32,
+                                pick(n_sp_dims, OI4i32o4i, OIw4i32o4i,
+                                        OIhw4i32o4i, OIdhw4i32o4i)},
+                        {16,
+                                pick(n_sp_dims, OI4i16o4i, OIw4i16o4i,
+                                        OIhw4i16o4i, OIdhw4i16o4i)},
+                        {8,
+                                pick(n_sp_dims, OI4i8o4i, OIw4i8o4i, OIhw4i8o4i,
+                                        OIdhw4i8o4i)}};
+            }
+        }
     } else if (is_xf16) {
         if (jbgp.is_amx) {
             return {{64,
@@ -1518,7 +1557,7 @@ status_t jit_brgemm_ip_conf_t::init_conf_base(cpu_isa_t isa,
 
     jbgp.weights_decompression
             = (one_of(jbgp.src_dt, f32, bf16)
-                      && one_of(jbgp.wei_dt, u8, s8, nf4, s4, u4, u2, f4_e2m1))
+                      && one_of(jbgp.wei_dt, u8, s8, nf4, s4, u4, u2, u3, f4_e2m1))
             || (one_of(jbgp.src_dt, f32) && one_of(jbgp.wei_dt, f16, bf16));
     jbgp.wei_decomp_algo = weights_decomp_kind_t::immediate;
     jbgp.orig_wei_dt = jbgp.wei_dt;
@@ -1557,7 +1596,7 @@ status_t jit_brgemm_ip_conf_t::init_conf_base(cpu_isa_t isa,
 
             jbgp.wei_decomp_zero_points_dt
                     = attr.zero_points_.get_data_type(DNNL_ARG_WEIGHTS);
-            if (!one_of(jbgp.wei_decomp_zero_points_dt, f32, u8, u2))
+            if (!one_of(jbgp.wei_decomp_zero_points_dt, f32, u8, u2, u3))
                 return status::unimplemented;
         }
 
@@ -1586,9 +1625,9 @@ status_t jit_brgemm_ip_conf_t::init_conf_base(cpu_isa_t isa,
             return status::unimplemented;
 
         if (jbgp.with_src_dynamic_quant) {
-            if (!(one_of(jbgp.wei_dt, u2, u4, u8)
+            if (!(one_of(jbgp.wei_dt, u2, u3, u4, u8)
                         && one_of(jbgp.wei_decomp_scales_dt, f32)
-                        && one_of(jbgp.wei_decomp_zero_points_dt, u2, u8,
+                        && one_of(jbgp.wei_decomp_zero_points_dt, u2, u3, u8,
                                 data_type::undef)))
                 return status::unimplemented;
 

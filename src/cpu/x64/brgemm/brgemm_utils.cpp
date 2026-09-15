@@ -56,18 +56,18 @@ status_t init_kernel_datatype(
 
     brg->is_int8 = utils::one_of(dt_a, data_type::u8, data_type::s8)
             && utils::one_of(dt_b, data_type::u8, data_type::s8, data_type::u4,
-                    data_type::u2);
+                    data_type::u2, data_type::u3);
     brg->is_bf16 = (dt_a == data_type::bf16)
             && utils::one_of(dt_b, data_type::bf16, data_type::u8,
                     data_type::s8, data_type::nf4, data_type::s4, data_type::u4,
-                    data_type::f4_e2m1, data_type::u2);
+                    data_type::f4_e2m1, data_type::u2, data_type::u3);
     // Note: f32:bf16 is treated as f32 case while f32:f16 has already been
     // treated as f16. Probably, need a common ground here.
     brg->is_f32 = (dt_a == data_type::f32)
             && utils::one_of(dt_b, data_type::f32, data_type::f16,
                     data_type::bf16, data_type::u8, data_type::s8,
                     data_type::nf4, data_type::s4, data_type::u4,
-                    data_type::f4_e2m1, data_type::u2);
+                    data_type::f4_e2m1, data_type::u2, data_type::u3);
     brg->is_f16 = (dt_a == data_type::f16)
             && utils::one_of(dt_b, data_type::f32, data_type::f16);
     brg->is_fp8 = one_of(dt_a, data_type::f8_e5m2, data_type::f8_e4m3)
@@ -948,7 +948,7 @@ status_t brgemm_blocking_vmm(brgemm_desc_t *brg) {
             = (brg->is_f16 && brg->isa_impl == avx512_core_fp16)
             ? 1
             : data_type_vnni_granularity(brg->dt_a);
-    int rd_unroll = brg->dt_b == data_type::u2 ? 64
+    int rd_unroll = one_of(brg->dt_b, data_type::u2, data_type::u3) ? 64
             : one_of(brg->dt_b, data_type::nf4, data_type::u4, data_type::s4,
                       data_type::f4_e2m1)
             ? 32
@@ -1010,6 +1010,10 @@ status_t brgemm_blocking(brgemm_desc_t *brg) {
             brg->rd_step = 4;
         } else if (one_of(brg->dt_b, data_type::u2)) {
             brg->ld_step = 16;
+            brg->rd_step = 4;
+        } else if (one_of(brg->dt_b, data_type::u3)) {
+            // u3 bit-plane layout: pack-number 8 (vs u2's 4) -> ld_step = 8 * rd_step.
+            brg->ld_step = 32;
             brg->rd_step = 4;
         }
     }

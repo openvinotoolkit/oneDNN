@@ -62,7 +62,7 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
             const bool is_int8 = one_of(src_dt, u8, s8);
             const bool is_wei_decomp = (one_of(src_dt, f32, bf16)
                                                && one_of(wei_dt, u8, s8, nf4,
-                                                       s4, u4, f4_e2m1, u2))
+                                                       s4, u4, f4_e2m1, u2, u3))
                     || (one_of(src_dt, f32) && one_of(wei_dt, f16, bf16));
 
             using skip_mask_t = primitive_attr_t::skip_mask_t;

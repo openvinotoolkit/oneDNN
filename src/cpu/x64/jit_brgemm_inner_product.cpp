@@ -546,6 +546,9 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                     }
 
                     addr_batch[b].ptr.B = decomp_buf;
+                } else if (jbgp.wei_dt == data_type::u3) {
+                    // u3 tight packing: byte offset = elems * 3 / 8.
+                    addr_batch[b].ptr.B = weights + wei_offset * 3 / 8;
                 } else {
                     int typesize_scale = [&] {
                         if (jbgp.wei_dt == data_type::u2) {
@@ -737,6 +740,8 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                 }
 
                 addr_batch[0].ptr.B = decomp_buf;
+            } else if (jbgp.wei_dt == data_type::u3) {
+                addr_batch[0].ptr.B = weights + wei_offset * 3 / 8;
             } else {
                 int typesize_scale = [&] {
                     if (jbgp.wei_dt == data_type::u2) {
