@@ -110,7 +110,7 @@ bool matmul_amx_blocking_params_macro_t::is_supported(
     // bool b_tag_ok = bm_conf_utils.is_any_B_layout()
     //         || bm_conf_utils.check_b_layout_blocked_32_by_n(bgmmc.wei_tag);
     bool b_tag_ok = IMPLICATION(
-            !bm_conf_utils.check_b_layout_blocked_by_n(bgmmc.wei_tag),
+            bm_conf_utils.check_b_layout_blocked_by_n(bgmmc.wei_tag),
             bm_conf_utils.check_b_layout_blocked_32_by_n(bgmmc.wei_tag));
 
     bool has_zp = bgmmc.src_zp_type != brgemm_broadcast_t::none
