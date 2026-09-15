@@ -964,6 +964,8 @@ struct memory : public handle<dnnl_memory_t> {
         u4 = dnnl_u4,
         /// 2-bit unsigned integer.
         u2 = dnnl_u2,
+        /// 3-bit unsigned integer.
+        u3 = dnnl_u3,
         /// 1-bit integer
         bin = dnnl_bin,
         /// 4-bit normalized float.
@@ -1326,6 +1328,10 @@ struct memory : public handle<dnnl_memory_t> {
         aBC16c32b4c = dnnl_aBC16c32b4c,
         aBC16c48b4c = dnnl_aBC16c48b4c,
         aBC16c64b4c = dnnl_aBC16c64b4c,
+        aBC4c8b4c = dnnl_aBC4c8b4c,
+        aBC4c16b4c = dnnl_aBC4c16b4c,
+        aBC4c24b4c = dnnl_aBC4c24b4c,
+        aBC4c32b4c = dnnl_aBC4c32b4c,
         ABc16b16a = dnnl_ABc16b16a,
         AcB16b16a = dnnl_AcB16b16a,
         ABc16b32a = dnnl_ABc16b32a,
