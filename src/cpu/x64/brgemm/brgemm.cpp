@@ -361,7 +361,21 @@ status_t brgemm_desc_init(brgemm_desc_t *brg, cpu_isa_t isa,
                 = div_up(wei_d.dims()[1], brg->src_scales_group_size);
     }
 
-    CHECK(brgemm_desc_finalize(brg));
+    // `brgemm_desc_finalize()` below computes blocking parameters (e.g.
+    // `rd_block`, `ld_block`) needed by the two reads a few lines down
+    // (`with_src_dyn_quant`'s `rd_block`, and the avx2_vnni_2/xf16
+    // `ld_block` check). `brgattr` (in particular `LDB2`) has not been
+    // configured by the caller yet at this point - every caller of
+    // `brgemm_desc_init` under src/cpu/x64/ configures it via
+    // `brgemm_desc_set_attr()` and calls `brgemm_desc_finalize()` again
+    // immediately afterwards on the same `brg`, which remains the
+    // authoritative validation. Call it here for its side effects only -
+    // don't let a rejection caused solely by the not-yet-configured attr
+    // (e.g. the matmul driver's `LDB2`, needed to accept `N_blk` values
+    // larger than the physical `LDB`) fail `brgemm_desc_init()` itself;
+    // genuine failures are still caught by the caller's later, correctly-
+    // ordered finalize() call.
+    brgemm_desc_finalize(brg);
 
     brg->src_sum_group_size = wei_d.dims()[1];
     if (brg->with_src_dyn_quant) {
