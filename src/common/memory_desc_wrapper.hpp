@@ -370,16 +370,19 @@ struct memory_desc_wrapper : public c_compatible {
                 max_size = static_cast<size_t>(blk_size());
             }
 
-            // `div_up` guarantees a spot in memory for odd number of half-byte
-            // elements. Crucial case is `1` when simple division returns 0.
-            size_t data_size = utils::div_up(max_size * data_type_size(),
-                    sub_byte_data_type_multiplier());
+            size_t data_size = types::elements_to_bytes(data_type(), max_size);
             if (is_additional_buffer()) {
                 // The additional buffers, typically of data type int32_t, float
                 // are stored at the end of data. Pad the data, so that the
                 // buffers are properly aligned to their data type.
                 const size_t alignment_in_bytes = 4;
                 data_size = utils::rnd_up(data_size, alignment_in_bytes);
+            }
+            if (data_type() == data_type::u3 && bd.inner_nblks > 0) {
+                // Vpermb handles 64 bytes (where only 48 bytes are valid for
+                // u3 decode), so padding 64 extra bytes always ensures
+                // boundary safety.
+                data_size += 64;
             }
             return data_size
                     + (include_additional_size ? additional_buffer_size() : 0)
@@ -484,8 +487,7 @@ struct memory_desc_wrapper : public c_compatible {
         if (utils::one_of(format_kind(), format_kind::undef, format_kind::any))
             return false;
         if (has_runtime_dims_or_strides() || has_broadcast()) return false;
-        return utils::div_up(nelems(with_padding) * data_type_size(),
-                       sub_byte_data_type_multiplier())
+        return types::elements_to_bytes(data_type(), nelems(with_padding))
                 == size(0, /* include_additional_size = */ false);
     }
 

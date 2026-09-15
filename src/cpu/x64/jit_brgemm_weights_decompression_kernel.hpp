@@ -94,6 +94,7 @@ private:
             Xbyak::Reg64 reg_params, bool broadcast_values,
             data_type_t element_type);
     void load_weights(Vmm vmm_load, const Xbyak::Address &addr, int ic);
+    void load_weights_u3(Vmm vmm_load, const Xbyak::Address &addr, int ic);
     void store_weights(const Xbyak::Address &addr, Vmm vmm_store);
 
     Vmm vmm_scales(int ocb) { return Vmm(unroll_factor + ocb); }
@@ -115,6 +116,9 @@ private:
     Vmm vmm_mask7() { return vmm_tmp(3); }
     Vmm vmm_aux0() { return Vmm(14); }
     Vmm vmm_aux1() { return Vmm(15); }
+    Vmm vmm_u3_mask() { return vmm_tmp(0); }
+    Vmm vmm_u3_row2() { return vmm_tmp(1); }
+    Vmm vmm_u3_idx_table() { return vmm_tmp(1); }
 
     Xbyak::Reg64 reg_weights = r8;
     Xbyak::Reg64 reg_decomp_buffer = r9;
