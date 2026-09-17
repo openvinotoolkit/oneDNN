@@ -64,6 +64,7 @@ const char *dnnl_dt2str(dnnl_data_type_t v) {
     if (v == dnnl_nf4) return "nf4";
     if (v == dnnl_bin) return "bin";
     if (v == dnnl_u2) return "u2";
+    if (v == dnnl_u3) return "u3";
     if (v == dnnl_data_type_max) return "data_type_max";
     assert(!"unknown dt");
     return "unknown dt";
