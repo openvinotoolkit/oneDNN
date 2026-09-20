@@ -1636,6 +1636,15 @@ status_t jit_brgemm_ip_conf_t::init_conf_base(cpu_isa_t isa,
                     || jbgp.src_quant_group_size % simd_width)
                 return status::unimplemented;
 
+            // u3's bit-plane dyn-quant microkernel packs IC in fixed 32-wide blocks
+            // (pack-number 8 x rd_step 4), applying one dyn-quant rescale per block.
+            // A group size that is a multiple of the generic 16-wide simd_width but NOT
+            // of 32 (e.g. 16) would straddle two dyn-quant groups within a single 32-wide
+            // block, silently corrupting half of every block's results. Reject cleanly
+            // instead of computing wrong results.
+            if (jbgp.wei_dt == u3 && jbgp.src_quant_group_size % 32)
+                return status::unimplemented;
+
             jbgp.orig_src_dt = jbgp.src_dt;
             jbgp.src_dt = s8;
 
