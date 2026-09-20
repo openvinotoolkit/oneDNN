@@ -191,8 +191,12 @@ private:
     const reg64_t reg_aux_B = r10;
     const reg64_t reg_aux_A_vpad = r11;
 
-    const reg64_savable_t reg_bdb_loop {regscratchpad_, r9, r16};
-    const reg64_savable_t reg_ldb_loop {regscratchpad_, r8, r17};
+    const bool use_extended_loop_regs = !brg.with_grouped_wei_decomp
+            && regscratchpad_.ExtendedRegisters();
+    const reg64_savable_t reg_bdb_loop {
+            regscratchpad_, r9, r16, use_extended_loop_regs};
+    const reg64_savable_t reg_ldb_loop {
+            regscratchpad_, r8, r17, use_extended_loop_regs};
 
     const reg64_t reg_stride_lda = r9;
     const reg64_t reg_stride_ldb = r8;
