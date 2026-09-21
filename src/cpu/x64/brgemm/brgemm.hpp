@@ -181,6 +181,34 @@ status_t DNNL_API brgemm_desc_finalize(brgemm_desc_t *brg);
 status_t DNNL_API brgemm_kernel_create(
         brgemm_kernel_t **brg_kernel, const brgemm_desc_t &brg);
 
+/// Signature of an externally supplied BRGEMM kernel generator.
+///
+/// @param brg_kernel Output BRGEMM kernel, freshly constructed and *not*
+///     yet created: brgemm_kernel_create() calls create_kernel() on it, so
+///     that construction failures are reported through one path.
+/// @param brg BRGEMM descriptor, already finalized — the factory consumes
+///     the blocking oneDNN computed rather than choosing its own.
+///
+/// Return status::unimplemented for any descriptor the factory does not
+/// handle; brgemm_kernel_create() then falls through to the built-in
+/// generators. Any other non-success status is propagated to the caller.
+using brgemm_kernel_factory_t = status_t (*)(
+        brgemm_kernel_t **brg_kernel, const brgemm_desc_t &brg);
+
+/// Registers a generator that brgemm_kernel_create() consults before its
+/// own, or clears it when passed nullptr.
+///
+/// This exists so a library layered on top of oneDNN can supply its own
+/// BRGEMM code generator without oneDNN depending on it: oneDNN holds a
+/// function pointer, the caller owns the implementation. The dependency
+/// stays one-directional.
+///
+/// Set once during initialization, before any kernel is created.
+void DNNL_API brgemm_kernel_set_factory(brgemm_kernel_factory_t factory);
+
+/// The currently registered generator, or nullptr.
+brgemm_kernel_factory_t DNNL_API brgemm_kernel_get_factory();
+
 /// Destroys a BRGEMM kernel
 ///
 /// @param brg_kernel BRGEMM kernel

@@ -14,6 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 
+#include <atomic>
+
 #include "cpu/x64/brgemm/brgemm.hpp"
 #include "cpu/x64/brgemm/brgemm_utils.hpp"
 
@@ -707,10 +709,49 @@ status_t brgemm_desc_finalize(brgemm_desc_t *brg) {
     return status::success;
 }
 
+namespace {
+// Externally supplied generator, see brgemm_kernel_set_factory(). Atomic
+// because kernels are created from multiple threads, even though the
+// pointer itself is expected to be installed once during initialization.
+std::atomic<brgemm_kernel_factory_t> &external_factory() {
+    static std::atomic<brgemm_kernel_factory_t> factory {nullptr};
+    return factory;
+}
+} // namespace
+
+void brgemm_kernel_set_factory(brgemm_kernel_factory_t factory) {
+    external_factory().store(factory, std::memory_order_release);
+}
+
+brgemm_kernel_factory_t brgemm_kernel_get_factory() {
+    return external_factory().load(std::memory_order_acquire);
+}
+
 status_t brgemm_kernel_create(
         brgemm_kernel_t **brg_kernel, const brgemm_desc_t &brg) {
     if (!brg_kernel) return status::invalid_arguments;
     *brg_kernel = nullptr;
+
+    // An external generator gets first refusal on every descriptor. It
+    // reports status::unimplemented for anything it does not handle, which
+    // is what keeps its coverage explicit instead of silent: the built-in
+    // generators below are the fallback, not a safety net the factory can
+    // lean on by accident.
+    if (auto factory = brgemm_kernel_get_factory()) {
+        const status_t st = factory(brg_kernel, brg);
+        if (st == status::success) {
+            if (!(*brg_kernel)) return status::runtime_error;
+            const status_t create_st = (*brg_kernel)->create_kernel();
+            if (create_st != status::success) {
+                delete *brg_kernel;
+                *brg_kernel = nullptr;
+            }
+            return create_st;
+        }
+        if (st != status::unimplemented) return st;
+        // Falls through to the built-in generators.
+        *brg_kernel = nullptr;
+    }
 
     if (utils::one_of(data_type::f64, brg.dt_a, brg.dt_b, brg.dt_c, brg.dt_d,
                 brg.dt_bias, brg.sum_dt))
