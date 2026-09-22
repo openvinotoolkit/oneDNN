@@ -17,6 +17,9 @@
 #include "cpu/x64/jit_brgemm_inner_product_utils.hpp"
 #include "common/math_utils.hpp"
 
+#include <cstdio>
+#include <cstdlib>
+
 #include "cpu/x64/brgemm/brgemm.hpp"
 #include "cpu/x64/brgemm/brgemm_utils.hpp"
 
@@ -1636,20 +1639,24 @@ status_t jit_brgemm_ip_conf_t::init_conf_base(cpu_isa_t isa,
                     || jbgp.src_quant_group_size % simd_width)
                 return status::unimplemented;
 
-            // u3's bit-plane dyn-quant microkernel packs IC in fixed 32-wide blocks
-            // (pack-number 8 x rd_step 4), applying one dyn-quant rescale per block.
-            // A group size that is a multiple of the generic 16-wide simd_width but NOT
-            // of 32 (e.g. 16) would straddle two dyn-quant groups within a single 32-wide
-            // block, silently corrupting half of every block's results. Reject cleanly
-            // instead of computing wrong results.
-            if (jbgp.wei_dt == u3 && jbgp.src_quant_group_size % 32)
-                return status::unimplemented;
-
             jbgp.orig_src_dt = jbgp.src_dt;
             jbgp.src_dt = s8;
 
             size_t rd_unroll = jbgp.src_quant_group_size;
             jbgp.src_sum_group_size = nstl::min(rd_unroll, min_group_size);
+
+            // u3's bit-plane dyn-quant microkernel packs IC in fixed 32-wide blocks
+            // (pack-number 8 x rd_step 4), applying one dyn-quant rescale per block. The
+            // EFFECTIVE rescale granularity is src_sum_group_size (the min of the src
+            // dyn-quant group size and any weight-level decompression group size, e.g. from
+            // a grouped weights-decompression scale/zero-point) -- not src_quant_group_size
+            // in isolation. A small weight-decompression group size (e.g. 16) can drag
+            // src_sum_group_size below 32 even when src_quant_group_size itself is 32,
+            // causing a single 32-wide block to straddle two rescale groups and silently
+            // corrupt half of every block's results. Reject cleanly instead of computing
+            // wrong results.
+            if (jbgp.wei_dt == u3 && jbgp.src_sum_group_size % 32)
+                return status::unimplemented;
 
             if (jbgp.wei_scales_ic_group_size != static_cast<size_t>(jbgp.ic)
                     && jbgp.wei_scales_ic_group_size % jbgp.src_sum_group_size)
