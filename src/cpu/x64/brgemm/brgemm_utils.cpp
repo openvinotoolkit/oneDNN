@@ -14,9 +14,6 @@
 * limitations under the License.
 *******************************************************************************/
 
-#include <cstdio>
-#include <cstdlib>
-
 #include "cpu/x64/brgemm/brgemm_utils.hpp"
 #include "cpu/x64/brgemm/jit_brdgmm_kernel.hpp"
 
@@ -294,6 +291,9 @@ int calculate_max_bcast_block(brgemm_desc_t *brg, const int adj_ld_block2) {
             && !brg->with_src_dyn_quant)
         microkernel_max_reg_count -= 1;
     if (brg->with_src_dyn_quant) microkernel_max_reg_count -= 1;
+    // u3 bit-plane decode temps (vmm_bit1/vmm_bit2), see
+    // get_max_effective_vregs() in jit_brgemm_kernel.cpp.
+    if (brg->dt_b == data_type::u3) microkernel_max_reg_count -= 2;
 
     auto microkernel_max_bcast_block
             = microkernel_max_reg_count / (adj_ld_block2 + brg->n_bcast_1_load);
@@ -1042,21 +1042,6 @@ status_t brgemm_blocking(brgemm_desc_t *brg) {
         CHECK(brgemm_blocking_tmm(brg));
     else
         CHECK(brgemm_blocking_vmm(brg));
-
-    if (brg->dt_b == data_type::u3 && std::getenv("U3DBG")) {
-        printf("U3DBG brgemm_blocking: with_src_dyn_quant=%d ld_step=%d "
-               "rd_step=%d ld_block=%d ld_block2=%d rd_block=%d LDB=%d "
-               "reduce_dim=%zd load_dim=%zd scales_dt=%d zp_dt=%d "
-               "scales_group=%d zp_group=%d\n",
-                (int)brg->with_src_dyn_quant, (int)brg->ld_step,
-                (int)brg->rd_step, (int)brg->ld_block, (int)brg->ld_block2,
-                (int)brg->rd_block, (int)brg->LDB, (size_t)brg->reduce_dim,
-                (size_t)brg->load_dim, (int)brg->wei_decomp_scales_dt,
-                (int)brg->wei_decomp_zero_points_dt,
-                (int)brg->wei_decomp_scales_group_size,
-                (int)brg->wei_decomp_zero_points_group_size);
-        fflush(stdout);
-    }
 
     if (!IMPLICATION(brg->brgattr.LDB2 == 0, brg->load_dim <= brg->LDB))
         return status::invalid_arguments;

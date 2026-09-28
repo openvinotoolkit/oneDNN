@@ -365,18 +365,22 @@ jit_brgemm_ip_conf_t::get_desired_weights_tag() const {
                                 pick(n_sp_dims, OI16i16o4i, OIw16i16o4i,
                                         OIhw16i16o4i, OIdhw16i16o4i)}};
             } else {
+                // Same block geometry as u2's OI4i*o4i (16 IC x oc_block; the u3
+                // reorder writes its own bit-plane layout inside each block), but
+                // OI8i*o2i has batched aBC8c*b2c analogs (GatherMatmul), which
+                // OI4i*o4i lacks. Mirrors u4's avx2 list.
                 return {{32,
-                                pick(n_sp_dims, OI4i32o4i, OIw4i32o4i,
-                                        OIhw4i32o4i, OIdhw4i32o4i)},
+                                pick(n_sp_dims, OI8i32o2i, OIw8i32o2i,
+                                        OIhw8i32o2i, OIdhw8i32o2i)},
                         {24,
-                                pick(n_sp_dims, OI4i24o4i, OIw4i24o4i,
-                                        OIhw4i24o4i, OIdhw4i24o4i)},
+                                pick(n_sp_dims, OI8i24o2i, OIw8i24o2i,
+                                        OIhw8i24o2i, OIdhw8i24o2i)},
                         {16,
-                                pick(n_sp_dims, OI4i16o4i, OIw4i16o4i,
-                                        OIhw4i16o4i, OIdhw4i16o4i)},
+                                pick(n_sp_dims, OI8i16o2i, OIw8i16o2i,
+                                        OIhw8i16o2i, OIdhw8i16o2i)},
                         {8,
-                                pick(n_sp_dims, OI4i8o4i, OIw4i8o4i, OIhw4i8o4i,
-                                        OIdhw4i8o4i)}};
+                                pick(n_sp_dims, OI8i8o2i, OIw8i8o2i, OIhw8i8o2i,
+                                        OIdhw8i8o2i)}};
             }
         }
     } else if (is_xf16) {

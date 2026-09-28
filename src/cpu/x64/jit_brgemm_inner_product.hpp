@@ -250,7 +250,9 @@ struct brgemm_inner_product_fwd_t : public primitive_t {
             weights_decompression_compile_params_t jcp = {};
             jcp.oc_size = pd()->jbgp_.oc_block;
             jcp.ic_internal_size = [&] {
-                if (pd()->jbgp_.orig_wei_dt == data_type::u2) {
+                if (pd()->jbgp_.orig_wei_dt == data_type::u3) {
+                    return 8;
+                } else if (pd()->jbgp_.orig_wei_dt == data_type::u2) {
                     return 4;
                 } else if (pd()->jbgp_.wei_dt == data_type::bf16) {
                     return 2;

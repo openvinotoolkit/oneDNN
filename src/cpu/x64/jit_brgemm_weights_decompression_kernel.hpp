@@ -94,6 +94,7 @@ private:
             Xbyak::Reg64 reg_params, bool broadcast_values,
             data_type_t element_type);
     void load_weights(Vmm vmm_load, const Xbyak::Address &addr, int ic);
+    void load_weights_u3(Vmm vmm_load, size_t offset, int ic);
     void store_weights(const Xbyak::Address &addr, Vmm vmm_store);
 
     Vmm vmm_scales(int ocb) { return Vmm(unroll_factor + ocb); }
