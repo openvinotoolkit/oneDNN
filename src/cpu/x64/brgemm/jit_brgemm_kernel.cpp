@@ -14,6 +14,8 @@
 * limitations under the License.
 *******************************************************************************/
 #include <memory>
+#include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 #include "common/c_types_map.hpp"
@@ -342,9 +344,10 @@ private:
 
         if (brg.with_src_dyn_quant) { used_vregs += 1; }
 
-        // u3 bit-plane extraction needs 2 extra temp regs (vmm_bit1/vmm_bit2)
-        // beyond the vmm_mask_low reserved above by with_src_dyn_quant.
-        if (brg.dt_b == data_type::u3 && brg.with_src_dyn_quant) {
+        // u3 bit-plane extraction needs 2 extra temp regs (vmm_bit1/vmm_bit2):
+        // beyond the vmm_mask_low reserved above by with_src_dyn_quant (dyn-quant
+        // case), or standalone (non-dyn-quant "immediate" case, gemm_microkernel).
+        if (brg.dt_b == data_type::u3) {
             used_vregs += 2;
         }
         return isa_num_vregs(brg.isa_impl) - used_vregs;
@@ -4013,6 +4016,38 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(dim_t bd_block2,
                                 uni_vpsrld(vmm_load, vmm_load, 30);
                             }
                             uni_vcvtdq2ps(vmm_load, vmm_load);
+                        } else if (brg.dt_b == data_type::u3) {
+                            // Bit-plane layout (mirrors gemm_microkernel_dyn_quant's u3
+                            // technique): 3 consecutive n_lanes-dword-wide byte-planes
+                            // hold bit0/bit1/bit2 for n_lanes consecutive OC values
+                            // (n_lanes = number of dword lanes in Vmm). Reconstruct
+                            // value = bit2*4 + bit1*2 + bit0. Pack idx (rd%8) MSB-first
+                            // (bit at 7-idx within each plane's byte). Each per-lane
+                            // bit is isolated via shift-left-to-bit31-then-logical-
+                            // shift-right-by-31 (same trick u4/s4 use for nibbles
+                            // above), so no separate AND-mask register is needed.
+                            const int n_lanes = vreg_traits_t<Vmm>::vlen / 4;
+                            auto vmm_bit1 = Vmm(isa_num_vregs(brg.isa_impl) - 2);
+                            auto vmm_bit2 = Vmm(isa_num_vregs(brg.isa_impl) - 3);
+                            const int idx = rd % 8;
+                            const int sh = 24 + idx;
+                            uni_vpmovzxbd(vmm_load, addr);
+                            uni_vpmovzxbd(vmm_bit1,
+                                    ptr[reg_aux_B + B_offset(ld, rd) + n_lanes]);
+                            uni_vpmovzxbd(vmm_bit2,
+                                    ptr[reg_aux_B + B_offset(ld, rd)
+                                            + 2 * n_lanes]);
+                            uni_vpslld(vmm_load, vmm_load, sh);
+                            uni_vpsrld(vmm_load, vmm_load, 31);
+                            uni_vpslld(vmm_bit1, vmm_bit1, sh);
+                            uni_vpsrld(vmm_bit1, vmm_bit1, 31);
+                            uni_vpslld(vmm_bit1, vmm_bit1, 1);
+                            uni_vpslld(vmm_bit2, vmm_bit2, sh);
+                            uni_vpsrld(vmm_bit2, vmm_bit2, 31);
+                            uni_vpslld(vmm_bit2, vmm_bit2, 2);
+                            uni_vorps(vmm_load, vmm_load, vmm_bit1);
+                            uni_vorps(vmm_load, vmm_load, vmm_bit2);
+                            uni_vcvtdq2ps(vmm_load, vmm_load);
                         } else if (brg.dt_b == data_type::nf4) {
                             uni_vpmovzxbd(vmm_load, addr);
                             if (rd % 2 == 0) {
@@ -4293,7 +4328,16 @@ void jit_brgemm_kernel_t<Wmm>::bs_loop(dim_t bd_block2, bool is_bdb_tail,
 
             auto ic_group_shift = [&](int src_offs, int dst_offs,
                                           int group_size, int stride) {
-                if ((rb + 1) * brg.rd_block % group_size == 0) {
+                bool fires = (rb + 1) * brg.rd_block % group_size == 0;
+                if (brg.dt_b == data_type::u3 && std::getenv("U3DBG")) {
+                    printf("U3DBG ic_group_shift_opt: rb=%d rd_block=%d "
+                           "group_size=%d stride=%d fires=%d src_offs=%d "
+                           "dst_offs=%d\n",
+                            rb, (int)brg.rd_block, group_size, stride,
+                            (int)fires, src_offs, dst_offs);
+                    fflush(stdout);
+                }
+                if (fires) {
                     mov(reg_ptr, ptr[rsp + src_offs]);
                     add(reg_ptr, stride);
                     mov(ptr[rsp + dst_offs], reg_ptr);

@@ -19,6 +19,8 @@
 
 #include <algorithm>
 #include <assert.h>
+#include <cstdio>
+#include <cstdlib>
 
 #include "common/bfloat16.hpp"
 #include "common/c_types_map.hpp"
@@ -2534,43 +2536,108 @@ struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
         const uint8_t *input_u8 = reinterpret_cast<const uint8_t *>(input);
         uint8_t *output_u8 = reinterpret_cast<uint8_t *>(output);
 
-        const int VLEN = 32;   // avx2 ymm bytes = bit-plane stride
-        const int OC_GRP = 8;  // ld_block (avx2 accum width)
         // Block byte size = blksize_o * blksize_i * 3 / 8 (tight u3).
         const size_t block_bytes = (size_t)blksize_o * blksize_i * 3 / 8;
 
-        parallel_nd(NB_OC, NB_IC, [&](int nb_oc, int nb_ic) {
-            // blk_off returns the block's base in elements; * 3/8 -> bytes.
-            const size_t base = (size_t)output_d.blk_off<false>(nb_oc, nb_ic)
-                    * 3 / 8;
-            for (size_t b = 0; b < block_bytes; b++)
-                output_u8[base + b] = 0;
-            const int oc_block
-                    = nstl::min(blksize_o, OC - nb_oc * blksize_o);
-            const int ic_block
-                    = nstl::min(blksize_i, IC - nb_ic * blksize_i);
-            for (int oc_local = 0; oc_local < oc_block; oc_local++) {
-                const int ld = oc_local / OC_GRP;  // oc-subgroup
-                const int d = oc_local % OC_GRP;   // dword within subgroup
-                for (int ic_local = 0; ic_local < ic_block; ic_local++) {
-                    const int oc = nb_oc * blksize_o + oc_local;
-                    const int ic = nb_ic * blksize_i + ic_local;
-                    const size_t in_idx = (size_t)oc * in_strides[0]
-                            + (size_t)ic * in_strides[1];
-                    const uint8_t val = get_u3(input_u8, in_idx);
-                    const int byte_b = ic_local % 4;
-                    const int pack_idx = ic_local / 4;
-                    const int bit_pos = 7 - pack_idx;
-                    // within-block byte = ld*96 + r*32 + d*4 + byte_b
-                    for (int r = 0; r < 3; r++) {
-                        const size_t dst = base + (size_t)ld * (3 * VLEN)
-                                + (size_t)r * VLEN + (size_t)d * 4 + byte_b;
-                        const uint8_t bit = (val >> r) & 1u;
-                        output_u8[dst] |= static_cast<uint8_t>(bit << bit_pos);
+        if (std::getenv("U3DBG")) {
+            printf("U3DBG reorder: OC=%d IC=%d blksize_o=%d blksize_i=%d "
+                   "NB_OC=%d NB_IC=%d inner_blks[2]=%d\n",
+                    OC, IC, blksize_o, blksize_i, NB_OC, NB_IC,
+                    (int)output_d.blocking_desc().inner_blks[2]);
+            fflush(stdout);
+        }
+
+        if (output_d.blocking_desc().inner_blks[2] == 2) {
+            // src-dynamic-quant VNNI path (unchanged): see file header comment.
+            const int VLEN = 32; // avx2 ymm bytes = bit-plane stride
+            const int OC_GRP = 8; // ld_block (avx2 accum width)
+            parallel_nd(NB_OC, NB_IC, [&](int nb_oc, int nb_ic) {
+                // blk_off returns the block's base in elements; * 3/8 -> bytes.
+                const size_t base
+                        = (size_t)output_d.blk_off<false>(nb_oc, nb_ic) * 3
+                        / 8;
+                for (size_t b = 0; b < block_bytes; b++)
+                    output_u8[base + b] = 0;
+                const int oc_block
+                        = nstl::min(blksize_o, OC - nb_oc * blksize_o);
+                const int ic_block
+                        = nstl::min(blksize_i, IC - nb_ic * blksize_i);
+                for (int oc_local = 0; oc_local < oc_block; oc_local++) {
+                    const int ld = oc_local / OC_GRP; // oc-subgroup
+                    const int d = oc_local % OC_GRP; // dword within subgroup
+                    for (int ic_local = 0; ic_local < ic_block; ic_local++) {
+                        const int oc = nb_oc * blksize_o + oc_local;
+                        const int ic = nb_ic * blksize_i + ic_local;
+                        const size_t in_idx = (size_t)oc * in_strides[0]
+                                + (size_t)ic * in_strides[1];
+                        const uint8_t val = get_u3(input_u8, in_idx);
+                        const int byte_b = ic_local % 4;
+                        const int pack_idx = ic_local / 4;
+                        const int bit_pos = 7 - pack_idx;
+                        // within-block byte = ld*96 + r*32 + d*4 + byte_b
+                        for (int r = 0; r < 3; r++) {
+                            const size_t dst = base + (size_t)ld * (3 * VLEN)
+                                    + (size_t)r * VLEN + (size_t)d * 4
+                                    + byte_b;
+                            const uint8_t bit = (val >> r) & 1u;
+                            output_u8[dst]
+                                    |= static_cast<uint8_t>(bit << bit_pos);
+                        }
                     }
                 }
-            }
-        });
+            });
+        } else {
+            // Non-dyn-quant ("immediate"/"prepack") path: no VNNI dot-product,
+            // so no ld/d dword-lane duplication is needed (mirrors u2's own
+            // simpler non-dyn-quant branch above, just with u3's 3-bit-plane
+            // extraction instead of u2's plain 2-bit extract/insert). Matches
+            // gemm_microkernel's u3 case (jit_brgemm_kernel.cpp): for a fixed
+            // group of 8 IC values, n_lanes (=8, avx2 ymm dword-lane count)
+            // consecutive OC values' bit-plane-r byte sits at
+            // base + oc_group*3*n_lanes + r*n_lanes + oc_local, with pack idx
+            // (ic_local%8) stored MSB-first (bit at 7-pack_idx) -- i.e. the same
+            // group-of-8 bit-plane layout as the VNNI path above, just without
+            // the extra x4 dword-lane replication (OC_GRP=n_lanes directly,
+            // no separate "d" sub-index).
+            const int n_lanes = 8; // avx2 ymm dword-lane count (see header note
+                    // above: AVX512 needs its own n_lanes=16 variant, deferred).
+            parallel_nd(NB_OC, NB_IC, [&](int nb_oc, int nb_ic) {
+                const size_t base
+                        = (size_t)output_d.blk_off<false>(nb_oc, nb_ic) * 3
+                        / 8;
+                for (size_t b = 0; b < block_bytes; b++)
+                    output_u8[base + b] = 0;
+                const int oc_block
+                        = nstl::min(blksize_o, OC - nb_oc * blksize_o);
+                const int ic_block
+                        = nstl::min(blksize_i, IC - nb_ic * blksize_i);
+                for (int oc_local = 0; oc_local < oc_block; oc_local++) {
+                    const int oc_group = oc_local / n_lanes;
+                    const int lane = oc_local % n_lanes;
+                    for (int ic_local = 0; ic_local < ic_block; ic_local++) {
+                        const int oc = nb_oc * blksize_o + oc_local;
+                        const int ic = nb_ic * blksize_i + ic_local;
+                        const size_t in_idx = (size_t)oc * in_strides[0]
+                                + (size_t)ic * in_strides[1];
+                        const uint8_t val = get_u3(input_u8, in_idx);
+                        const int ic_group = ic_local / 8;
+                        const int pack_idx = ic_local % 8;
+                        const int bit_pos = 7 - pack_idx;
+                        const size_t group_base = base
+                                + (size_t)ic_group
+                                        * (blksize_o / n_lanes) * 3 * n_lanes
+                                + (size_t)oc_group * 3 * n_lanes;
+                        for (int r = 0; r < 3; r++) {
+                            const size_t dst
+                                    = group_base + (size_t)r * n_lanes + lane;
+                            const uint8_t bit = (val >> r) & 1u;
+                            output_u8[dst]
+                                    |= static_cast<uint8_t>(bit << bit_pos);
+                        }
+                    }
+                }
+            });
+        }
 
         return status::success;
     }

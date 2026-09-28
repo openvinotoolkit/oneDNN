@@ -14,6 +14,9 @@
 * limitations under the License.
 *******************************************************************************/
 
+#include <cstdio>
+#include <cstdlib>
+
 #include "cpu/x64/brgemm/brgemm_utils.hpp"
 #include "cpu/x64/brgemm/jit_brdgmm_kernel.hpp"
 
@@ -1016,6 +1019,15 @@ status_t brgemm_blocking(brgemm_desc_t *brg) {
             brg->ld_step = 32;
             brg->rd_step = 4;
         }
+    } else if (brg->dt_b == data_type::u3) {
+        // Non-dyn-quant (immediate/prepack) u3: no VNNI dot-product instruction is
+        // used here (plain float FMA, like u2/u4's own non-dyn-quant path), so
+        // rd_step=1 (scalar accumulation, mirroring has_no_vnni_compute_instruction's
+        // effect for u2/u4/u8 above). u3's native tight packing groups 8 values into
+        // 3 bytes (not u2's 4 values/byte), so ld_step=8 here (vs u2's ld_step=4,
+        // inherited above from data_type_vnni_granularity(u2)==4).
+        brg->ld_step = 8;
+        brg->rd_step = 1;
     }
 
     set_isa_impl(brg);
@@ -1030,6 +1042,21 @@ status_t brgemm_blocking(brgemm_desc_t *brg) {
         CHECK(brgemm_blocking_tmm(brg));
     else
         CHECK(brgemm_blocking_vmm(brg));
+
+    if (brg->dt_b == data_type::u3 && std::getenv("U3DBG")) {
+        printf("U3DBG brgemm_blocking: with_src_dyn_quant=%d ld_step=%d "
+               "rd_step=%d ld_block=%d ld_block2=%d rd_block=%d LDB=%d "
+               "reduce_dim=%zd load_dim=%zd scales_dt=%d zp_dt=%d "
+               "scales_group=%d zp_group=%d\n",
+                (int)brg->with_src_dyn_quant, (int)brg->ld_step,
+                (int)brg->rd_step, (int)brg->ld_block, (int)brg->ld_block2,
+                (int)brg->rd_block, (int)brg->LDB, (size_t)brg->reduce_dim,
+                (size_t)brg->load_dim, (int)brg->wei_decomp_scales_dt,
+                (int)brg->wei_decomp_zero_points_dt,
+                (int)brg->wei_decomp_scales_group_size,
+                (int)brg->wei_decomp_zero_points_group_size);
+        fflush(stdout);
+    }
 
     if (!IMPLICATION(brg->brgattr.LDB2 == 0, brg->load_dim <= brg->LDB))
         return status::invalid_arguments;
