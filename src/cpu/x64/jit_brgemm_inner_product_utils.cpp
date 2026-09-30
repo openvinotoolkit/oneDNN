@@ -178,10 +178,12 @@ jit_brgemm_ip_conf_t::get_desired_weights_tag() const {
     const int n_sp_dims = jbgp.ndims - 2;
     const bool is_xf16 = utils::one_of(jbgp.wei_dt, bf16, f16);
     const bool is_fp8 = utils::one_of(jbgp.wei_dt, f8_e5m2, f8_e4m3);
+    // AVX10.2 uses VDPPHPS, which consumes pairs of f16 weights in VNNI order.
+    // Only the AVX512 FP16 kernel converts non-VNNI f16 weights before computing.
     const bool is_not_vnni_tag
             = (jbgp.wei_dt == f32
                       || (jbgp.wei_dt == f16
-                              && one_of(jbgp.isa, avx512_core_fp16, avx10_2)))
+                            && jbgp.isa == avx512_core_fp16))
             && !jbgp.weights_decompression;
     const bool is_vcvtph2ps_kernel
             = (one_of(jbgp.orig_wei_dt, f16, bf16) && jbgp.src_dt == f32);
