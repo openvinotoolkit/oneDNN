@@ -191,7 +191,11 @@ private:
     const reg64_t reg_aux_B = r10;
     const reg64_t reg_aux_A_vpad = r11;
 
+    // The weight-decompression microkernel borrows both loop registers for
+    // scales and zero-point pointers. Extended registers have no scratchpad
+    // booking, so save()/restore() cannot preserve their loop counters.
     const bool use_extended_loop_regs = !brg.with_grouped_wei_decomp
+            && !brg.with_wei_decomp
             && regscratchpad_.ExtendedRegisters();
     const reg64_savable_t reg_bdb_loop {
             regscratchpad_, r9, r16, use_extended_loop_regs};
