@@ -2468,6 +2468,185 @@ struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
     }
 };
 
+namespace u3_repack {
+
+inline uint8_t get_u3(const uint8_t *base, size_t idx) {
+    const size_t bit = idx * 3;
+    const size_t byte = bit >> 3;
+    const size_t shift = bit & 7u;
+    uint16_t bits = static_cast<uint16_t>(base[byte]);
+    if (shift + 3u > 8u) bits |= static_cast<uint16_t>(base[byte + 1]) << 8u;
+    return static_cast<uint8_t>((bits >> shift) & 0x7u);
+}
+
+inline status_t check_blocking(const memory_desc_wrapper &output_d, int ic_idx) {
+    const auto &blk = output_d.blocking_desc();
+    if (blk.inner_nblks != 3 || !utils::one_of(blk.inner_blks[2], 2, 4)
+            || blk.inner_idxs[2] != ic_idx)
+        return status::invalid_arguments;
+    return status::success;
+}
+
+template <typename F>
+void repack_block(const memory_desc_wrapper &output_d, uint8_t *dst,
+        int blksize_o, int blksize_i, int oc_block, int ic_block, F get_val) {
+    const auto &blk = output_d.blocking_desc();
+    const bool dyn_quant = blk.inner_blks[2] == 2;
+    for (size_t b = 0; b < (size_t)blksize_o * blksize_i * 3 / 8; b++)
+        dst[b] = 0;
+    for (int oc_local = 0; oc_local < oc_block; oc_local++) {
+        for (int ic_local = 0; ic_local < ic_block; ic_local++) {
+            const uint8_t val = get_val(oc_local, ic_local);
+            size_t byte0, plane_stride;
+            int bit_pos;
+            if (dyn_quant) {
+                const size_t group = (size_t)(ic_local / 32) * (blksize_o / 8)
+                        + oc_local / 8;
+                byte0 = group * 96 + (oc_local % 8) * 4 + ic_local % 4;
+                plane_stride = 32;
+                bit_pos = 7 - (ic_local % 32) / 4;
+            } else {
+                const int n_lanes = blk.inner_blks[0] == 16 ? 16 : 8;
+                const size_t group = (size_t)(ic_local / 8)
+                                * (blksize_o / n_lanes)
+                        + oc_local / n_lanes;
+                byte0 = group * 3 * n_lanes + oc_local % n_lanes;
+                plane_stride = n_lanes;
+                bit_pos = 7 - ic_local % 8;
+            }
+            for (int r = 0; r < 3; r++)
+                dst[byte0 + r * plane_stride]
+                        |= static_cast<uint8_t>(((val >> r) & 1u) << bit_pos);
+        }
+    }
+}
+
+inline void get_blksizes(const memory_desc_wrapper &output_d, int oc_idx,
+        int &blksize_o, int &blksize_i) {
+    const auto &blk = output_d.blocking_desc();
+    blksize_o = blksize_i = 1;
+    for (int i = 0; i < blk.inner_nblks; i++) {
+        if (blk.inner_idxs[i] == oc_idx)
+            blksize_o *= blk.inner_blks[i];
+        else
+            blksize_i *= blk.inner_blks[i];
+    }
+}
+
+} // namespace u3_repack
+
+template <SIMPLE_REORDER_TEMPL_DECL>
+struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
+        typename utils::enable_if<tag_i == format_tag::any
+                && tag_traits_t<tag_o>::block_dims == bd::_AB
+                && type_i == data_type::u3 && type_i == type_o>::type> {
+    static status_t is_applicable(const memory_desc_wrapper &input_d,
+            const memory_desc_wrapper &output_d, const primitive_attr_t *attr) {
+        if (!(!input_d.has_runtime_dims_or_strides()
+                    && simple_attr_check(attr, false, true)
+                    && (order_keep ? output_d.matches_tag(tag_o)
+                                            && input_d.is_plain()
+                                   : input_d.matches_tag(tag_o)
+                                            && output_d.is_plain())))
+            return status::invalid_arguments;
+
+        return u3_repack::check_blocking(output_d, 1);
+    }
+
+    GET_SCRATCHPAD_SIZE_ZERO();
+
+    static status_t execute(const cpu_reorder_pd_t *pd, const exec_ctx_t &ctx) {
+        DECLARE_COMMON_PARAMS();
+
+        const auto &dims = input_d.dims();
+        const int OC = dims[0];
+        const int IC = dims[1];
+        int blksize_o, blksize_i;
+        u3_repack::get_blksizes(output_d, 0, blksize_o, blksize_i);
+        const auto &pdims = order_keep ? output_d.padded_dims()
+                                       : input_d.padded_dims();
+        const int NB_OC = pdims[0] / blksize_o;
+        const int NB_IC = pdims[1] / blksize_i;
+
+        const auto in_strides = input_d.blocking_desc().strides;
+        const uint8_t *input_u8 = reinterpret_cast<const uint8_t *>(input);
+        uint8_t *output_u8 = reinterpret_cast<uint8_t *>(output);
+
+        parallel_nd(NB_OC, NB_IC, [&](int nb_oc, int nb_ic) {
+            uint8_t *dst = output_u8
+                    + (size_t)output_d.blk_off<false>(nb_oc, nb_ic) * 3 / 8;
+            const int oc0 = nb_oc * blksize_o;
+            const int ic0 = nb_ic * blksize_i;
+            u3_repack::repack_block(output_d, dst, blksize_o, blksize_i,
+                    nstl::min(blksize_o, OC - oc0),
+                    nstl::min(blksize_i, IC - ic0), [&](int oc, int ic) {
+                        return u3_repack::get_u3(input_u8,
+                                (size_t)(oc0 + oc) * in_strides[0]
+                                        + (size_t)(ic0 + ic) * in_strides[1]);
+                    });
+        });
+
+        return status::success;
+    }
+};
+
+template <SIMPLE_REORDER_TEMPL_DECL>
+struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
+        typename utils::enable_if<tag_i == format_tag::any
+                && tag_traits_t<tag_o>::block_dims == bd::_BC
+                && type_i == data_type::u3 && type_i == type_o>::type> {
+    static status_t is_applicable(const memory_desc_wrapper &input_d,
+            const memory_desc_wrapper &output_d, const primitive_attr_t *attr) {
+        if (!(!input_d.has_runtime_dims_or_strides()
+                    && simple_attr_check(attr, false, true)
+                    && (order_keep ? output_d.matches_tag(tag_o)
+                                            && input_d.is_plain()
+                                   : input_d.matches_tag(tag_o)
+                                            && output_d.is_plain())))
+            return status::invalid_arguments;
+
+        return u3_repack::check_blocking(output_d, 2);
+    }
+
+    GET_SCRATCHPAD_SIZE_ZERO();
+
+    static status_t execute(const cpu_reorder_pd_t *pd, const exec_ctx_t &ctx) {
+        DECLARE_COMMON_PARAMS();
+
+        const auto &dims = input_d.dims();
+        const int G = dims[0];
+        const int OC = dims[1];
+        const int IC = dims[2];
+        int blksize_o, blksize_i;
+        u3_repack::get_blksizes(output_d, 1, blksize_o, blksize_i);
+        const auto &pdims = order_keep ? output_d.padded_dims()
+                                       : input_d.padded_dims();
+        const int NB_OC = pdims[1] / blksize_o;
+        const int NB_IC = pdims[2] / blksize_i;
+
+        const auto in_strides = input_d.blocking_desc().strides;
+        const uint8_t *input_u8 = reinterpret_cast<const uint8_t *>(input);
+        uint8_t *output_u8 = reinterpret_cast<uint8_t *>(output);
+
+        parallel_nd(G, NB_OC, NB_IC, [&](int g, int nb_oc, int nb_ic) {
+            uint8_t *dst = output_u8
+                    + (size_t)output_d.blk_off<false>(g, nb_oc, nb_ic) * 3 / 8;
+            const int oc0 = nb_oc * blksize_o;
+            const int ic0 = nb_ic * blksize_i;
+            u3_repack::repack_block(output_d, dst, blksize_o, blksize_i,
+                    nstl::min(blksize_o, OC - oc0),
+                    nstl::min(blksize_i, IC - ic0), [&](int oc, int ic) {
+                        return u3_repack::get_u3(input_u8,
+                                (size_t)g * in_strides[0]
+                                        + (size_t)(oc0 + oc) * in_strides[1]
+                                        + (size_t)(ic0 + ic) * in_strides[2]);
+                    });
+        });
+
+        return status::success;
+    }
+};
+
 template <SIMPLE_REORDER_TEMPL_DECL>
 struct simple_reorder_impl_t<SIMPLE_REORDER_TEMPL_CALL,
         typename utils::enable_if<tag_i == format_tag::any

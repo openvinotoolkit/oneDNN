@@ -341,6 +341,10 @@ private:
         }
 
         if (brg.with_src_dyn_quant) { used_vregs += 1; }
+
+        if (brg.dt_b == data_type::u3) {
+            used_vregs += 2;
+        }
         return isa_num_vregs(brg.isa_impl) - used_vregs;
     }
 
@@ -650,6 +654,8 @@ dim_t jit_brgemm_kernel_t<Wmm>::B_offset(
         }
     }();
     if (is_amx) {
+        if (brg.dt_b == data_type::u3)
+            return brg.typesize_B * (brg.rd_step * ld * brg.ld_block) * 3 / 8;
         return brg.typesize_B * (brg.rd_step * ld * brg.ld_block)
                 / typesize_scale;
     } else {
@@ -657,10 +663,11 @@ dim_t jit_brgemm_kernel_t<Wmm>::B_offset(
         // Note: Offsets for elements within vnni_granularity are expected to be
         // handled within gemm_microkernel (for ex: odd-even converts).
         // hence no `rd % brg.ld_step`
-        return brg.typesize_B
+        const dim_t num = brg.typesize_B
                 * (rdb0 * brg.ld_step * brg.LDB
-                        + brg.ld_step * ld * brg.ld_block)
-                / typesize_scale;
+                        + brg.ld_step * ld * brg.ld_block);
+        if (brg.dt_b == data_type::u3) return num * 3 / 8;
+        return num / typesize_scale;
     }
 }
 
@@ -698,6 +705,12 @@ dim_t jit_brgemm_kernel_t<Wmm>::rdb_B_offset() const noexcept {
         if (brg.dt_b == data_type::u2) return 4;
         return 1;
     }();
+    if (brg.dt_b == data_type::u3) {
+        if (brg.is_gemv && brg.gemv_acc_is_vector())
+            return static_cast<dim_t>(brg.rd_block) * brg.typesize_B * 3 / 8;
+        return static_cast<dim_t>(brg.typesize_B) * brg.rd_block * brg.LDB * 3
+                / 8;
+    }
     if (brg.is_gemv && brg.gemv_acc_is_vector())
         return static_cast<dim_t>(brg.rd_block) * brg.typesize_B
                 / typesize_scale;
@@ -718,6 +731,12 @@ dim_t jit_brgemm_kernel_t<Wmm>::ldb_B_offset(
             return 1;
         }
     }();
+    if (brg.dt_b == data_type::u3) {
+        return (is_tail)
+                ? brg.typesize_B * brg.ldb_tail * brg.ld_step * 3 / 8
+                : brg.typesize_B * ld_block2 * brg.ld_block * brg.ld_step * 3
+                        / 8;
+    }
     return (is_tail)
             ? brg.typesize_B * brg.ldb_tail * brg.ld_step / typesize_scale
             : brg.typesize_B * ld_block2 * brg.ld_block * brg.ld_step
@@ -3371,6 +3390,14 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel_dyn_quant(dim_t bd_block2,
             0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03,
             0x03, 0x03, 0x03, 0x03};
 
+    static const int8_t mask_low_1_bit[64] = {0x01, 0x01, 0x01, 0x01, 0x01,
+            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+            0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
+            0x01, 0x01, 0x01, 0x01};
+
     reg_bdb_loop.save();
     reg_ldb_loop.save();
 
@@ -3382,6 +3409,9 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel_dyn_quant(dim_t bd_block2,
         uni_vmovups(vmm_mask_low, ptr[reg_ptr]);
     } else if (brg.dt_b == data_type::u2) {
         mov(reg_ptr, (size_t)mask_low_2_bits);
+        uni_vmovups(vmm_mask_low, ptr[reg_ptr]);
+    } else if (brg.dt_b == data_type::u3) {
+        mov(reg_ptr, (size_t)mask_low_1_bit);
         uni_vmovups(vmm_mask_low, ptr[reg_ptr]);
     }
 
@@ -3414,6 +3444,37 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel_dyn_quant(dim_t bd_block2,
                 int idx = (rd % 16) / 4;
                 uni_vpsrld(vmm_load, vmm_load, 6 - 2 * idx);
                 uni_vandps(vmm_load, vmm_load, vmm_mask_low);
+            } else if (brg.dt_b == data_type::u3) {
+                auto vmm_bit1 = Vmm(isa_num_vregs(brg.isa_impl) - 2);
+                auto vmm_bit2 = Vmm(isa_num_vregs(brg.isa_impl) - 3);
+                const int idx = (rd % 32) / 4;
+                const int sh = 7 - idx;
+                constexpr int grp_plane_bytes = 32;
+                constexpr int grp_bytes = 3 * grp_plane_bytes;
+                auto load_plane = [&](const Vmm &vmm, int r) {
+                    const auto off = B_offset(ld, rd) + r * grp_plane_bytes;
+                    if (vec_size == 2 * grp_plane_bytes) {
+                        const auto idx = vmm.getIdx();
+                        vmovdqu32(Xbyak::Ymm(idx), ptr[reg_aux_B + off]);
+                        vinserti64x4(Xbyak::Zmm(idx), Xbyak::Zmm(idx),
+                                ptr[reg_aux_B + off + grp_bytes], 1);
+                    } else {
+                        uni_vmovups(vmm, ptr[reg_aux_B + off]);
+                    }
+                };
+                load_plane(vmm_load, 0);
+                load_plane(vmm_bit1, 1);
+                load_plane(vmm_bit2, 2);
+                uni_vpsrld(vmm_load, vmm_load, sh);
+                uni_vandps(vmm_load, vmm_load, vmm_mask_low);
+                uni_vpsrld(vmm_bit1, vmm_bit1, sh);
+                uni_vandps(vmm_bit1, vmm_bit1, vmm_mask_low);
+                uni_vpslld(vmm_bit1, vmm_bit1, 1);
+                uni_vpsrld(vmm_bit2, vmm_bit2, sh);
+                uni_vandps(vmm_bit2, vmm_bit2, vmm_mask_low);
+                uni_vpslld(vmm_bit2, vmm_bit2, 2);
+                uni_vorps(vmm_load, vmm_load, vmm_bit1);
+                uni_vorps(vmm_load, vmm_load, vmm_bit2);
             } else {
                 assert(!"unsupported combination");
             }
@@ -3954,6 +4015,29 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(dim_t bd_block2,
                                 uni_vpslld(vmm_load, vmm_load, 24 + 2 * idx);
                                 uni_vpsrld(vmm_load, vmm_load, 30);
                             }
+                            uni_vcvtdq2ps(vmm_load, vmm_load);
+                        } else if (brg.dt_b == data_type::u3) {
+                            const int n_lanes = vreg_traits_t<Vmm>::vlen / 4;
+                            auto vmm_bit1 = Vmm(max_effective_vregs);
+                            auto vmm_bit2 = Vmm(max_effective_vregs + 1);
+                            const int idx = rd % 8;
+                            const int sh = 24 + idx;
+                            uni_vpmovzxbd(vmm_load, addr);
+                            uni_vpmovzxbd(vmm_bit1,
+                                    ptr[reg_aux_B + B_offset(ld, rd) + n_lanes]);
+                            uni_vpmovzxbd(vmm_bit2,
+                                    ptr[reg_aux_B + B_offset(ld, rd)
+                                            + 2 * n_lanes]);
+                            uni_vpslld(vmm_load, vmm_load, sh);
+                            uni_vpsrld(vmm_load, vmm_load, 31);
+                            uni_vpslld(vmm_bit1, vmm_bit1, sh);
+                            uni_vpsrld(vmm_bit1, vmm_bit1, 31);
+                            uni_vpslld(vmm_bit1, vmm_bit1, 1);
+                            uni_vpslld(vmm_bit2, vmm_bit2, sh);
+                            uni_vpsrld(vmm_bit2, vmm_bit2, 31);
+                            uni_vpslld(vmm_bit2, vmm_bit2, 2);
+                            uni_vorps(vmm_load, vmm_load, vmm_bit1);
+                            uni_vorps(vmm_load, vmm_load, vmm_bit2);
                             uni_vcvtdq2ps(vmm_load, vmm_load);
                         } else if (brg.dt_b == data_type::nf4) {
                             uni_vpmovzxbd(vmm_load, addr);
