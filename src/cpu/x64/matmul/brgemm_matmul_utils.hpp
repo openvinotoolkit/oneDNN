@@ -298,6 +298,11 @@ struct brgemm_matmul_conf_t {
     bool is_wei_zp_per_n = false;
     bool is_wei_zp_common = false;
     data_type_t wei_zp_dt = data_type::undef;
+    // Grouped/per-N int4 weights zero-points are subtracted while copying B into
+    // the buffer (buffer_B = wei - zp, exact for int4 since the difference fits
+    // int8), so the brgemm kernel needs neither zp-b compensation nor the
+    // per-(M, N) compensation tile, and A doesn't have to be copied for it.
+    bool wei_zp_folded_in_buffer_b = false;
 
     // Batched (3D/4D) per-batch scales/ZP plane stride (in elements).
     // Populated when the scales/ZP mask carries batch bits.

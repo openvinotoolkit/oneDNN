@@ -412,6 +412,9 @@ status_t brgemm_matmul_t<isa>::pd_t::init(engine_t *engine) {
         }
         if (bgmmc_.with_wei_decompression && bgmmc_.has_zero_point_b)
             brg.skip_zp_b_compensation = true;
+        // zp-b is already applied when copying B into the buffer.
+        if (bgmmc_.wei_zp_folded_in_buffer_b)
+            brg.skip_zp_b_compensation = true;
 
         if (bgmmc_.is_gemv) {
             const bool swap_a_b = bgmmc_.gemv_swap_a_b;
@@ -2459,7 +2462,9 @@ struct brgemm_matmul_t<isa>::brg_matmul_exec_ctx_t {
 
     const void *get_wei_zp_ptr(
             dim_t b_idx = 0, dim_t k = 0, dim_t n = 0) const {
-        if (!bgmmc_.has_zero_point_b) return nullptr;
+        // copy_b still needs the pointer when the zp is folded into buffer B.
+        if (!bgmmc_.has_zero_point_b && !bgmmc_.wei_zp_folded_in_buffer_b)
+            return nullptr;
         if (bgmmc_.is_wei_zp_common)
             return wei_zp_ptr_; // single zero point value
         // Locate the group based on (b_idx, k, n)

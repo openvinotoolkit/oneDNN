@@ -2098,6 +2098,22 @@ status_t init_brgemm_matmul_conf(cpu_isa_t isa, brgemm_matmul_conf_t &bgmmc,
     bgmmc.blocked_B = bm_conf_utils.get_blocked_B();
     bgmmc.transposed_B = bm_conf_utils.check_is_transposed(bgmmc.wei_tag)
             || bgmmc.wei_tag == adbc;
+
+    // Fold int4 weights zero-points into the copy_b buffer for int8 grouped
+    // quantization. Supported only where the AMX int8 copy_b kernel implements
+    // it: per-N (optionally per-K-group) zero-points, no src zero-point, no
+    // s8s8 compensation, plain (non-transposed) static-N weights.
+    bgmmc.wei_zp_folded_in_buffer_b = bgmmc.with_int8_grouped_quantization
+            && utils::one_of(
+                    bgmmc.orig_wei_dt, data_type::s4, data_type::u4)
+            && bgmmc.wei_zp_type != brgemm_broadcast_t::none
+            && bgmmc.is_wei_zp_per_n
+            && bgmmc.src_zp_type == brgemm_broadcast_t::none
+            && bgmmc.is_amx && mayiuse(avx512_core_amx)
+            && !bgmmc.s8s8_compensation_required && !bgmmc.transposed_B
+            && !bgmmc.is_runtime_N
+            // ONEDNN_MATMUL_FOLD_WEI_ZP=0 disables it (A/B testing).
+            && getenv_int_user("MATMUL_FOLD_WEI_ZP", 1) != 0;
     bgmmc.use_buffer_b = bm_conf_utils.use_buffer_b();
 
     if ((bm_conf_utils.is_f32_f16() || bm_conf_utils.is_f32_bf16())
@@ -2226,7 +2242,8 @@ status_t init_brgemm_matmul_conf(cpu_isa_t isa, brgemm_matmul_conf_t &bgmmc,
                                 || bm_conf_utils.is_f16_with_int_wei())
                             && isa == avx512_core_fp16)
                     || (bgmmc.wei_zp_type != brgemm_broadcast_t::none
-                            && !bm_conf_utils.with_weights_decompression())
+                            && !bm_conf_utils.with_weights_decompression()
+                            && !bgmmc.wei_zp_folded_in_buffer_b)
                     || bgmmc.transposed_A);
 
     bgmmc.use_buffer_a = is_copy_a_required;
@@ -2295,8 +2312,10 @@ status_t init_brgemm_matmul_conf(cpu_isa_t isa, brgemm_matmul_conf_t &bgmmc,
                 bgmmc.wei_scales_k_gsize);
         fold_group(bgmmc.is_src_scale_per_k, bgmmc.src_scales_k_gsize);
 
-        const bool wei_zp_folded_into_buffer_b = bgmmc.with_wei_decompression
-                && !bgmmc.with_int8_grouped_quantization;
+        const bool wei_zp_folded_into_buffer_b
+                = (bgmmc.with_wei_decompression
+                          && !bgmmc.with_int8_grouped_quantization)
+                || bgmmc.wei_zp_folded_in_buffer_b;
         fold_group(bgmmc.is_wei_zp_per_k && !wei_zp_folded_into_buffer_b,
                 bgmmc.wei_zp_k_gsize);
         fold_group(bgmmc.is_src_zp_per_k, bgmmc.src_zp_k_gsize);
@@ -2766,7 +2785,10 @@ void init_aux_values(brgemm_matmul_conf_t &bgmmc,
             : 0;
 
     bgmmc.has_zero_point_a = bgmmc.src_zp_type != brgemm_broadcast_t::none;
-    bgmmc.has_zero_point_b = bgmmc.wei_zp_type != brgemm_broadcast_t::none;
+    // With the zero-point folded into buffer B there is no zp-b work left for
+    // the brgemm kernels (no compensation buffers, no per-MN compensation).
+    bgmmc.has_zero_point_b = bgmmc.wei_zp_type != brgemm_broadcast_t::none
+            && !bgmmc.wei_zp_folded_in_buffer_b;
     bgmmc.has_zero_point_c = bgmmc.dst_zp_type != brgemm_broadcast_t::none;
     bgmmc.with_per_mn_compensation = bgmmc.with_int8_grouped_quantization
             && (bgmmc.has_zero_point_a || bgmmc.has_zero_point_b

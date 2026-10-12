@@ -2834,6 +2834,7 @@ struct jit_brgemm_matmul_copy_b_int8_t
         , is_dynamic_stride_(is_runtime_value(src_stride_))
         , is_dynamic_N_(conf->is_runtime_N)
         , is_src_int4_(one_of(conf->orig_wei_dt, data_type::s4, data_type::u4))
+        , fold_wei_zp_(conf->wei_zp_folded_in_buffer_b)
         , has_vpermb_(cpu().has(Xbyak::util::Cpu::tAVX512_VBMI))
         , comp_acc_idx_(is_ymm_ && is_src_int4_      ? 11
                           : is_src_int4_             ? 23
@@ -2865,6 +2866,11 @@ protected:
     const bool is_dynamic_stride_;
     const bool is_dynamic_N_;
     const bool is_src_int4_;
+    // Subtract the (per-N, per-K-group) int4 weights zero-point from every
+    // loaded weights row: buffer_B = wei - zp. Exact for int4, the difference
+    // fits int8. Only implemented by the AMX kernel below; it needs the vmm and
+    // the GPR that compensation would otherwise use, so it is exclusive with it.
+    const bool fold_wei_zp_;
     const bool has_vpermb_;
     const int comp_acc_idx_;
     const dim_t src_elems_per_byte_;
@@ -2878,6 +2884,7 @@ protected:
     reg64_t reg_tr_src = rbx;
     reg64_t reg_comp_ptr = rdx;
     reg64_t reg_zp_comp_ptr = r11;
+    reg64_t reg_wei_zp_ptr = r11; // shares r11 with reg_zp_comp_ptr (exclusive)
     reg64_t reg_zp_a_neg_val_ptr = r12;
 
     reg64_t reg_K_iters = r8;
@@ -2905,6 +2912,7 @@ protected:
 
     // Shared
     Vmm vmm_comp_mul = Vmm(is_ymm_ ? 14 : 30);
+    Vmm vmm_wei_zp = vmm_comp_mul; // wei zero-points as bytes (fold_wei_zp_)
     Vmm vmm_zero = Vmm(is_ymm_ ? 15 : 31);
     // Only used for decompressing int4 values
     Vmm vmm_tmp = Vmm(is_ymm_ ? 13 : 25);
@@ -3136,6 +3144,9 @@ inline void jit_brgemm_matmul_copy_b_int8_t<Zmm>::load(
     } else {
         vmovdqu8(src_load, addr);
     }
+    // Wraps mod 256, which is exact: wei - zp is in [-15, 15] for int4. The
+    // zp lanes of a masked (tail) load are zero, so padding stays zero.
+    if (fold_wei_zp_) vpsubb(vmm_src, vmm_src, vmm_wei_zp);
     if (is_dynamic_stride_) add(reg_src, reg_src_stride);
 }
 
@@ -3294,6 +3305,17 @@ private:
         const auto tail_mask = size_t(((size_t)1 << tail_size) - 1);
 
         if (is_tail) kmovq(kTail, tail_mask);
+
+        // zp of the same 64 columns as the weights rows below. The host calls
+        // this kernel once per K-group, so it is constant over all rows here.
+        // The packed int4 zp is shifted like the packed int4 weights are.
+        if (fold_wei_zp_) {
+            const auto zp_addr = do_N_loop_
+                    ? ptr[reg_wei_zp_ptr + reg_copy_block_n_shift]
+                    : ptr[reg_wei_zp_ptr];
+            vmovdqu8(maybe_mask(Ymm(vmm_wei_zp.getIdx()), is_tail), zp_addr);
+            cvt_int4_to_int8(vmm_wei_zp);
+        }
 
         const int max_unroll = (do_compute_compensation_ ? 21 : 25) / blk_sz_;
 
@@ -3668,6 +3690,10 @@ void jit_brgemm_matmul_copy_b_int8_t<Vmm>::generate() {
     mov(reg_N_blk, ptr[param1 + GET_OFF(current_N_blk)]);
     if (is_dynamic_stride_) {
         mov(reg_src_stride, ptr[param1 + GET_OFF(dynamic_src_stride)]);
+    }
+    if (fold_wei_zp_) {
+        assert(!do_compute_compensation_ && is_src_int4_ && !is_ymm_);
+        mov(reg_wei_zp_ptr, ptr[param1 + GET_OFF(zp_b_value_ptr)]);
     }
 
     init_permute();
