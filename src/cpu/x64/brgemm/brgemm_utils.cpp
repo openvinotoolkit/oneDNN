@@ -291,7 +291,15 @@ int calculate_max_bcast_block(brgemm_desc_t *brg, const int adj_ld_block2) {
             && !brg->with_src_dyn_quant)
         microkernel_max_reg_count -= 1;
     if (brg->with_src_dyn_quant) microkernel_max_reg_count -= 1;
-    if (brg->dt_b == data_type::u3) microkernel_max_reg_count -= 2;
+    if (brg->dt_b == data_type::u3) {
+        const int non_dyn_quant_extra = brg->isa_impl == avx2 ? 1 : 3;
+        microkernel_max_reg_count -= brg->with_src_dyn_quant
+                ? (is_superset(brg->isa_impl, avx512_core)
+                                ? 3 * adj_ld_block2 + 1
+                                : 2)
+                : adj_ld_block2 + non_dyn_quant_extra
+                        + (brg->is_u3_zp_fold() ? 1 : 0);
+    }
 
     auto microkernel_max_bcast_block
             = microkernel_max_reg_count / (adj_ld_block2 + brg->n_bcast_1_load);
@@ -949,9 +957,9 @@ status_t brgemm_blocking_vmm(brgemm_desc_t *brg) {
             = (brg->is_f16 && brg->isa_impl == avx512_core_fp16)
             ? 1
             : data_type_vnni_granularity(brg->dt_a);
-    int rd_unroll = one_of(brg->dt_b, data_type::u2, data_type::u3) ? 64
+    int rd_unroll = brg->dt_b == data_type::u2 ? 64
             : one_of(brg->dt_b, data_type::nf4, data_type::u4, data_type::s4,
-                      data_type::f4_e2m1)
+                      data_type::f4_e2m1, data_type::u3)
             ? 32
             : 4;
     if (brg->with_grouped_wei_decomp && !brg->with_src_dyn_quant) {

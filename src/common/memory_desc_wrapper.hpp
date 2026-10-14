@@ -378,6 +378,11 @@ struct memory_desc_wrapper : public c_compatible {
                 const size_t alignment_in_bytes = 4;
                 data_size = utils::rnd_up(data_size, alignment_in_bytes);
             }
+            if (data_type() == data_type::u3 && bd.inner_nblks > 0) {
+                // Vpermb handles 64 bytes, where only 48 bytes are valid.
+                // Pack extra 8 bytes to ensure boundry safety.
+                data_size += 64;
+            }
             return data_size
                     + (include_additional_size ? additional_buffer_size() : 0)
                     + (include_offset0 ? data_type_size() * offset0() : 0);

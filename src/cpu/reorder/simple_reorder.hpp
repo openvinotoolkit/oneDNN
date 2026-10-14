@@ -2497,26 +2497,27 @@ void repack_block(const memory_desc_wrapper &output_d, uint8_t *dst,
     for (int oc_local = 0; oc_local < oc_block; oc_local++) {
         for (int ic_local = 0; ic_local < ic_block; ic_local++) {
             const uint8_t val = get_val(oc_local, ic_local);
-            size_t byte0, plane_stride;
-            int bit_pos;
             if (dyn_quant) {
                 const size_t group = (size_t)(ic_local / 32) * (blksize_o / 8)
                         + oc_local / 8;
-                byte0 = group * 96 + (oc_local % 8) * 4 + ic_local % 4;
-                plane_stride = 32;
-                bit_pos = 7 - (ic_local % 32) / 4;
+                const size_t lane = (oc_local % 8) * 4 + ic_local % 4;
+                const size_t byte0 = group * 96 + lane;
+                const int idx = (ic_local % 32) / 4;
+                const uint32_t bits = (uint32_t)(val & 0x7u) << (3 * idx);
+                for (int r = 0; r < 3; r++)
+                    dst[byte0 + r * 32] |= static_cast<uint8_t>(bits >> (8 * r));
             } else {
                 const int n_lanes = blk.inner_blks[0] == 16 ? 16 : 8;
                 const size_t group = (size_t)(ic_local / 8)
                                 * (blksize_o / n_lanes)
                         + oc_local / n_lanes;
-                byte0 = group * 3 * n_lanes + oc_local % n_lanes;
-                plane_stride = n_lanes;
-                bit_pos = 7 - ic_local % 8;
+                const size_t byte0 = group * 3 * n_lanes + oc_local % n_lanes;
+                const uint32_t bits = (uint32_t)(val & 0x7u)
+                        << (3 * (ic_local % 8));
+                for (int r = 0; r < 3; r++)
+                    dst[byte0 + r * n_lanes]
+                            |= static_cast<uint8_t>(bits >> (8 * r));
             }
-            for (int r = 0; r < 3; r++)
-                dst[byte0 + r * plane_stride]
-                        |= static_cast<uint8_t>(((val >> r) & 1u) << bit_pos);
         }
     }
 }
