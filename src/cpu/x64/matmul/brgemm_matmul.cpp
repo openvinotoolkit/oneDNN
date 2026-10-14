@@ -430,6 +430,12 @@ status_t brgemm_matmul_t<isa>::pd_t::init(engine_t *engine) {
                     ? bgmmc_.wei_k_blk
                     : bgmmc_.LDA;
 
+            // brgemm_desc_init() finalizes blocking internally, before the
+            // brgattr below is applied; pass LDB2 early so that N_blk > LDB
+            // (accepted only with LDB2 != 0) is not rejected there.
+            if (is_superset(kernel_isa, avx512_core_amx) && bgmmc_.LDB2 != 0)
+                brg.brgattr.LDB2 = bgmmc_.LDB2;
+
             CHECK(brgemm_desc_init(&brg, kernel_isa, bgmmc_.brg_type,
                     bgmmc_.src_dt, bgmmc_.wei_dt, false, false,
                     brgemm_row_major, alpha, vbeta, LDA, bgmmc_.LDB, bgmmc_.LDC,
