@@ -27,10 +27,8 @@ using convolution_test = convolution_eltwise_test_t<float, float, float, float>;
 TEST_P(convolution_test, TestConvolutionEltwise) {}
 
 #define EXPAND_FORMATS(src, weights, bias, dst) \
-    { \
-        dnnl::memory::format_tag::src, dnnl::memory::format_tag::weights, \
-                dnnl::memory::format_tag::bias, dnnl::memory::format_tag::dst \
-    }
+    {dnnl::memory::format_tag::src, dnnl::memory::format_tag::weights, \
+            dnnl::memory::format_tag::bias, dnnl::memory::format_tag::dst}
 
 #define CONCAT_WITH_UNDERSCORE_(a, b) a##_##b
 #define CONCAT_WITH_UNDERSCORE(a, b) CONCAT_WITH_UNDERSCORE_(a, b)

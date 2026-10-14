@@ -526,7 +526,7 @@ void jit_avx512_common_conv_fwd_kernel_vmm_t<Vmm>::compute_loop_fma_core(
 
 template <typename Vmm>
 void jit_avx512_common_conv_fwd_kernel_vmm_t<Vmm>::compute_loop(
-    int ur_w, dim_t pad_l, dim_t pad_r) {
+        int ur_w, dim_t pad_l, dim_t pad_r) {
     if (jcp.ndims == 5) {
         push(reg_oi);
         base_post_ops_data_offset += reg64_size;
@@ -1742,7 +1742,7 @@ void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<
 
 template <typename Vmm>
 inline void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<Vmm>::compute_loop(
-    int ur_w, dim_t l_overflow, dim_t r_overflow, int k_offset) {
+        int ur_w, dim_t l_overflow, dim_t r_overflow, int k_offset) {
     if (jcp.ndims == 5) {
         base_post_ops_data_offset += reg64_size;
         push(reg_oi);
@@ -1809,20 +1809,20 @@ void jit_avx512_common_conv_bwd_data_kernel_f32_vmm_t<Vmm>::generate() {
         }
     }
 
-        const dim_t iw = jcp.iw;
-        const dim_t kw = jcp.kw;
+    const dim_t iw = jcp.iw;
+    const dim_t kw = jcp.kw;
     int ur_w = jcp.ur_w;
-        const dim_t ic_block = jcp.ic_block;
-        const dim_t oc_block = jcp.oc_block;
-        const dim_t nb_iw = jcp.nb_iw;
-        const dim_t iw_block = jcp.iw_block;
+    const dim_t ic_block = jcp.ic_block;
+    const dim_t oc_block = jcp.oc_block;
+    const dim_t nb_iw = jcp.nb_iw;
+    const dim_t iw_block = jcp.iw_block;
     int ur_w_tail = jcp.ur_w_tail;
-        int dilate_w = static_cast<int>(jcp.dilate_w) + 1;
-        int stride_w = static_cast<int>(jcp.stride_w);
+    int dilate_w = static_cast<int>(jcp.dilate_w) + 1;
+    int stride_w = static_cast<int>(jcp.stride_w);
 
-        dim_t dst_shift = jcp.typesize_in * (ur_w / stride_w)
+    dim_t dst_shift = jcp.typesize_in * (ur_w / stride_w)
             * (is_ddst_layout_nxc() ? jcp.ngroups * jcp.oc : oc_block);
-        dim_t src_shift = jcp.typesize_out * ur_w
+    dim_t src_shift = jcp.typesize_out * ur_w
             * (is_dsrc_layout_nxc() ? jcp.ngroups * jcp.ic : ic_block);
 
     preamble();

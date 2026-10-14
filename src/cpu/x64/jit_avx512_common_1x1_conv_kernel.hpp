@@ -95,13 +95,13 @@ private:
     Xbyak::Zmm zmm_d_weights = Xbyak::Zmm(31);
     Xbyak::Zmm zmm_d_bias = Xbyak::Zmm(30);
 
-        void bcast_loop(dim_t load_loop_blk);
-        void reduce_loop(
-                        dim_t load_loop_blk, dim_t ur, dim_t substep, bool wraparound);
+    void bcast_loop(dim_t load_loop_blk);
+    void reduce_loop(
+            dim_t load_loop_blk, dim_t ur, dim_t substep, bool wraparound);
 
     inline size_t get_output_offset(const bool is_out_layout_nxc,
-                        const dim_t i_load, const dim_t i_ur, bool ignore_dw_conv = false) {
-                const dim_t i_load_shift = is_out_layout_nxc
+            const dim_t i_load, const dim_t i_ur, bool ignore_dw_conv = false) {
+        const dim_t i_load_shift = is_out_layout_nxc
                 ? jcp.load_block
                 : (!ignore_dw_conv && jcp.with_dw_conv ? jcp.ow : jcp.bcast_dim)
                         * jcp.load_block;

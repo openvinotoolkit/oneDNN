@@ -46,8 +46,7 @@
 #if BUILD_PRIMITIVE_ALL || BUILD_BINARY
 #define REG_BINARY_P(...) __VA_ARGS__
 #else
-#define REG_BINARY_P(...) \
-    { nullptr }
+#define REG_BINARY_P(...) {nullptr}
 #endif
 
 #if BUILD_PRIMITIVE_ALL || BUILD_CONCAT
@@ -96,8 +95,7 @@
 #if BUILD_PRIMITIVE_ALL || BUILD_GATED_MLP
 #define REG_GATED_MLP_P(...) __VA_ARGS__
 #else
-#define REG_GATED_MLP_P(...) \
-    { nullptr }
+#define REG_GATED_MLP_P(...) {nullptr}
 #endif
 
 #if BUILD_PRIMITIVE_ALL || BUILD_GROUP_NORMALIZATION
@@ -185,8 +183,7 @@
 #if BUILD_PRIMITIVE_ALL || BUILD_SHUFFLE
 #define REG_SHUFFLE_P(...) __VA_ARGS__
 #else
-#define REG_SHUFFLE_P(...) \
-    { nullptr }
+#define REG_SHUFFLE_P(...) {nullptr}
 #endif
 
 #if BUILD_PRIMITIVE_ALL || BUILD_SOFTMAX
@@ -199,8 +196,7 @@
 #if BUILD_PRIMITIVE_ALL || BUILD_SUM
 #define REG_SUM_P(...) __VA_ARGS__
 #else
-#define REG_SUM_P(...) \
-    { nullptr }
+#define REG_SUM_P(...) {nullptr}
 #endif
 
 // Primitive CPU ISA section is in src/cpu/platform.hpp

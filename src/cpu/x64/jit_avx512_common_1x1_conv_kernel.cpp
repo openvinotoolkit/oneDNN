@@ -135,7 +135,7 @@ void jit_avx512_common_1x1_conv_kernel_t::bcast_loop(dim_t load_loop_blk) {
 }
 
 Address jit_avx512_common_1x1_conv_kernel_t::output_ptr(
-    const bool is_out_layout_nxc, const dim_t i_load, const dim_t i_ur) {
+        const bool is_out_layout_nxc, const dim_t i_load, const dim_t i_ur) {
     if (one_of(jcp.prop_kind, forward_training, forward_inference,
                 backward_data)) {
         auto i_load_shift = is_out_layout_nxc
@@ -172,8 +172,8 @@ static void iterate(const dim_t load_loop_blk, const dim_t ur, const F &fun) {
 }
 
 void jit_avx512_common_1x1_conv_kernel_t::apply_postops(
-    const bool is_out_layout_nxc, const dim_t load_loop_blk,
-    const dim_t ur) {
+        const bool is_out_layout_nxc, const dim_t load_loop_blk,
+        const dim_t ur) {
     std::map<size_t, int> vmm_idx_off;
     iterate(load_loop_blk, ur,
             [&](const bool, const dim_t i_load, const dim_t i_ur) {
@@ -218,7 +218,7 @@ void jit_avx512_common_1x1_conv_kernel_t::apply_postops(
         }
     } else {
         iterate(load_loop_blk, ur,
-            [&](const bool, const dim_t i_load, const dim_t i_ur) {
+                [&](const bool, const dim_t i_load, const dim_t i_ur) {
             vmm_idxs.emplace(vreg_accum_idx(load_loop_blk, i_load, i_ur));
         });
         postops_injector_->compute_vector_range(vmm_idxs,

@@ -148,19 +148,19 @@ private:
     Vmm vmm_d_weights;
     Vmm vmm_d_bias;
 
-        Vmm vmm_out(dim_t i_ur, dim_t i_oc) {
-                const dim_t idx = i_ur * jcp.nb_oc_blocking + i_oc;
+    Vmm vmm_out(dim_t i_ur, dim_t i_oc) {
+        const dim_t idx = i_ur * jcp.nb_oc_blocking + i_oc;
         assert(idx < 31);
-                return Vmm(static_cast<int>(idx));
+        return Vmm(static_cast<int>(idx));
     }
-        Vmm vmm_inp(dim_t i_ic, dim_t nb_x_blocking) const {
-                const dim_t idx = i_ic + nb_x_blocking * jcp.ur_w;
+    Vmm vmm_inp(dim_t i_ic, dim_t nb_x_blocking) const {
+        const dim_t idx = i_ic + nb_x_blocking * jcp.ur_w;
         assert(idx < 31);
-                return Vmm(static_cast<int>(idx));
+        return Vmm(static_cast<int>(idx));
     }
 
-        dim_t get_ow_start(dim_t ki, dim_t l_overflow) {
-                dim_t res = (jcp.ow - 1 + jcp.r_pad) % jcp.stride_w
+    dim_t get_ow_start(dim_t ki, dim_t l_overflow) {
+        dim_t res = (jcp.ow - 1 + jcp.r_pad) % jcp.stride_w
                 + l_overflow * jcp.stride_w
                 - (jcp.kw - 1 - ki) * (jcp.dilate_w + 1);
         while (res < 0)

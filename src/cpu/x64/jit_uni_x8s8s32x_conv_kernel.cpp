@@ -65,14 +65,13 @@ jit_uni_x8s8s32x_fwd_kernel_vmm_t<isa, Vmm>::jit_uni_x8s8s32x_fwd_kernel_vmm_t(
         static constexpr bool preserve_vmm = true;
         static constexpr int helper_vmm_idx = 2;
         const int block_tail = static_cast<int>(
-            (jcp.is_depthwise ? jcp.ch_block : jcp.oc_block)
-            % isa_simd_width_);
+                (jcp.is_depthwise ? jcp.ch_block : jcp.oc_block)
+                % isa_simd_width_);
         const int tail_size = block_tail
                 ? block_tail
-            : static_cast<int>(
-                (jcp.is_depthwise ? jcp.ngroups
-                          : jcp.oc_without_padding)
-                % isa_simd_width_);
+                : static_cast<int>((jcp.is_depthwise ? jcp.ngroups
+                                                     : jcp.oc_without_padding)
+                          % isa_simd_width_);
 
         const rhs_arg_static_params_t rhs_arg_static_params {helper_vmm_idx,
                 r13, r14, r15, preserve_gpr, preserve_vmm,
@@ -253,7 +252,7 @@ void jit_uni_x8s8s32x_fwd_kernel_vmm_t<isa, Vmm>::store_output(
     const int nb_oc_block
             = jcp.is_depthwise ? jcp.nb_ch_blocking : jcp.nb_oc_blocking;
     const int oc_block
-        = static_cast<int>(jcp.is_depthwise ? jcp.ch_block : jcp.oc_block);
+            = static_cast<int>(jcp.is_depthwise ? jcp.ch_block : jcp.oc_block);
 
     mov(reg_bias, ptr[param1 + GET_OFF(bias)]);
     if (jcp.signed_input || jcp.with_input_zp)
@@ -563,18 +562,18 @@ void jit_uni_x8s8s32x_fwd_kernel_vmm_t<isa, Vmm>::compute_ker_dw(int ur_w,
                     for (int oi = 0; oi < ur_w; ++oi)
                         compute(vmm_out(oi, ci), vmm_wei, vmm_shift);
                 } else {
-                        const dim_t start = (jcp.signed_input || jcp.with_input_zp)
+                    const dim_t start = (jcp.signed_input || jcp.with_input_zp)
                             ? 0
                             : oi_start;
-                        const dim_t end = (jcp.signed_input || jcp.with_input_zp)
+                    const dim_t end = (jcp.signed_input || jcp.with_input_zp)
                             ? ur_w
                             : oi_end;
-                        for (dim_t oi = start; oi < end; ++oi) {
+                    for (dim_t oi = start; oi < end; ++oi) {
                         if (oi >= oi_start && oi < oi_end) {
                             if (jcp.is_resrc_depthwise) {
                                 const dim_t ii = input_spatial_index(oi, ki);
                                 vmm_dw_src = vmm_inp(static_cast<int>(ii),
-                                    jcp.nb_ch_blocking);
+                                        jcp.nb_ch_blocking);
                             } else {
                                 const dim_t aux_input_offset
                                         = input_offset3(oi, ci, ki);
@@ -587,11 +586,11 @@ void jit_uni_x8s8s32x_fwd_kernel_vmm_t<isa, Vmm>::compute_ker_dw(int ur_w,
                                     uni_vpaddb(
                                             vmm_dw_src, vmm_dw_src, vmm_shift);
                             }
-                                compute(vmm_out(static_cast<int>(oi), ci), vmm_wei,
+                            compute(vmm_out(static_cast<int>(oi), ci), vmm_wei,
                                     vmm_dw_src);
                         } else {
                             assert(jcp.signed_input || jcp.with_input_zp);
-                                compute(vmm_out(static_cast<int>(oi), ci), vmm_wei,
+                            compute(vmm_out(static_cast<int>(oi), ci), vmm_wei,
                                     vmm_shift);
                         }
                     }
@@ -624,19 +623,19 @@ void jit_uni_x8s8s32x_fwd_kernel_vmm_t<isa, Vmm>::compute_ker_dw(int ur_w,
 
 template <cpu_isa_t isa, typename Vmm>
 void jit_uni_x8s8s32x_fwd_kernel_vmm_t<isa, Vmm>::compute_ker(int ur_w,
-    dim_t pad_l, dim_t pad_r, ic_block_t last_ic_block_flag,
-    bool h_padded) {
+        dim_t pad_l, dim_t pad_r, ic_block_t last_ic_block_flag,
+        bool h_padded) {
     if (jcp.is_depthwise)
         return compute_ker_dw(ur_w, pad_l, pad_r, last_ic_block_flag, h_padded);
 
-        const dim_t kw = jcp.kw;
-        const dim_t stride_w = jcp.stride_w;
-        const int ic_block = static_cast<int>(jcp.ic_block);
-        const int oc_block = static_cast<int>(jcp.oc_block);
-        const int ch_block_all
+    const dim_t kw = jcp.kw;
+    const dim_t stride_w = jcp.stride_w;
+    const int ic_block = static_cast<int>(jcp.ic_block);
+    const int oc_block = static_cast<int>(jcp.oc_block);
+    const int ch_block_all
             = static_cast<int>(jcp.ch_block * ic_block * oc_block);
 
-        const int nb_oc_block = jcp.nb_oc_blocking;
+    const int nb_oc_block = jcp.nb_oc_blocking;
 
     const bool compute_kernel
             = IMPLICATION(h_padded, jcp.signed_input || jcp.with_input_zp);
@@ -687,9 +686,9 @@ void jit_uni_x8s8s32x_fwd_kernel_vmm_t<isa, Vmm>::compute_ker(int ur_w,
         /* Skip the last loads of input
             if (ic % 8) / ic_sub_step < ic_block / ic_sub_step */
         const int icb = static_cast<int>((last_ic_block_flag != no_last_block)
-                ? div_up((jcp.ic_without_padding % ic_block),
-                      ic_sub_step)
-                : ic_block / ic_sub_step);
+                        ? div_up((jcp.ic_without_padding % ic_block),
+                                  ic_sub_step)
+                        : ic_block / ic_sub_step);
 
         if (compute_kernel) {
             for (int ic = 0; ic < icb; ++ic) {
@@ -720,8 +719,8 @@ void jit_uni_x8s8s32x_fwd_kernel_vmm_t<isa, Vmm>::compute_ker(int ur_w,
                                 load_bytes(inp_bcastd_vmm, aux_reg_inp,
                                         aux_input_offset, ic_tail_size);
                                 uni_vpbroadcastd(vmm_inp(static_cast<int>(jj),
-                                             nb_oc_block),
-                                    inp_bcastd);
+                                                         nb_oc_block),
+                                        inp_bcastd);
                             } else {
                                 uni_vpbroadcastd(vmm_inp(static_cast<int>(jj),
                                                          nb_oc_block),
@@ -1041,19 +1040,19 @@ template <cpu_isa_t isa, typename Vmm>
 void jit_uni_x8s8s32x_fwd_kernel_vmm_t<isa, Vmm>::generate() {
     Label permute_index_table;
     int in_ic_shift = static_cast<int>(jcp.is_fused_conv
-            ? jcp.dw_conv_buffer_oc
-            : jcp.ic_without_padding * jcp.ngroups);
+                    ? jcp.dw_conv_buffer_oc
+                    : jcp.ic_without_padding * jcp.ngroups);
     const int urw_inp_stride = static_cast<int>(jcp.ur_w * jcp.stride_w);
     const int n_urw_l_pad = static_cast<int>(nstl::min<dim_t>(
-        div_up(nstl::max<dim_t>(0, jcp.l_pad), urw_inp_stride),
-        jcp.ow / jcp.ur_w));
+            div_up(nstl::max<dim_t>(0, jcp.l_pad), urw_inp_stride),
+            jcp.ow / jcp.ur_w));
     const int inp_shift_pad = static_cast<int>(nstl::max<dim_t>(0,
             jcp.typesize_in * (n_urw_l_pad * urw_inp_stride - jcp.l_pad)
-            * in_ic_shift));
+                    * in_ic_shift));
     int inp_shift = static_cast<int>(
-        jcp.typesize_in * (jcp.ur_w * jcp.stride_w * in_ic_shift));
+            jcp.typesize_in * (jcp.ur_w * jcp.stride_w * in_ic_shift));
     int out_shift = static_cast<int>(jcp.typesize_out
-        * (jcp.ur_w * jcp.oc_without_padding * jcp.ngroups));
+            * (jcp.ur_w * jcp.oc_without_padding * jcp.ngroups));
     preamble();
 
     if (postops_injector_)
@@ -1671,11 +1670,11 @@ status_t jit_uni_x8s8s32x_fwd_kernel_t<isa>::init_conf(jit_conv_conf_t &jcp,
             &dst_d, false, false, false));
     VDISPATCH_CONV_IC(post_ops_ok_, VERBOSE_UNSUPPORTED_POSTOP);
 
-        jcp.typesize_in
+    jcp.typesize_in
             = static_cast<int>(types::data_type_size(src_d.data_type()));
-        jcp.typesize_out
+    jcp.typesize_out
             = static_cast<int>(types::data_type_size(dst_d.data_type()));
-        jcp.typesize_bia = jcp.with_bias
+    jcp.typesize_bia = jcp.with_bias
             ? static_cast<int>(types::data_type_size(bias_d.data_type()))
             : 0;
 

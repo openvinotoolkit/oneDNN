@@ -788,8 +788,8 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_3d_dw(
     int group_block = jcp.ch_block;
 
     parallel_nd(jcp.mb, jcp.od, jcp.oh, jcp.nb_ow, nb_groups,
-        [&](dim_t n_dim, dim_t od_s_dim, dim_t oh_s_dim, dim_t owb_dim,
-            dim_t gg_dim) {
+            [&](dim_t n_dim, dim_t od_s_dim, dim_t oh_s_dim, dim_t owb_dim,
+                    dim_t gg_dim) {
         const int n = static_cast<int>(n_dim);
         const int od_s = static_cast<int>(od_s_dim);
         const int oh_s = static_cast<int>(oh_s_dim);
@@ -841,11 +841,10 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_3d_dw(
                 jcp.kd, div_up(max<dim_t>(0, -id_s), dilate_d));
         dim_t i_back_overflow = nstl::min<dim_t>(jcp.kd,
                 div_up(max<dim_t>(
-                               0, id_s - jcp.id
-                                       + (jcp.kd - 1) * dilate_d + 1),
+                               0, id_s - jcp.id + (jcp.kd - 1) * dilate_d + 1),
                         dilate_d));
-        dim_t kd_padding = nstl::max<dim_t>(
-                0, jcp.kd - i_f_overflow - i_back_overflow);
+        dim_t kd_padding
+                = nstl::max<dim_t>(0, jcp.kd - i_f_overflow - i_back_overflow);
 
         size_t wei_d_stride = (jcp.signed_input || jcp.with_input_zp)
                 ? 0
@@ -856,11 +855,10 @@ status_t jit_avx512_core_x8s8s32x_convolution_fwd_t::execute_forward_3d_dw(
                 jcp.kh, div_up(max<dim_t>(0, -ih_s), dilate_h));
         dim_t i_b_overflow = nstl::min<dim_t>(jcp.kh,
                 div_up(max<dim_t>(
-                               0, ih_s - jcp.ih
-                                       + (jcp.kh - 1) * dilate_h + 1),
+                               0, ih_s - jcp.ih + (jcp.kh - 1) * dilate_h + 1),
                         dilate_h));
-        dim_t kh_padding = nstl::max<dim_t>(
-                0, jcp.kh - i_t_overflow - i_b_overflow);
+        dim_t kh_padding
+                = nstl::max<dim_t>(0, jcp.kh - i_t_overflow - i_b_overflow);
 
         size_t wei_h_stride = (jcp.signed_input || jcp.with_input_zp)
                 ? 0

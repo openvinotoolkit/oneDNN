@@ -556,7 +556,8 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::solve_common(int ur_h) {
         }
     };
 
-    int left_border_end = static_cast<int>(nstl::min(div_up(jcp.l_pad, jcp.stride_w), jcp.ow));
+    int left_border_end = static_cast<int>(
+            nstl::min(div_up(jcp.l_pad, jcp.stride_w), jcp.ow));
     L(left_border_label);
     {
         cmp(reg_ow, left_border_end);
@@ -575,8 +576,8 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::solve_common(int ur_h) {
         jmp(left_border_label, T_NEAR);
     }
 
-    int main_loop_end
-            = static_cast<int>((jcp.iw - (jcp.kw - 1) * (jcp.dilate_w + 1) + jcp.l_pad - 1)
+    int main_loop_end = static_cast<int>(
+            (jcp.iw - (jcp.kw - 1) * (jcp.dilate_w + 1) + jcp.l_pad - 1)
                     / jcp.stride_w
             + 1);
     L(main_loop_unrolled_label);
@@ -588,7 +589,8 @@ void jit_uni_planar_conv_fwd_kernel_f32<isa>::solve_common(int ur_h) {
         mov(aux_reg_kernel_h, reg_kernel);
         mov(reg_kw, jcp.kw);
 
-        solve_loop(jcp.nb_ow_blocking, jcp.nb_ow_blocking * static_cast<int>(jcp.ow_block));
+        solve_loop(jcp.nb_ow_blocking,
+                jcp.nb_ow_blocking * static_cast<int>(jcp.ow_block));
 
         add(reg_ow, jcp.nb_ow_blocking * jcp.ow_block);
         jmp(main_loop_unrolled_label, T_NEAR);

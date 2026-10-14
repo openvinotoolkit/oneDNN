@@ -35,9 +35,9 @@ struct jit_uni_x8s8s32x_1x1_conv_kernel_vmm_t : public jit_generator_t {
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_uni_x8s8s32x_1x1_conv_kernel_vmm_t)
     jit_uni_x8s8s32x_1x1_conv_kernel_vmm_t(const jit_1x1_conv_conf_t &ajcp,
             const primitive_attr_t &attr, const memory_desc_t &dst_md);
-        int get_tail_size() {
-                return static_cast<int>(jcp.oc_without_padding % jcp.oc_block);
-        }
+    int get_tail_size() {
+        return static_cast<int>(jcp.oc_without_padding % jcp.oc_block);
+    }
 
     jit_1x1_conv_conf_t jcp;
     const primitive_attr_t &attr_;

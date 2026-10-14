@@ -571,7 +571,8 @@ void jit_uni_dw_conv_row_f32<isa>::loop_body(int oc_step) {
         L(right_pad_label);
         {
             int ur_w = 1;
-            int kw = static_cast<int>(jcp.kw - ((jcp.stride_w == 1) ? 1 : jcp.iw % jcp.stride_w));
+            int kw = static_cast<int>(
+                    jcp.kw - ((jcp.stride_w == 1) ? 1 : jcp.iw % jcp.stride_w));
 
             mov(aux_reg_input0, reg_input0);
             mov(aux_reg_input1, reg_input1);

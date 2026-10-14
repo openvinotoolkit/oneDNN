@@ -28,10 +28,8 @@ using convolution_test_s8s8s32f32
         = convolution_eltwise_test_t<int8_t, int8_t, int32_t, float>;
 
 #define EXPAND_FORMATS(src, weights, bias, dst) \
-    { \
-        dnnl::memory::format_tag::src, dnnl::memory::format_tag::weights, \
-                dnnl::memory::format_tag::bias, dnnl::memory::format_tag::dst \
-    }
+    {dnnl::memory::format_tag::src, dnnl::memory::format_tag::weights, \
+            dnnl::memory::format_tag::bias, dnnl::memory::format_tag::dst}
 
 #define CONCAT_WITH_UNDERSCORE_(a, b) a##_##b
 #define CONCAT_WITH_UNDERSCORE(a, b) CONCAT_WITH_UNDERSCORE_(a, b)

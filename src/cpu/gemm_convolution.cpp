@@ -530,7 +530,7 @@ status_t gemm_convolution_bwd_data_t::execute_backward_data_ncsp(
     const dim_t K = jcp.oc;
     const dim_t N = jcp.ic * jcp.ks;
 
-        const dim_t work_amount = jcp.ngroups * jcp.mb;
+    const dim_t work_amount = jcp.ngroups * jcp.mb;
     const bool is_problem_3d = pd()->ndims() == 5;
 
     const auto &p = pd()->attr()->post_ops_;
@@ -792,7 +792,7 @@ status_t gemm_convolution_bwd_weights_t::execute_backward_weights_nspc(
 #if !defined(_MSC_VER)
                 PRAGMA_OMP_SIMD(reduction(+ : db))
 #endif
-                                for (dim_t ow = 0; ow < jcp.ow; ++ow) {
+                for (dim_t ow = 0; ow < jcp.ow; ++ow) {
                     db += diff_dst_arr[ow * width_stride];
                 }
             }

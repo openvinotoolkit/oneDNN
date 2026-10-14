@@ -146,8 +146,10 @@ struct simple_sparse_reorder_v0_impl<SIMPLE_SPARSE_REORDER_V0_TEMPL_CALL,
         const int NB_OC = static_cast<int>(padded_dims[0] / o_blksize);
         const int IC = static_cast<int>(input_dims[1]);
         const int NB_IC = static_cast<int>(padded_dims[1] / i_blksize);
-        const int plain_o_stride = static_cast<int>(input_d.blocking_desc().strides[0]);
-        const int plain_i_stride = static_cast<int>(input_d.blocking_desc().strides[1]);
+        const int plain_o_stride
+                = static_cast<int>(input_d.blocking_desc().strides[0]);
+        const int plain_i_stride
+                = static_cast<int>(input_d.blocking_desc().strides[1]);
         size_t offset = padded_dims[0] * padded_dims[1];
 
         int total_blocks = offset / 4096;
@@ -158,7 +160,8 @@ struct simple_sparse_reorder_v0_impl<SIMPLE_SPARSE_REORDER_V0_TEMPL_CALL,
         int cl_length = 0;
         // Wasting memory space due to allocation a buffer for the whole tensor?
         int output_offset
-                = static_cast<int>(ceil(static_cast<float>(total_blocks) * sizeof(comp_tile_len_type) / 64.0))
+                = static_cast<int>(ceil(static_cast<float>(total_blocks)
+                          * sizeof(comp_tile_len_type) / 64.0))
                 * 64;
         uint64_t *bitmask_ptr
                 = reinterpret_cast<uint64_t *>(output + output_offset + offset);
@@ -189,7 +192,8 @@ struct simple_sparse_reorder_v0_impl<SIMPLE_SPARSE_REORDER_V0_TEMPL_CALL,
                                 + ic_base * plain_i_stride;
                         int ic_block_here = nstl::min(4, ic_block - ic_base);
                         for (int ic = 0; ic < ic_block_here; ic++) { // 4
-                            data_t<type_o> o = static_cast<data_t<type_o>>(inp[plain_off]);
+                            data_t<type_o> o = static_cast<data_t<type_o>>(
+                                    inp[plain_off]);
                             if (o != 0) {
                                 *outp++ = o;
                                 bitmask_ptr[bitmask_idx]

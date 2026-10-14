@@ -57,7 +57,8 @@ void _jit_uni_planar_convolution_fwd_t<isa>::execute_forward(
 
     int idx = 0;
     for (int i = 0; i < (jcp.dilate_h + 1); i++) {
-        for (int ib = 0; ib < jcp.oh; ib += static_cast<int>(jcp.dilate_h + 1)) {
+        for (int ib = 0; ib < jcp.oh;
+                ib += static_cast<int>(jcp.dilate_h + 1)) {
             if (ib + i >= jcp.oh) continue;
 
             oh_indexes[idx++] = ib + i;
@@ -75,32 +76,34 @@ void _jit_uni_planar_convolution_fwd_t<isa>::execute_forward(
 
         const dim_t dj = od * jcp.stride_d;
         const dim_t d_t_overflow = nstl::max<dim_t>(0, jcp.f_pad - dj);
-        const dim_t d_b_overflow = nstl::max<dim_t>(jcp.id,
-                                         dj + (jcp.kd - 1) * (jcp.dilate_d + 1)
-                                                 - jcp.f_pad + 1)
+        const dim_t d_b_overflow
+                = nstl::max<dim_t>(jcp.id,
+                          dj + (jcp.kd - 1) * (jcp.dilate_d + 1) - jcp.f_pad
+                                  + 1)
                 - jcp.id;
         const dim_t id = nstl::max<dim_t>(dj - jcp.f_pad
                         + div_up(d_t_overflow, (jcp.dilate_d + 1))
                                 * (jcp.dilate_d + 1),
                 0);
         const dim_t wd = div_up(d_t_overflow, (jcp.dilate_d + 1));
-        const dim_t kd_padding
-            = jcp.kd - div_up(d_t_overflow, (jcp.dilate_d + 1))
+        const dim_t kd_padding = jcp.kd
+                - div_up(d_t_overflow, (jcp.dilate_d + 1))
                 - div_up(d_b_overflow, (jcp.dilate_d + 1));
 
         const dim_t hj = oh * jcp.stride_h;
         const dim_t i_t_overflow = nstl::max<dim_t>(0, jcp.t_pad - hj);
-        const dim_t i_b_overflow = nstl::max<dim_t>(jcp.ih,
-                                         hj + (jcp.kh - 1) * (jcp.dilate_h + 1)
-                                                 - jcp.t_pad + 1)
+        const dim_t i_b_overflow
+                = nstl::max<dim_t>(jcp.ih,
+                          hj + (jcp.kh - 1) * (jcp.dilate_h + 1) - jcp.t_pad
+                                  + 1)
                 - jcp.ih;
         const dim_t ih = nstl::max<dim_t>(hj - jcp.t_pad
                         + div_up(i_t_overflow, (jcp.dilate_h + 1))
                                 * (jcp.dilate_h + 1),
                 0);
         const dim_t wh = div_up(i_t_overflow, (jcp.dilate_h + 1));
-        const dim_t kh_padding
-            = jcp.kh - div_up(i_t_overflow, (jcp.dilate_h + 1))
+        const dim_t kh_padding = jcp.kh
+                - div_up(i_t_overflow, (jcp.dilate_h + 1))
                 - div_up(i_b_overflow, (jcp.dilate_h + 1));
 
         const size_t _oc = oc;

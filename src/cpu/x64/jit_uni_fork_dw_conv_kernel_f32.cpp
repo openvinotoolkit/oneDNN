@@ -77,7 +77,8 @@ void jit_uni_fork_dw_conv_fwd_kernel_f32<isa>::load_src(
                     uni_vpxor(vmm_acc, vmm_acc, vmm_acc);
                 }
 
-                int o_off = static_cast<int>(ch * ocb_stride + ow * ow_stride + i * vlen_numbers);
+                int o_off = static_cast<int>(
+                        ch * ocb_stride + ow * ow_stride + i * vlen_numbers);
                 if (this->jcp.with_sum) {
                     if (is_tail_load) {
                         if (this->jcp.with_bias) {
@@ -169,7 +170,8 @@ void jit_uni_fork_dw_conv_fwd_kernel_f32<isa>::apply_filter(
                     if ((ch + 1 == ur_ch_blocks) && is_ch_tail
                             && c_tail <= i * vlen_numbers)
                         continue;
-                    int ker_off = static_cast<int>(ch * jcp.kd * jcp.kh * jcp.kw * ch_blk
+                    int ker_off = static_cast<int>(
+                            ch * jcp.kd * jcp.kh * jcp.kw * ch_blk
                             + i * vlen_numbers);
                     Vmm vmm_ker = get_ker_reg(0);
                     uni_vmovups(vmm_ker,
@@ -290,8 +292,9 @@ void jit_uni_fork_dw_conv_fwd_kernel_f32<isa>::apply_filter_unrolled(
                         && c_tail <= i * vlen_numbers)
                     continue;
                 for (int kw = 0; kw < jcp.kw; kw++) {
-                    int ker_off = static_cast<int>(ch * jcp.kd * jcp.kh * jcp.kw * ch_blk
-                            + kw * ch_blk + i * vlen_numbers);
+                    int ker_off = static_cast<int>(
+                            ch * jcp.kd * jcp.kh * jcp.kw * ch_blk + kw * ch_blk
+                            + i * vlen_numbers);
 
                     Vmm vmm_ker = get_ker_reg(0);
                     uni_vmovups(vmm_ker,
@@ -633,7 +636,8 @@ void jit_uni_fork_dw_conv_fwd_kernel_f32<isa>::store_dst(
                     && c_tail <= i * vlen_numbers)
                 continue;
             for (int ow = 0; ow < ur_w; ow++) {
-                int o_off = static_cast<int>(ch * ocb_stride + ow * ow_stride + i * vlen_numbers);
+                int o_off = static_cast<int>(
+                        ch * ocb_stride + ow * ow_stride + i * vlen_numbers);
                 Vmm vmm_dst
                         = get_acc_reg(i * ur_ch_blocks * ur_w + ch * ur_w + ow);
 

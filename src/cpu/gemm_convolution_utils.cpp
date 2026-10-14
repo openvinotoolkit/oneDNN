@@ -873,8 +873,8 @@ void im2col_dt(const conv_gemm_conf_t &jcp, const void *__restrict _im,
                             for (dim_t ow = 0; ow < ow_start; ++ow)
                                 col[col_idx_oh + ow] = shift;
                             for (dim_t ow = ow_start; ow < ow_end; ++ow)
-                                                                col[col_idx_oh + ow] = static_cast<col_dt>(
-                                                                                imtr[imtr_idx_oh + ow] + shift);
+                                col[col_idx_oh + ow] = static_cast<col_dt>(
+                                        imtr[imtr_idx_oh + ow] + shift);
                             for (dim_t ow = ow_end; ow < wb; ++ow)
                                 col[col_idx_oh + ow] = shift;
                         }

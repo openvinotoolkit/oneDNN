@@ -106,7 +106,8 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::apply_filter(
             for (int ch = 0; ch < ur_ch_blocks; ch++) {
                 const bool mask_flag
                         = last_ch_block_flag && ch == ur_ch_blocks - 1;
-                const auto ker_off = static_cast<int>(ch * jcp.kh * jcp.kw * ch_block);
+                const auto ker_off
+                        = static_cast<int>(ch * jcp.kh * jcp.kw * ch_block);
                 const Zmm zmm_ker_reg_msk = mask_flag
                         ? zmm_ker_reg | ktail_mask | T_z
                         : zmm_ker_reg;
@@ -117,7 +118,8 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::apply_filter(
                             ? zmm_src_reg | ktail_mask | T_z
                             : zmm_src_reg;
                     Zmm zmm_acc = get_acc_reg(ch * ur_w + ow);
-                    const auto inp_off = static_cast<int>(ch * icb_stride + ow * stride_w * iw_stride);
+                    const auto inp_off = static_cast<int>(
+                            ch * icb_stride + ow * stride_w * iw_stride);
                     /* zero-extend bf16 to packed 32-bit int */
                     vpmovzxwd(zmm_src_reg_msk,
                             ptr[aux1_reg_input + inp_off * jcp.typesize_in]);
@@ -172,7 +174,8 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::apply_filter_unrolled(
         for (int ch = 0; ch < ur_ch_blocks; ch++) {
             const bool mask_flag = last_ch_block_flag && ch == ur_ch_blocks - 1;
             for (int kw = 0; kw < jcp.kw; kw++) {
-                const auto ker_off = static_cast<int>(ch * jcp.kh * jcp.kw * ch_blk + kw * ch_blk);
+                const auto ker_off = static_cast<int>(
+                        ch * jcp.kh * jcp.kw * ch_blk + kw * ch_blk);
                 const Zmm zmm_ker_reg_msk = mask_flag
                         ? zmm_ker_reg | ktail_mask | T_z
                         : zmm_ker_reg;
@@ -184,7 +187,8 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::apply_filter_unrolled(
                             ? zmm_src_reg | ktail_mask | T_z
                             : zmm_src_reg;
                     Zmm zmm_acc = get_acc_reg(ch * ur_w + ow);
-                    const auto inp_off = static_cast<int>(ch * icb_stride + ow * stride_w * iw_stride
+                    const auto inp_off = static_cast<int>(ch * icb_stride
+                            + ow * stride_w * iw_stride
                             + kw * dilate_w * iw_stride);
                     /* zero-extend bf16 to packed 32-bit int */
                     vpmovzxwd(zmm_src_reg_msk,
@@ -379,7 +383,8 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::store_dst(
             for (int ch = 0; ch < ur_ch_blocks; ch++) {
                 bool mask_flag = last_ch_block_flag && ch == ur_ch_blocks - 1;
                 for (int ow = 0; ow < ur_w; ow++) {
-                    const auto o_off = static_cast<int>(ch * ocb_stride + ow * ow_stride);
+                    const auto o_off = static_cast<int>(
+                            ch * ocb_stride + ow * ow_stride);
                     Zmm zmm_dst = get_acc_reg(ch * ur_w + ow);
                     Zmm zmm_dst_msk
                             = mask_flag ? zmm_dst | ktail_mask : zmm_dst;
@@ -420,7 +425,8 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::store_dst(
                     bool mask_flag
                             = last_ch_block_flag && ch == ur_ch_blocks - 1;
                     for (int ow = 0; ow < ur_w; ow++) {
-                        const auto o_off = static_cast<int>(ch * ocb_stride + ow * ow_stride);
+                        const auto o_off = static_cast<int>(
+                                ch * ocb_stride + ow * ow_stride);
                         Zmm zmm_dst = get_acc_reg(ch * ur_w + ow);
 
                         /* down-convert f32 output to bf16 */
@@ -474,9 +480,10 @@ void jit_avx512_fork_dw_conv_fwd_kernel_bf16::compute_loop(
     if (ch_loop) {
         Label ch_loop_label, ch_tail_label, skip_ch_tail_label;
         const auto nb_ch = static_cast<int>(jcp.oc / jcp.ch_block);
-        const auto nb_ch_blocking_tail
-                = static_cast<int>(jcp.nb_ch - utils::rnd_dn(nb_ch, jcp.nb_ch_blocking));
-        const auto ch_step = static_cast<int>(jcp.nb_ch_blocking * jcp.ch_block);
+        const auto nb_ch_blocking_tail = static_cast<int>(
+                jcp.nb_ch - utils::rnd_dn(nb_ch, jcp.nb_ch_blocking));
+        const auto ch_step
+                = static_cast<int>(jcp.nb_ch_blocking * jcp.ch_block);
 
         push(aux_reg_ch_blocks);
         mov(aux_reg_ch_blocks, reg_ch_blocks);

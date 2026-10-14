@@ -810,7 +810,8 @@ status_t jit_avx2_1x1_conv_kernel_f32_old::init_conf(jit_1x1_conv_conf_t &jcp,
         load_blocking_max = load_blocking;
         assert(jcp.load_dim % load_blocking == 0);
 
-        bcast_blocking = div_up(static_cast<int>(jcp.bcast_dim), jcp.bcast_block);
+        bcast_blocking
+                = div_up(static_cast<int>(jcp.bcast_dim), jcp.bcast_block);
         while (true) {
             if (bcast_blocking <= 9)
                 break;

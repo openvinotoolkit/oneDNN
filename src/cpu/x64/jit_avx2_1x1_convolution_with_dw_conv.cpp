@@ -81,7 +81,8 @@ void jit_avx2_1x1_convolution_with_dw_conv_fwd_t::execute_forward(
     int ocb_work = jcp.with_dw_conv
             ? static_cast<int>(utils::div_up(jcp.nb_load, jcp.nb_load_blocking))
             : 1;
-    const int work_amount = static_cast<int>(MB * jcp.ngroups * ocb_work * jcp.nb_bcast);
+    const int work_amount
+            = static_cast<int>(MB * jcp.ngroups * ocb_work * jcp.nb_bcast);
 
     auto step = [](dim_t default_step, dim_t remaining, dim_t tail_step) {
         assert(default_step <= tail_step);
@@ -144,7 +145,8 @@ void jit_avx2_1x1_convolution_with_dw_conv_fwd_t::execute_forward(
                                         ? weights_d.blk_off(g, ocb, icb)
                                         : weights_d.blk_off(ocb, icb)];
 
-                        const int _icb = static_cast<int>(g * jcp.nb_reduce + icb);
+                        const int _icb
+                                = static_cast<int>(g * jcp.nb_reduce + icb);
                         if (pd()->rtus_.reduce_src_) {
                             rp.ws = rtus_space
                                     + ithr * pd()->rtus_.space_per_thread_
@@ -232,15 +234,15 @@ void jit_avx2_1x1_convolution_with_dw_conv_fwd_t::execute_forward(
             const int oh = static_cast<int>(os / jcp.ow);
             const int ow = static_cast<int>(os % jcp.ow);
 
-            const int ih = static_cast<int>(nstl::max<dim_t>(
-                    oh * jcp.stride_h - jcp.t_pad, 0));
-            const int iw = static_cast<int>(nstl::max<dim_t>(
-                    ow * jcp.stride_w - jcp.l_pad, 0));
+            const int ih = static_cast<int>(
+                    nstl::max<dim_t>(oh * jcp.stride_h - jcp.t_pad, 0));
+            const int iw = static_cast<int>(
+                    nstl::max<dim_t>(ow * jcp.stride_w - jcp.l_pad, 0));
 
             int ocb = static_cast<int>(ocbb * jcp.nb_load_blocking);
 
-            const auto load_step = static_cast<int>(step(jcp.nb_load_blocking, jcp.nb_load - ocb,
-                    jcp.nb_load_blocking_max));
+            const auto load_step = static_cast<int>(step(jcp.nb_load_blocking,
+                    jcp.nb_load - ocb, jcp.nb_load_blocking_max));
 
             if (iwork == start || oh == 0) {
                 bcast_step = nstl::min(1, end - iwork);

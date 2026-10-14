@@ -322,8 +322,8 @@ jit_uni_postops_injector_t<isa, Vmm>::jit_uni_postops_injector_t(
               lambda_jit_injectors_t()) {}
 
 template <cpu_isa_t isa, typename Vmm>
-void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
-    int start_idx, int end_idx,
+void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(int start_idx,
+        int end_idx,
         const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params) {
 
     injector_utils::vmm_index_set_t vmm_idxs;
@@ -333,8 +333,8 @@ void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
 }
 
 template <cpu_isa_t isa, typename Vmm>
-void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
-    int start_idx, int end_idx,
+void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(int start_idx,
+        int end_idx,
         const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
         const depthwise_injector::dynamic_params_t &ddp,
         const quantization_injector::dynamic_params_t &qdp) {
@@ -347,7 +347,7 @@ void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
 
 template <cpu_isa_t isa, typename Vmm>
 void jit_uni_postops_injector_t<isa, Vmm>::compute_vector_range(
-    int start_idx, int end_idx) {
+        int start_idx, int end_idx) {
     compute_vector_range(
             start_idx, end_idx, binary_injector::rhs_arg_dynamic_params_t());
 }

@@ -461,49 +461,49 @@ private:
             int tail_size);
 
     void advance_ldb_post_op_regs();
-        void restore_ldb_post_op_regs(int ld_block2);
-        void advance_bdb_post_op_regs(int adj_bd_block);
-        void restore_bdb_post_op_regs(int bd_block2);
-        void ldb_regs_shift(int ld_block2, bool is_tail = false);
-        void advance_bd_block2_post_op_regs(int bd_block2);
+    void restore_ldb_post_op_regs(int ld_block2);
+    void advance_bdb_post_op_regs(int adj_bd_block);
+    void restore_bdb_post_op_regs(int bd_block2);
+    void ldb_regs_shift(int ld_block2, bool is_tail = false);
+    void advance_bd_block2_post_op_regs(int bd_block2);
 
     void copy_post_ops_stack_values_to_aux(bool is_reg_tail);
     void read_params();
-        void zero_accumulators(int bd_block2, bool is_bdb_tail, int ld_block,
+    void zero_accumulators(int bd_block2, bool is_bdb_tail, int ld_block,
             bool is_ld_tail, bool skip_accumulation);
 
-        void fp8_to_f16_upconvert(int num_rows, int tile_num_col_bytes,
+    void fp8_to_f16_upconvert(int num_rows, int tile_num_col_bytes,
             reg64_t reg_base, dim_t offset, reg64_t reg_data_stride,
             data_type_t dt, bool is_rd_tail);
-        void fp8_to_f16_upconvert_to_vnni(int num_rows, int tile_num_col_bytes,
+    void fp8_to_f16_upconvert_to_vnni(int num_rows, int tile_num_col_bytes,
             reg64_t reg_base, dim_t offset, reg64_t reg_data_stride,
             data_type_t dt, bool is_rd_tail);
-        void reduce_gemv_accumulators(int bd_block);
-        void store_accumulators(int bd_block2, bool is_bdb_tail, int ld_block,
+    void reduce_gemv_accumulators(int bd_block);
+    void store_accumulators(int bd_block2, bool is_bdb_tail, int ld_block,
             bool is_ld_tail, bool skip_accumulation);
     void store_accumulators_without_post_ops(
             int bd_block, int ld_block, bool is_ld_tail, bool is_bdb_tail);
-        void store_accumulators_apply_post_ops(int bd_block, int ld_block,
+    void store_accumulators_apply_post_ops(int bd_block, int ld_block,
             dim_t ldb_and_bdb_offset, bool is_ld_tail, bool is_bdb_tail);
     void apply_zp_s8s8_compensation(
             int bd_block, int ld_block, bool is_ld_tail);
-        void apply_per_mn_compensation(int bd_block, int ld_block, bool is_ld_tail);
+    void apply_per_mn_compensation(int bd_block, int ld_block, bool is_ld_tail);
     void apply_alpha_beta(
             int bd_block, int ld_block, bool is_ld_tail, bool is_bdb_tail);
-        void apply_wei_scales(int bd_block, int ld_block2, bool is_ld_tail,
+    void apply_wei_scales(int bd_block, int ld_block2, bool is_ld_tail,
             bool dq2ps_required, bool &dq2ps_cvt_done);
-        void apply_src_scales_per_k(int bd_block, int ld_block2,
+    void apply_src_scales_per_k(int bd_block, int ld_block2,
             bool dq2ps_required, bool &dq2ps_cvt_done);
-        void apply_scales(int bd_block, int ld_block2, bool is_ld_tail);
-        void apply_post_ops(int bd_block, int ld_block2, dim_t ldb_and_bdb_offset,
+    void apply_scales(int bd_block, int ld_block2, bool is_ld_tail);
+    void apply_post_ops(int bd_block, int ld_block2, dim_t ldb_and_bdb_offset,
             bool is_ld_tail, bool is_bdb_tail);
-        void gemv_apply_bias(int bd_block, bool is_bdb_tail);
-        void gemv_apply_wei_scales(int bd_block, bool is_bdb_tail);
+    void gemv_apply_bias(int bd_block, bool is_bdb_tail);
+    void gemv_apply_wei_scales(int bd_block, bool is_bdb_tail);
 
     void restore_A_B_matrices();
     void set_A_B_matrices();
 
-        void compute_int8_compensation(int rd_loop, int bd_b, int bd_e,
+    void compute_int8_compensation(int rd_loop, int bd_b, int bd_e,
             int bd_block, int ld_block2, bool is_ld_tail, int vpad);
     void maybe_pre_process_data(
             data_type_t dt, const Vmm &vmm_out1, const Vmm &vmm_out2);
@@ -518,20 +518,20 @@ private:
     void load_scales_to_vmm(const data_type_t type_in, const Vmm &scales,
             const Xbyak::Operand &op, bool is_ld_tail, bool is_single_scale);
     void dot_product(Vmm v1, Vmm v2, Vmm v3);
-        void gemm_microkernel(int bd_block2, bool is_bdb_tail, int ld_block,
+    void gemm_microkernel(int bd_block2, bool is_bdb_tail, int ld_block,
             bool is_rd_tail, bool is_ld_tail, int vpad, int rows_for_rd_tail);
-        void gemv_microkernel(bool is_bdb_tail, int ld_block, bool is_rd_tail);
-        void gemm_microkernel_amx(int bd_block2, bool is_bdb_tail, int ld_block2,
+    void gemv_microkernel(bool is_bdb_tail, int ld_block, bool is_rd_tail);
+    void gemm_microkernel_amx(int bd_block2, bool is_bdb_tail, int ld_block2,
             bool is_rd_tail, bool is_ld_tail, bool last_bdb);
-        void gemm_microkernel_dyn_quant(int bd_block2, bool is_bdb_tail,
+    void gemm_microkernel_dyn_quant(int bd_block2, bool is_bdb_tail,
             int ld_block, bool is_rd_tail, bool is_ld_tail, int vpad,
             int rows_for_rd_tail);
 
-        void bs_loop(int bd_block2, bool is_bdb_tail, int ld_block, bool is_ld_tail,
+    void bs_loop(int bd_block2, bool is_bdb_tail, int ld_block, bool is_ld_tail,
             bool first_bdb, bool last_bdb, int rows_for_rd_tail,
             bool skip_accumulation);
 
-        void ldb_loop(int bd_block2, bool is_bdb_tail, int ld_block,
+    void ldb_loop(int bd_block2, bool is_bdb_tail, int ld_block,
             dim_t ldb_loop_length, bool is_reg_tail, bool is_ld_tail,
             bool first_bdb, bool last_bdb, int rows_for_rd_tail,
             bool skip_accumulation);
@@ -539,51 +539,50 @@ private:
 
     void generate() override;
 
-        bool gemv_is_tail_acc(int bd, int bd_end, bool is_bdb_tail) const noexcept;
-        int gemv_elems_per_vector_acc() const noexcept;
+    bool gemv_is_tail_acc(int bd, int bd_end, bool is_bdb_tail) const noexcept;
+    int gemv_elems_per_vector_acc() const noexcept;
 
-        dim_t A_offset(int bd, int rd, bool is_amx = false) const noexcept;
-        dim_t B_offset(int ld, int rd, bool is_amx = false) const noexcept;
-        dim_t C_offset(int bd, int ld) const noexcept;
-        dim_t D_offset(int bd, int ld) const noexcept;
+    dim_t A_offset(int bd, int rd, bool is_amx = false) const noexcept;
+    dim_t B_offset(int ld, int rd, bool is_amx = false) const noexcept;
+    dim_t C_offset(int bd, int ld) const noexcept;
+    dim_t D_offset(int bd, int ld) const noexcept;
 
     dim_t rdb_A_offset() const noexcept;
     dim_t rdb_B_offset() const noexcept;
 
-        dim_t ldb_B_offset(int ld_block2, bool is_tail = false) const noexcept;
-        dim_t ldb_C_offset(int ld_block2, bool is_tail = false) const noexcept;
-        dim_t ldb_D_offset(int ld_block2, bool is_tail = false) const noexcept;
-        dim_t ldb_po_offset(int ld_block2, bool is_tail = false) const noexcept;
+    dim_t ldb_B_offset(int ld_block2, bool is_tail = false) const noexcept;
+    dim_t ldb_C_offset(int ld_block2, bool is_tail = false) const noexcept;
+    dim_t ldb_D_offset(int ld_block2, bool is_tail = false) const noexcept;
+    dim_t ldb_po_offset(int ld_block2, bool is_tail = false) const noexcept;
 
-        dim_t bdb_A_offset(int bd_block2) const noexcept;
-        dim_t bdb_C_offset(int bd_block2) const noexcept;
-        dim_t bdb_D_offset(int bd_block2) const noexcept;
-        dim_t bdb_po_offset(int bd_block2) const noexcept;
+    dim_t bdb_A_offset(int bd_block2) const noexcept;
+    dim_t bdb_C_offset(int bd_block2) const noexcept;
+    dim_t bdb_D_offset(int bd_block2) const noexcept;
+    dim_t bdb_po_offset(int bd_block2) const noexcept;
 
-        dim_t bias_offset(int ld, bool is_tail = false) const noexcept;
-        dim_t oc_logical_offset(int ld, bool is_tail = false) const noexcept;
+    dim_t bias_offset(int ld, bool is_tail = false) const noexcept;
+    dim_t oc_logical_offset(int ld, bool is_tail = false) const noexcept;
 
-        dim_t compensations_offset(int ld, bool is_tail = false) const noexcept;
-        dim_t bdb_compensation_offset(int bd_block2) const noexcept;
-        dim_t bd_compensation_offset(int ld, int bd) const noexcept;
-        dim_t wei_scales_offset(int ld, bool is_tail = false) const noexcept;
-    dim_t decomp_wei_scales_offset(
-            int ld, bool is_tail = false) const noexcept;
-        dim_t zp_comp_a_offset(int ld, bool is_tail = false) const noexcept;
-        dim_t bd_zp_comp_a_offset(int ld, int bd) const noexcept;
-        dim_t bdb_zp_comp_a_offset(int bd_block2) const noexcept;
-        dim_t zp_comp_b_offset(int bd) const noexcept;
-        dim_t bdb_zp_comp_b_offset(int bd_block2) const noexcept;
-        dim_t zp_c_values_offset(int ld, bool is_tail = false) const noexcept;
+    dim_t compensations_offset(int ld, bool is_tail = false) const noexcept;
+    dim_t bdb_compensation_offset(int bd_block2) const noexcept;
+    dim_t bd_compensation_offset(int ld, int bd) const noexcept;
+    dim_t wei_scales_offset(int ld, bool is_tail = false) const noexcept;
+    dim_t decomp_wei_scales_offset(int ld, bool is_tail = false) const noexcept;
+    dim_t zp_comp_a_offset(int ld, bool is_tail = false) const noexcept;
+    dim_t bd_zp_comp_a_offset(int ld, int bd) const noexcept;
+    dim_t bdb_zp_comp_a_offset(int bd_block2) const noexcept;
+    dim_t zp_comp_b_offset(int bd) const noexcept;
+    dim_t bdb_zp_comp_b_offset(int bd_block2) const noexcept;
+    dim_t zp_c_values_offset(int ld, bool is_tail = false) const noexcept;
 
     // Offsets into the per-(M,N) f32 compensation buffer. The buffer mirrors
     // buf_C layout but with f32 stride (= brg.LDC elements).
-        dim_t per_mn_comp_offset(int bd, int ld) const noexcept;
+    dim_t per_mn_comp_offset(int bd, int ld) const noexcept;
     dim_t ldb_per_mn_comp_offset(
             int ld_block2, bool is_tail = false) const noexcept;
-        dim_t bdb_per_mn_comp_offset(int bd_block2) const noexcept;
+    dim_t bdb_per_mn_comp_offset(int bd_block2) const noexcept;
 
-        dim_t wei_zp_offset(int ld, bool is_tail = false) const noexcept;
+    dim_t wei_zp_offset(int ld, bool is_tail = false) const noexcept;
 
     bool vpad_exist = false;
     bool need_comp_pads = false;
@@ -639,7 +638,7 @@ dim_t jit_brgemm_kernel_t<Wmm>::A_offset(
 
 template <typename Wmm>
 dim_t jit_brgemm_kernel_t<Wmm>::B_offset(
-    int ld, int rd, bool is_amx) const noexcept {
+        int ld, int rd, bool is_amx) const noexcept {
     int typesize_scale = [&] {
         if (brg.dt_b == data_type::u2) {
             return 4;
@@ -708,7 +707,7 @@ dim_t jit_brgemm_kernel_t<Wmm>::rdb_B_offset() const noexcept {
 
 template <typename Wmm>
 dim_t jit_brgemm_kernel_t<Wmm>::ldb_B_offset(
-    int ld_block2, bool is_tail) const noexcept {
+        int ld_block2, bool is_tail) const noexcept {
     int typesize_scale = [&] {
         if (brg.dt_b == data_type::u2) {
             return 4;
@@ -727,21 +726,21 @@ dim_t jit_brgemm_kernel_t<Wmm>::ldb_B_offset(
 
 template <typename Wmm>
 dim_t jit_brgemm_kernel_t<Wmm>::ldb_C_offset(
-    int ld_block2, bool is_tail) const noexcept {
+        int ld_block2, bool is_tail) const noexcept {
     return (is_tail) ? brg.typesize_C * brg.ldb_tail
                      : brg.typesize_C * ld_block2 * brg.ld_block;
 }
 
 template <typename Wmm>
 dim_t jit_brgemm_kernel_t<Wmm>::ldb_D_offset(
-    int ld_block2, bool is_tail) const noexcept {
+        int ld_block2, bool is_tail) const noexcept {
     return (is_tail) ? brg.typesize_D * brg.ldb_tail
                      : brg.typesize_D * ld_block2 * brg.ld_block;
 }
 
 template <typename Wmm>
 dim_t jit_brgemm_kernel_t<Wmm>::ldb_po_offset(
-    int ld_block2, bool is_tail) const noexcept {
+        int ld_block2, bool is_tail) const noexcept {
     return (is_tail) ? brg.ldb_tail : ld_block2 * brg.ld_block;
 }
 
@@ -823,14 +822,14 @@ dim_t jit_brgemm_kernel_t<Wmm>::wei_scales_offset(
 
 template <typename Wmm>
 dim_t jit_brgemm_kernel_t<Wmm>::zp_comp_a_offset(
-    int ld, bool is_tail) const noexcept {
+        int ld, bool is_tail) const noexcept {
     return (is_tail) ? sizeof(int32_t) * brg.ldb_tail
                      : sizeof(int32_t) * ld * brg.ld_block;
 }
 
 template <typename Wmm>
 dim_t jit_brgemm_kernel_t<Wmm>::decomp_wei_scales_offset(
-    int ld, bool is_tail) const noexcept {
+        int ld, bool is_tail) const noexcept {
     return (is_tail)
             ? types::data_type_size(brg.wei_decomp_scales_dt) * brg.ldb_tail
             : types::data_type_size(brg.wei_decomp_scales_dt) * ld
@@ -839,7 +838,7 @@ dim_t jit_brgemm_kernel_t<Wmm>::decomp_wei_scales_offset(
 
 template <typename Wmm>
 dim_t jit_brgemm_kernel_t<Wmm>::wei_zp_offset(
-    int ld, bool is_tail) const noexcept {
+        int ld, bool is_tail) const noexcept {
     return (is_tail) ? types::data_type_size(brg.wei_decomp_zero_points_dt)
                     * brg.ldb_tail
                      : types::data_type_size(brg.wei_decomp_zero_points_dt) * ld
@@ -848,13 +847,13 @@ dim_t jit_brgemm_kernel_t<Wmm>::wei_zp_offset(
 
 template <typename Wmm>
 dim_t jit_brgemm_kernel_t<Wmm>::bdb_zp_comp_a_offset(
-    int bd_block2) const noexcept {
+        int bd_block2) const noexcept {
     return sizeof(int32_t) * bd_block2 * brg.bd_block * brg.LDB;
 }
 
 template <typename Wmm>
 dim_t jit_brgemm_kernel_t<Wmm>::bd_zp_comp_a_offset(
-    int ld, int bd) const noexcept {
+        int ld, int bd) const noexcept {
     return sizeof(int32_t) * (ld * brg.ld_block + bd * brg.LDB);
 }
 
@@ -865,13 +864,13 @@ dim_t jit_brgemm_kernel_t<Wmm>::zp_comp_b_offset(int bd) const noexcept {
 
 template <typename Wmm>
 dim_t jit_brgemm_kernel_t<Wmm>::bdb_zp_comp_b_offset(
-    int bd_block2) const noexcept {
+        int bd_block2) const noexcept {
     return zp_comp_b_offset(bd_block2 * brg.bd_block);
 }
 
 template <typename Wmm>
 dim_t jit_brgemm_kernel_t<Wmm>::zp_c_values_offset(
-    int ld, bool is_tail) const noexcept {
+        int ld, bool is_tail) const noexcept {
     if (brg.zp_type_c == brgemm_broadcast_t::per_n) {
         return (is_tail) ? sizeof(int32_t) * brg.ldb_tail
                          : sizeof(int32_t) * ld * brg.ld_block;
@@ -3549,9 +3548,9 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel_dyn_quant(int bd_block2,
 }
 
 template <typename Wmm>
-void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(int bd_block2,
-    bool is_bdb_tail, int ld_block2, bool is_rd_tail, bool is_ld_tail,
-    int vpad, int rows_for_rd_tail) {
+void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(int bd_block2, bool is_bdb_tail,
+        int ld_block2, bool is_rd_tail, bool is_ld_tail, int vpad,
+        int rows_for_rd_tail) {
     MAYBE_UNUSED(bd_block2);
 
     if (brg.with_src_dyn_quant) {
@@ -4153,8 +4152,8 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(int bd_block2,
 
 template <typename Wmm>
 void jit_brgemm_kernel_t<Wmm>::bs_loop(int bd_block2, bool is_bdb_tail,
-    int ld_block2, bool is_ld_tail, bool first_bdb, bool last_bdb,
-    int rows_for_rd_tail, bool skip_accumulation) {
+        int ld_block2, bool is_ld_tail, bool first_bdb, bool last_bdb,
+        int rows_for_rd_tail, bool skip_accumulation) {
     auto ic_group_shift_generic = [&]() {
         if ((brg.with_grouped_wei_decomp
                     && (brg.wei_decomp_scales_stride != 0
@@ -4346,7 +4345,8 @@ void jit_brgemm_kernel_t<Wmm>::bs_loop(int bd_block2, bool is_bdb_tail,
                     jg(rdb_loop_label, T_NEAR);
                 }
 
-                for (int rb = static_cast<int>(rbd_blocks * rdb_group); rb < brg.rdb; rb++) {
+                for (int rb = static_cast<int>(rbd_blocks * rdb_group);
+                        rb < brg.rdb; rb++) {
                     gemm_microkernel(bd_block2, is_bdb_tail, ld_block2, false,
                             is_ld_tail, vpad, rows_for_rd_tail);
 

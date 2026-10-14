@@ -216,16 +216,15 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::apply_sum(dim_t ur_w,
 
 template <typename Vmm>
 void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::apply_postops(dim_t ur_w,
-    bool last_oc_block_flag, const dim_t nb_oc_block, const dim_t oc_block,
+        bool last_oc_block_flag, const dim_t nb_oc_block, const dim_t oc_block,
         const float *p_sum_scale, const int32_t *p_sum_zp) {
     if (jcp.with_eltwise || jcp.with_binary || jcp.with_sum
             || jcp.with_depthwise || jcp.with_quantization) {
         std::map<size_t, int> vmm_idx_off;
         iterate(nb_oc_block, ur_w,
-            [&](const bool, const dim_t k, const dim_t j) {
-            vmm_idx_off.insert(
-                    {vmm_out_idx(j, k),
-                        static_cast<int>(k * oc_block * sizeof(float))});
+                [&](const bool, const dim_t k, const dim_t j) {
+            vmm_idx_off.insert({vmm_out_idx(j, k),
+                    static_cast<int>(k * oc_block * sizeof(float))});
         });
         depthwise_injector::dynamic_params_t ddp {zmm_d_weights.getIdx(),
                 zmm_d_bias.getIdx(), reg_d_weights, reg_d_bias,
@@ -272,7 +271,7 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::apply_postops(dim_t ur_w,
 
 template <typename Vmm>
 void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::store_output(
-    dim_t ur_w, bool last_oc_block_flag) {
+        dim_t ur_w, bool last_oc_block_flag) {
     const dim_t nb_oc_block
             = jcp.is_depthwise ? jcp.nb_ch_blocking : jcp.nb_oc_blocking;
     const dim_t oc_block = jcp.is_depthwise ? jcp.ch_block : jcp.oc_block;
@@ -490,15 +489,15 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::store_output(
 
 template <typename Vmm>
 void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::compute_ker_dw(dim_t ur_w,
-    dim_t pad_l, dim_t pad_r, ic_block_t last_ic_block_flag,
-    bool h_padded) {
+        dim_t pad_l, dim_t pad_r, ic_block_t last_ic_block_flag,
+        bool h_padded) {
     assert(!"invalid group blocking for depthwise convolution");
 }
 
 template <>
 void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Zmm>::compute_ker_dw(dim_t ur_w,
-    dim_t pad_l, dim_t pad_r, ic_block_t last_ic_block_flag,
-    bool h_padded) {
+        dim_t pad_l, dim_t pad_r, ic_block_t last_ic_block_flag,
+        bool h_padded) {
 
     const bool compute_kernel
             = IMPLICATION(h_padded, jcp.signed_input || jcp.with_input_zp);
@@ -617,13 +616,13 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Zmm>::compute_ker_dw(dim_t ur_w,
                 } else {
                     const Zmm r_zmm_src
                             = mask_flag ? zmm_src | ktail_mask : zmm_src;
-                        const dim_t start_ = (jcp.signed_input || jcp.with_input_zp)
+                    const dim_t start_ = (jcp.signed_input || jcp.with_input_zp)
                             ? 0
                             : oi_start;
-                        const dim_t end_ = (jcp.signed_input || jcp.with_input_zp)
+                    const dim_t end_ = (jcp.signed_input || jcp.with_input_zp)
                             ? ur_w
                             : oi_end;
-                        for (dim_t oi = start_; oi < end_; oi++) {
+                    for (dim_t oi = start_; oi < end_; oi++) {
                         if (oi >= oi_start && oi < oi_end) {
                             if (jcp.is_resrc_depthwise) {
                                 const dim_t ii = input_spatial_index(oi, ki);
@@ -742,7 +741,7 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::compute_ker(dim_t ur_w,
         /* Skip the last loads of input
             if (ic%16)/ic_sub_step < ic_block/ic_sub_step */
         const dim_t icb = (last_ic_block_flag != ic_block_t::no_last_block)
-            ? div_up(jcp.ic_without_padding % ic_block, ic_sub_step)
+                ? div_up(jcp.ic_without_padding % ic_block, ic_sub_step)
                 : ic_block / ic_sub_step;
         if (compute_kernel) {
             for (dim_t ic = 0; ic < icb; ic++) {
@@ -1048,7 +1047,7 @@ void jit_avx512_core_x8s8s32x_fwd_kernel_vmm_t<Vmm>::icb_loop(
     if (do_icb_loop) {
         const dim_t inp_step = jcp.ic_block;
         const dim_t ker_step
-            = jcp.kd * jcp.kh * jcp.kw * jcp.oc_block * jcp.ic_block;
+                = jcp.kd * jcp.kh * jcp.kw * jcp.oc_block * jcp.ic_block;
         add(reg_inp, jcp.typesize_in * inp_step);
         safe_add(reg_ker, jcp.typesize_in * ker_step, reg_ker_long_offt);
         if (jcp.with_input_zp) add(reg_input_zp, sizeof(uint8_t) * inp_step);

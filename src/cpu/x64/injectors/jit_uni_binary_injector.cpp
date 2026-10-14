@@ -323,11 +323,11 @@ static_params_t::static_params_t(const Xbyak::Reg64 &param1,
               rhs_arg_static_params) {}
 
 rhs_arg_static_params_t::rhs_arg_static_params_t(int rhs_dt_helper_vmm_idx,
-    const Xbyak::Reg64 &rhs_addr_reg, const Xbyak::Reg64 &rhs_helper_reg,
+        const Xbyak::Reg64 &rhs_addr_reg, const Xbyak::Reg64 &rhs_helper_reg,
         const Xbyak::Reg64 &rhs_addr_cache_reg, bool preserve_gpr_helpers,
-    bool preserve_vmm_helper, int abi_param_offset, dim_t dst_orig_offset,
-    const memory_desc_wrapper &dst_d, int tail_size,
-    bool use_exact_tail_scalar_bcast)
+        bool preserve_vmm_helper, int abi_param_offset, dim_t dst_orig_offset,
+        const memory_desc_wrapper &dst_d, int tail_size,
+        bool use_exact_tail_scalar_bcast)
     : rhs_arg_static_params_t(rhs_dt_helper_vmm_idx, rhs_addr_reg,
               rhs_helper_reg, rhs_addr_cache_reg, preserve_gpr_helpers,
               preserve_vmm_helper, abi_param_offset, dst_orig_offset, dst_d,
@@ -335,12 +335,12 @@ rhs_arg_static_params_t::rhs_arg_static_params_t(int rhs_dt_helper_vmm_idx,
               rhs_helper_reg, false /*is_opmask_set*/) {}
 
 rhs_arg_static_params_t::rhs_arg_static_params_t(int rhs_dt_helper_vmm_idx,
-    const Xbyak::Reg64 &rhs_addr_reg, const Xbyak::Reg64 &rhs_helper_reg,
+        const Xbyak::Reg64 &rhs_addr_reg, const Xbyak::Reg64 &rhs_helper_reg,
         const Xbyak::Reg64 &rhs_addr_cache_reg, bool preserve_gpr_helpers,
-    bool preserve_vmm_helper, int abi_param_offset, dim_t dst_orig_offset,
-    const memory_desc_wrapper &dst_d, int tail_size,
-    const Xbyak::Opmask &tail_opmask, bool use_exact_tail_scalar_bcast,
-    int rhs_prelu_helper_vmm_idx)
+        bool preserve_vmm_helper, int abi_param_offset, dim_t dst_orig_offset,
+        const memory_desc_wrapper &dst_d, int tail_size,
+        const Xbyak::Opmask &tail_opmask, bool use_exact_tail_scalar_bcast,
+        int rhs_prelu_helper_vmm_idx)
     : rhs_arg_static_params_t(rhs_dt_helper_vmm_idx, rhs_addr_reg,
               rhs_helper_reg, rhs_addr_cache_reg, preserve_gpr_helpers,
               preserve_vmm_helper, abi_param_offset, dst_orig_offset, dst_d,
@@ -350,13 +350,12 @@ rhs_arg_static_params_t::rhs_arg_static_params_t(int rhs_dt_helper_vmm_idx,
 }
 
 rhs_arg_static_params_t::rhs_arg_static_params_t(int rhs_dt_helper_vmm_idx,
-    const Xbyak::Reg64 &rhs_addr_reg, const Xbyak::Reg64 &rhs_helper_reg,
+        const Xbyak::Reg64 &rhs_addr_reg, const Xbyak::Reg64 &rhs_helper_reg,
         const Xbyak::Reg64 &rhs_addr_cache_reg, bool preserve_gpr_helpers,
-    bool preserve_vmm_helper, int abi_param_offset, dim_t dst_orig_offset,
-    const memory_desc_wrapper &dst_d, int tail_size,
-    const Xbyak::Opmask &tail_opmask,
-        const Xbyak::Reg64 &reg_tail_size, bool use_exact_tail_scalar_bcast,
-    int rhs_prelu_helper_vmm_idx)
+        bool preserve_vmm_helper, int abi_param_offset, dim_t dst_orig_offset,
+        const memory_desc_wrapper &dst_d, int tail_size,
+        const Xbyak::Opmask &tail_opmask, const Xbyak::Reg64 &reg_tail_size,
+        bool use_exact_tail_scalar_bcast, int rhs_prelu_helper_vmm_idx)
     : rhs_arg_static_params_t(rhs_dt_helper_vmm_idx, rhs_addr_reg,
               rhs_helper_reg, rhs_addr_cache_reg, preserve_gpr_helpers,
               preserve_vmm_helper, abi_param_offset, dst_orig_offset, dst_d,
@@ -366,12 +365,12 @@ rhs_arg_static_params_t::rhs_arg_static_params_t(int rhs_dt_helper_vmm_idx,
 }
 
 rhs_arg_static_params_t::rhs_arg_static_params_t(int rhs_dt_helper_vmm_idx,
-    const Xbyak::Reg64 &rhs_addr_reg, const Xbyak::Reg64 &rhs_helper_reg,
+        const Xbyak::Reg64 &rhs_addr_reg, const Xbyak::Reg64 &rhs_helper_reg,
         const Xbyak::Reg64 &rhs_addr_cache_reg, bool preserve_gpr_helpers,
-    bool preserve_vmm_helper, int abi_param_offset, dim_t dst_orig_offset,
-    const memory_desc_wrapper &dst_d, int tail_size,
-    const Xbyak::Opmask &tail_opmask, bool use_exact_tail_scalar_bcast,
-    const Xbyak::Reg64 &reg_tail_size, bool is_opmask_set)
+        bool preserve_vmm_helper, int abi_param_offset, dim_t dst_orig_offset,
+        const memory_desc_wrapper &dst_d, int tail_size,
+        const Xbyak::Opmask &tail_opmask, bool use_exact_tail_scalar_bcast,
+        const Xbyak::Reg64 &reg_tail_size, bool is_opmask_set)
     : rhs_dt_helper_vmm_idx(rhs_dt_helper_vmm_idx)
     , rhs_addr_reg(rhs_addr_reg)
     , rhs_helper_reg(rhs_helper_reg)

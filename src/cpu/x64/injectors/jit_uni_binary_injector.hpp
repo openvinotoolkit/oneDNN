@@ -110,7 +110,7 @@ void extend_binary_args_per_w(const post_ops_t &post_ops,
  * for load with tail in runtime.
  */
 struct rhs_arg_static_params_t {
-        rhs_arg_static_params_t(int rhs_dt_helper_vmm_idx,
+    rhs_arg_static_params_t(int rhs_dt_helper_vmm_idx,
             const Xbyak::Reg64 &rhs_addr_reg,
             const Xbyak::Reg64 &rhs_helper_reg,
             const Xbyak::Reg64 &rhs_addr_cache_reg, bool preserve_gpr_helpers,
@@ -124,8 +124,7 @@ struct rhs_arg_static_params_t {
             bool preserve_vmm_helper, int abi_param_offset,
             dim_t dst_orig_offset, const memory_desc_wrapper &dst_d,
             int tail_size, const Xbyak::Opmask &tail_opmask,
-            bool use_exact_tail_scalar_bcast,
-            int rhs_prelu_helper_vmm_idx = 0);
+            bool use_exact_tail_scalar_bcast, int rhs_prelu_helper_vmm_idx = 0);
     rhs_arg_static_params_t(int rhs_dt_helper_vmm_idx,
             const Xbyak::Reg64 &rhs_addr_reg,
             const Xbyak::Reg64 &rhs_helper_reg,
@@ -138,25 +137,25 @@ struct rhs_arg_static_params_t {
 
     bool is_opmask_set() const noexcept { return is_opmask_set_; }
 
-        mutable int rhs_dt_helper_vmm_idx = 0;
+    mutable int rhs_dt_helper_vmm_idx = 0;
     Xbyak::Reg64 rhs_addr_reg;
     Xbyak::Reg64 rhs_helper_reg;
     Xbyak::Reg64 rhs_addr_cache_reg;
     bool preserve_gpr_helpers;
     bool preserve_vmm_helper;
-        int abi_param_offset;
-        dim_t dst_orig_offset;
+    int abi_param_offset;
+    dim_t dst_orig_offset;
     memory_desc_wrapper dst_d;
-        int tail_size;
+    int tail_size;
     Xbyak::Opmask tail_opmask;
     bool use_exact_tail_scalar_bcast;
     Xbyak::Reg64 reg_tail_size;
     bool is_tail;
 
-        mutable int rhs_prelu_helper_vmm_idx = 0;
+    mutable int rhs_prelu_helper_vmm_idx = 0;
 
 private:
-        rhs_arg_static_params_t(int rhs_dt_helper_vmm_idx,
+    rhs_arg_static_params_t(int rhs_dt_helper_vmm_idx,
             const Xbyak::Reg64 &rhs_addr_reg,
             const Xbyak::Reg64 &rhs_helper_reg,
             const Xbyak::Reg64 &rhs_addr_cache_reg, bool preserve_gpr_helpers,

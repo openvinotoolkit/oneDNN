@@ -664,8 +664,8 @@ status_t gemm_bf16_convolution_fwd_t<dst_data_type>::execute_forward_ncsp(
         }
 
         if (this->pd()->is_postprocess_required() && ic + ic_block >= jcp.ic) {
-                        const dim_t acc_str = LDC;
-                        const dim_t dst_str = M;
+            const dim_t acc_str = LDC;
+            const dim_t dst_str = M;
             (*pp_ker_)(dst_local, acc, bias, groups *jcp.oc, oc, sum_scale,
                     dst_str, acc_str, m, oc_block,
                     post_ops_binary_rhs_arg_vec.data(), dst,
@@ -899,15 +899,15 @@ status_t gemm_bf16_convolution_bwd_data_t<diff_src_data_type>::
     const conv_gemm_conf_t &jcp = this->pd()->jcp_;
 
     const dim_t M = jcp.os * jcp.od;
-        const dim_t src_step = jcp.ic * jcp.ih * jcp.iw * jcp.id;
-        const dim_t dst_step = jcp.oc * M;
-        const dim_t weights_g_size = jcp.ic * jcp.oc * jcp.ks;
+    const dim_t src_step = jcp.ic * jcp.ih * jcp.iw * jcp.id;
+    const dim_t dst_step = jcp.oc * M;
+    const dim_t weights_g_size = jcp.ic * jcp.oc * jcp.ks;
 
     const dim_t m = jcp.os_block;
     const dim_t K = jcp.oc;
     const dim_t N = jcp.ic * jcp.ks;
 
-        const dim_t work_amount = jcp.ngroups * jcp.mb;
+    const dim_t work_amount = jcp.ngroups * jcp.mb;
     const bool is_problem_3d = pd()->ndims() == 5;
 
     const auto &p = pd()->attr()->post_ops_;
@@ -1004,7 +1004,7 @@ status_t gemm_bf16_convolution_bwd_data_t<diff_src_data_type>::
             }
 
             if (diff_src_data_type == data_type::bf16) {
-                                const dim_t spatial_size = jcp.ih * jcp.iw * jcp.id;
+                const dim_t spatial_size = jcp.ih * jcp.iw * jcp.id;
                 store_bfloat16_in_parallel((bfloat16_t *)diff_src_local,
                         (const float *)acc, jcp.ic, spatial_size,
                         jcp.nthr == 1);

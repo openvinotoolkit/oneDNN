@@ -151,7 +151,7 @@ status_t ref_softmax_fwd_t::execute_forward_dense(const exec_ctx_t &ctx) const {
             space_max = max_val;
         }
 #else
-    for (dim_t c = 0; c < channels_; ++c)
+        for (dim_t c = 0; c < channels_; ++c)
             space_max = nstl::max(space_max,
                     io::load_float_value(src_d.data_type(), src_data, c));
 #endif

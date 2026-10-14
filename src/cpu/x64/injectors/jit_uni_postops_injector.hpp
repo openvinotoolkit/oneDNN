@@ -105,19 +105,19 @@ public:
             bool is_broadcast = false)
             = 0;
 
-        virtual void compute_vector_range(int start_idx, int end_idx,
+    virtual void compute_vector_range(int start_idx, int end_idx,
             const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
             const depthwise_injector::dynamic_params_t &ddp,
             const quantization_injector::dynamic_params_t &qdp)
             = 0;
 
-        virtual void compute_vector(int idx,
+    virtual void compute_vector(int idx,
             const depthwise_injector::dynamic_params_t &ddp,
             const quantization_injector::dynamic_params_t &qdp,
             bool is_broadcast = false)
             = 0;
 
-        virtual void compute_vector(int idx,
+    virtual void compute_vector(int idx,
             const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
             const depthwise_injector::dynamic_params_t &ddp,
             const quantization_injector::dynamic_params_t &qdp)
@@ -196,15 +196,15 @@ public:
             const depthwise_injector::dynamic_params_t &ddp,
             const quantization_injector::dynamic_params_t &qdp,
             bool is_broadcast = false) override;
-        void compute_vector_range(int start_idx, int end_idx,
+    void compute_vector_range(int start_idx, int end_idx,
             const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
             const depthwise_injector::dynamic_params_t &ddp,
             const quantization_injector::dynamic_params_t &qdp) override;
-        void compute_vector(int idx,
+    void compute_vector(int idx,
             const depthwise_injector::dynamic_params_t &ddp,
             const quantization_injector::dynamic_params_t &qdp,
             bool is_broadcast = false) override;
-        void compute_vector(int idx,
+    void compute_vector(int idx,
             const binary_injector::rhs_arg_dynamic_params_t &rhs_arg_params,
             const depthwise_injector::dynamic_params_t &ddp,
             const quantization_injector::dynamic_params_t &qdp) override;

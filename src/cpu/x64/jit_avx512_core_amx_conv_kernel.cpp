@@ -1582,7 +1582,8 @@ void jit_avx512_core_amx_fwd_kernel_t::store_output_vector_int8(
 
     if (jcp.with_bias) vaddps(zmm_out, zmm_out, zmm_bias);
 
-    apply_postops(zmm_out, p_sum_scale, p_sum_zp, addr, off, mask_flag, static_cast<int>(ocb));
+    apply_postops(zmm_out, p_sum_scale, p_sum_zp, addr, off, mask_flag,
+            static_cast<int>(ocb));
 
     if (jcp.with_dst_scales) {
         mov(reg_ptr_dst_scales, ptr[param1 + GET_OFF(dst_scales)]);

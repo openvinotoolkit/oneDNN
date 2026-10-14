@@ -234,7 +234,7 @@ void jit_avx512_core_x8s8s32x_1x1_conv_kernel_vmm_t<Vmm>::apply_sum(
 
 template <typename Vmm>
 void jit_avx512_core_x8s8s32x_1x1_conv_kernel_vmm_t<Vmm>::apply_postops(
-    const dim_t load_loop_blk, const dim_t ur, const bool mask_flag_in,
+        const dim_t load_loop_blk, const dim_t ur, const bool mask_flag_in,
         const float *p_sum_scale, const int32_t *p_sum_zp) {
     if (jcp.with_eltwise || jcp.with_binary || jcp.with_sum
             || jcp.with_depthwise || jcp.with_quantization) {

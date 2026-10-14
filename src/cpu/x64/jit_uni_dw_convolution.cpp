@@ -193,10 +193,10 @@ void jit_uni_dw_convolution_bwd_data_t<isa, diff_dst_type,
     const memory_desc_wrapper diff_src_d(pd()->diff_src_md());
     const memory_desc_wrapper weights_d(pd()->weights_md(0));
 
-        auto kernel_params = [=](dim_t ur_str_w, dim_t iw, dim_t oh, dim_t ih,
-                                                                 dim_t i_t_overflow, dim_t i_b_overflow,
-                                                                 dim_t stride_off_h, dim_t ch, dim_t n,
-                                                                 dim_t work_remaining) {
+    auto kernel_params = [=](dim_t ur_str_w, dim_t iw, dim_t oh, dim_t ih,
+                                 dim_t i_t_overflow, dim_t i_b_overflow,
+                                 dim_t stride_off_h, dim_t ch, dim_t n,
+                                 dim_t work_remaining) {
         auto par_conv = jit_conv_args_t();
         const bool is_dsrc_layout_nxc
                 = utils::one_of(jcp.src_tag, format_tag::nwc, format_tag::nhwc);

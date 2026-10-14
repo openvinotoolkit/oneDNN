@@ -173,7 +173,7 @@ struct jit_pp_ker_t : pp_ker_t, public jit_generator_t {
         const dim_t scale_idx_mult = jcp_.scale_idx_mult;
         args.acc = acc + start_dim;
         args.dst = dst
-            + (os_offset * dst_os_stride + oc_offset) * dst_data_type_size_;
+                + (os_offset * dst_os_stride + oc_offset) * dst_data_type_size_;
         const dim_t g_oc_offset = g * jcp_.oc;
         const dim_t g_oc_offset_prologue = g_oc_offset + oc_offset;
         args.dst_orig = dst_orig;
@@ -194,8 +194,8 @@ struct jit_pp_ker_t : pp_ker_t, public jit_generator_t {
         args.dst_orig = dst_orig;
 
         if (zp_pad_comp_helper_) {
-                args.h = os_offset / chunk_desc.w_size_ + chunk_desc.h_off_;
-                args.w = os_offset % chunk_desc.w_size_ + chunk_desc.w_off_;
+            args.h = os_offset / chunk_desc.w_size_ + chunk_desc.h_off_;
+            args.w = os_offset % chunk_desc.w_size_ + chunk_desc.w_off_;
             args.w_size = chunk_desc.w_size_ + chunk_desc.w_off_;
             args.w_off = chunk_desc.w_off_;
             args.zp_src_pad_comp = zp.src_pad_comp;
@@ -245,10 +245,10 @@ private:
     std::unique_ptr<binary_injector::jit_uni_binary_injector_t<isa>>
             jit_binary_injector_;
 
-        int number_of_reserved_zmm_regs_;
+    int number_of_reserved_zmm_regs_;
     using Vmm = typename cpu_isa_traits_t<isa>::Vmm;
-        static const int vlen = static_cast<int>(
-            cpu_isa_traits_t<isa>::vlen / sizeof(float));
+    static const int vlen
+            = static_cast<int>(cpu_isa_traits_t<isa>::vlen / sizeof(float));
 
     Xbyak::Reg64 reg_param = abi_param1;
     Xbyak::Reg64 reg_param_bak = r11;
@@ -595,7 +595,7 @@ void jit_pp_ker_t<isa>::generate() {
 
         if (do_scale_ && jcp_.scale_idx_mult > 0) {
             assert(jcp_.scale_idx_mult == 1);
-                auto scale_addr = ptr[reg_scales
+            auto scale_addr = ptr[reg_scales
                     + offset * static_cast<dim_t>(sizeof(float))];
             auto vreg_scale_ = vreg_scale;
             if (isa == avx512_core) {
@@ -757,7 +757,7 @@ void jit_pp_ker_t<isa>::generate() {
     // Advance all pointers by a value stored in a register
     auto advance_ptrs_reg = [&](Reg64 offset) {
         lea(reg_dst,
-            ptr[reg_dst + offset * static_cast<int>(dst_data_type_size_)]);
+                ptr[reg_dst + offset * static_cast<int>(dst_data_type_size_)]);
         lea(reg_acc, ptr[reg_acc + offset * sizeof(acc_data_t)]);
         if (jcp_.scale_idx_mult) {
             assert(jcp_.scale_idx_mult == 1);
@@ -765,8 +765,8 @@ void jit_pp_ker_t<isa>::generate() {
         }
         if (do_bias_)
             lea(reg_bias,
-                ptr[reg_bias
-                    + offset * static_cast<int>(bias_data_type_size_)]);
+                    ptr[reg_bias
+                            + offset * static_cast<int>(bias_data_type_size_)]);
     };
 
     // Rewind pointers that point to data that is indexed by output channel

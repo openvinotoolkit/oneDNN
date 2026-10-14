@@ -977,11 +977,11 @@ void jit_uni_i8i8_pooling_fwd_ker_t<isa>::compute_avg_step(
 
     Label l_kd, l_kh, l_kw;
 
-        auto ih = jpp.ih;
-        auto iw = jpp.iw;
-        auto c = jpp.c;
+    auto ih = jpp.ih;
+    auto iw = jpp.iw;
+    auto c = jpp.c;
 
-        const int num_ll = static_cast<int>(
+    const int num_ll = static_cast<int>(
             data_type_size(avg_proc_dt) / data_type_size(jpp.dst_dt));
 
     for (int jj = 0; jj < ur_c; jj++) {

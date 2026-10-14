@@ -694,10 +694,10 @@ void jit_avx512_common_convolution_bwd_data_t<diff_dst_type, wei_type,
 
     const jit_conv_ker_t jit_ker = (decltype(jit_ker))kernel_->jit_ker();
 
-        dim_t ic_chunks = jcp.nb_ic / jcp.nb_ic_blocking;
+    dim_t ic_chunks = jcp.nb_ic / jcp.nb_ic_blocking;
     int g_blocking = 1;
-        dim_t nb_groups = jcp.ngroups / g_blocking;
-        dim_t work_amount = nb_groups * jcp.mb * ic_chunks * jcp.nb_iw;
+    dim_t nb_groups = jcp.ngroups / g_blocking;
+    dim_t work_amount = nb_groups * jcp.mb * ic_chunks * jcp.nb_iw;
     int nthr = jcp.nthr;
 
     parallel(nthr, [= COMPAT_THIS_CAPTURE](const int ithr, const int nthr) {
@@ -820,10 +820,10 @@ void jit_avx512_common_convolution_bwd_data_t<diff_dst_type, wei_type,
 
     const jit_conv_ker_t jit_ker = (decltype(jit_ker))kernel_->jit_ker();
 
-        dim_t ic_chunks = jcp.nb_ic / jcp.nb_ic_blocking;
+    dim_t ic_chunks = jcp.nb_ic / jcp.nb_ic_blocking;
     int g_blocking = 1;
-        dim_t nb_groups = jcp.ngroups / g_blocking;
-        dim_t work_amount = nb_groups * jcp.mb * ic_chunks * jcp.ih * jcp.nb_iw;
+    dim_t nb_groups = jcp.ngroups / g_blocking;
+    dim_t work_amount = nb_groups * jcp.mb * ic_chunks * jcp.ih * jcp.nb_iw;
     int nthr = jcp.nthr;
 
     parallel(nthr, [= COMPAT_THIS_CAPTURE](const int ithr, const int nthr) {
@@ -999,10 +999,10 @@ void jit_avx512_common_convolution_bwd_data_t<diff_dst_type, wei_type,
 
     const jit_conv_ker_t jit_ker = (decltype(jit_ker))kernel_->jit_ker();
 
-        dim_t ic_chunks = jcp.nb_ic / jcp.nb_ic_blocking;
+    dim_t ic_chunks = jcp.nb_ic / jcp.nb_ic_blocking;
     int g_blocking = 1;
-        dim_t nb_groups = jcp.ngroups / g_blocking;
-        dim_t work_amount = nb_groups * jcp.mb * ic_chunks * jcp.id * jcp.ih;
+    dim_t nb_groups = jcp.ngroups / g_blocking;
+    dim_t work_amount = nb_groups * jcp.mb * ic_chunks * jcp.id * jcp.ih;
     int nthr = jcp.nthr;
 
     parallel(nthr, [= COMPAT_THIS_CAPTURE](const int ithr, const int nthr) {
