@@ -191,6 +191,7 @@ enum class inner_blk_t {
     _8b64a2b,
     _8b16c2b,
     _4c16b4c,
+    _4c24b4c,
     _8c16b2c,
     _2b4c2b,
     _2c4b2c,
@@ -255,6 +256,7 @@ constexpr int AB_or_BC_blk_off(int x0, int x1) {
                     ib::_4b16a4b, ib::_4b8a4b, ib::_2b8a4b, ib::_8b64a2b,
                     ib::_8b32a2b, ib::_8b24a2b, ib::_8b16a2b, ib::_8b8a2b,
                     ib::_8b16c2b, ib::_4c16b4c, ib::_8c16b2c, ib::_2b4c2b,
+                    ib::_4c24b4c,
                     ib::_2c4b2c, ib::_4b8c2b, ib::_4c8b2c, ib::_16a32b,
                     ib::_16a48b, ib::_16a64b, ib::_16a16b2a, ib::_16a32b2a,
                     ib::_16a48b2a, ib::_16a64b2a, ib::_16a16b4a, ib::_16a32b4a,
@@ -305,6 +307,7 @@ constexpr int AB_or_BC_blk_off(int x0, int x1) {
         : (utils::one_of(f, ib::_16a64b4a, ib::_16b64c4b)) ? (x0 / 4) * 256 + x1 * 4 + x0 % 4
         : (f == ib::_4b8a4b) ? (x1 / 4) * 32 + x0 * 4 + x1 % 4
         : (f == ib::_4b16a4b || f == ib::_4c16b4c) ? (x1 / 4) * 64 + x0 * 4 + x1 % 4
+        : (f == ib::_4c24b4c) ? (x1 / 4) * 96 + x0 * 4 + x1 % 4
         : (f == ib::_4b24a4b) ? (x1 / 4) * 96 + x0 * 4 + x1 % 4
         : (f == ib::_4b32a4b) ? (x1 / 4) * 128 + x0 * 4 + x1 % 4
         : (f == ib::_4b64a4b) ? (x1 / 4) * 256 + x0 * 4 + x1 % 4
@@ -493,6 +496,7 @@ DECL_TRAITS(aBC16c16b4c, _BC, _16c16b4c, 3);
 DECL_TRAITS(aBC16c32b4c, _BC, _16c32b4c, 3);
 DECL_TRAITS(aBC16c48b4c, _BC, _16c48b4c, 3);
 DECL_TRAITS(aBC16c64b4c, _BC, _16c64b4c, 3);
+DECL_TRAITS(aBC4c24b4c, _BC, _4c24b4c, 3);
 DECL_TRAITS(aCB16b16c, _BC, _16b16c, 2);
 DECL_TRAITS(aCB16b32c, _BC, _16b32c, 2);
 DECL_TRAITS(aCB16b48c, _BC, _16b48c, 2);
