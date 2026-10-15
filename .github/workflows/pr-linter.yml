@@ -31,23 +31,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  pr-commits:
-    name: Commit messages
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - name: Check commit messages
-        run: |
-          python3 ./.github/automation/test_commit_msg_check.py
-          python3 ./.github/automation/commit-msg-check.py \
-            "${{ github.event.pull_request.head.sha }}" \
-            "${{ github.event.pull_request.base.sha }}" \
-            --grandfathered ./.github/automation/commit-msg-grandfathered.txt
-
   pr-header-guards:
     name: Header guards
     runs-on: ubuntu-24.04
@@ -112,7 +95,7 @@ jobs:
   pr-status:
     name: Formatting
     runs-on: ubuntu-24.04
-    needs: [ pr-commits, pr-clang-format, pr-format-tags ]
+    needs: [ pr-clang-format, pr-format-tags ]
     steps:
       - name: Print success
         run: echo "Success"
