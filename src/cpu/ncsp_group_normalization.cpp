@@ -107,7 +107,9 @@ status_t ncsp_group_normalization_fwd_t::execute_forward(
                         src_f32 = reinterpret_cast<const float *__restrict>(
                                 _src);
                     }
+#if !defined(_MSC_VER)
                     PRAGMA_OMP_SIMD(reduction(+ : m))
+#endif
                     for (dim_t sp = 0; sp < sp_block_nelems; sp++) {
                         float s = src_f32[sp];
                         m += s;
@@ -126,7 +128,9 @@ status_t ncsp_group_normalization_fwd_t::execute_forward(
                         src_f32 = reinterpret_cast<const float *__restrict>(
                                 _src);
                     }
+#if !defined(_MSC_VER)
                     PRAGMA_OMP_SIMD(reduction(+ : m))
+#endif
                     for (dim_t sp = 0; sp < sp_block_reminder; sp++) {
                         float s = src_f32[sp];
                         m += s;
@@ -152,7 +156,9 @@ status_t ncsp_group_normalization_fwd_t::execute_forward(
                         src_f32 = reinterpret_cast<const float *__restrict>(
                                 _src);
                     }
+#if !defined(_MSC_VER)
                     PRAGMA_OMP_SIMD(reduction(+ : v))
+#endif
                     for (dim_t sp = 0; sp < sp_block_nelems; sp++) {
                         float s = src_f32[sp];
                         float s0 = s - m;
@@ -172,7 +178,9 @@ status_t ncsp_group_normalization_fwd_t::execute_forward(
                         src_f32 = reinterpret_cast<const float *__restrict>(
                                 _src);
                     }
+#if !defined(_MSC_VER)
                     PRAGMA_OMP_SIMD(reduction(+ : v))
+#endif
                     for (dim_t sp = 0; sp < sp_block_reminder; sp++) {
                         float s = src_f32[sp];
                         float s0 = s - m;

@@ -368,7 +368,8 @@ struct convolution_fwd_pd_t : public convolution_pd_t {
 
     int n_inputs() const override {
         return 2 + with_bias() + attr_post_op_dw_inputs() + n_binary_po_inputs()
-                + n_prelu_po_inputs();
+                + n_prelu_po_inputs() + n_depthwise_po_inputs()
+                + n_quantization_po_inputs();
     }
 
     int n_outputs() const override { return 1; }
@@ -397,8 +398,7 @@ protected:
         const auto &po = attr_.post_ops_;
         int conv = po.find(primitive_kind::convolution);
         if (conv == -1) return 0;
-        return po.entry_[conv].depthwise_conv.bias_dt == data_type::undef ? 1
-                                                                          : 2;
+        return 2;
     }
 };
 // NOLINTEND(google-default-arguments)
@@ -448,7 +448,10 @@ struct convolution_bwd_data_pd_t : public convolution_pd_t {
         return &glob_zero_md;
     }
 
-    int n_inputs() const override { return 2 + with_bias(); }
+    int n_inputs() const override {
+        return 2 + with_bias() + n_depthwise_po_inputs()
+                + n_quantization_po_inputs();
+    }
     int n_outputs() const override { return 1; }
 
     virtual bool support_bias() const { return false; }

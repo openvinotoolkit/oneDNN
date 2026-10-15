@@ -27,6 +27,7 @@
 
 /// @cond DO_NOT_DOCUMENT_THIS
 #include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <iterator>
 #include <memory>
@@ -151,6 +152,10 @@ struct primitive : public handle<dnnl_primitive_t> {
         layer_normalization = dnnl_layer_normalization,
         /// A group normalization primitive
         group_normalization = dnnl_group_normalization,
+
+        depthwise = dnnl_depthwise,
+        quantization = dnnl_quantization,
+        binarization = dnnl_binarization,
     };
 
     using handle::handle;
@@ -171,7 +176,7 @@ struct primitive : public handle<dnnl_primitive_t> {
             const std::vector<uint8_t> &cache_blob);
 
     /// Constructs a primitive from a primitive descriptor.
-    ///
+    ///src/common/deconvolution_pd.hpp
     /// @param pd Primitive descriptor.
     primitive(const primitive_desc &pd);
 
@@ -434,6 +439,12 @@ enum class algorithm {
     eltwise_hardswish = dnnl_eltwise_hardswish,
     /// Elementwise: hardsigmoid
     eltwise_hardsigmoid = dnnl_eltwise_hardsigmoid,
+    /// Elementwise: hsigmoid
+    eltwise_hsigmoid = dnnl_eltwise_hsigmoid,
+    /// Elementwise: round_half_to_even
+    eltwise_round_half_to_even = dnnl_eltwise_round_half_to_even,
+    /// Elementwise: round_half_away_from_zero
+    eltwise_round_half_away_from_zero = dnnl_eltwise_round_half_away_from_zero,
     /// Elementwise: rectified linar unit (ReLU) (dst for backward)
     eltwise_relu_use_dst_for_bwd = dnnl_eltwise_relu_use_dst_for_bwd,
     /// Elementwise: hyperbolic tangent non-linearity (tanh) (dst for backward)
@@ -500,6 +511,8 @@ enum class algorithm {
     binary_ne = dnnl_binary_ne,
     /// Binary select
     binary_select = dnnl_binary_select,
+    /// Binary prelu
+    binary_prelu = dnnl_binary_prelu,
     /// Nearest Neighbor resampling method
     resampling_nearest = dnnl_resampling_nearest,
     /// Linear (Bilinear, Trilinear) resampling method
@@ -526,6 +539,13 @@ enum class algorithm {
     softmax_accurate = dnnl_softmax_accurate,
     /// LogSoftmax, numerically stable
     softmax_log = dnnl_softmax_log,
+
+    depthwise_scale_shift = dnnl_depthwise_scale_shift,
+    depthwise_prelu = dnnl_depthwise_prelu,
+
+    quantization_quantize_dequantize = dnnl_quantization_quantize_dequantize,
+    quantization_quantize = dnnl_quantization_quantize,
+    binarization_depthwise = dnnl_binarization_depthwise,
 };
 
 /// Converts algorithm kind enum value from C++ API to C API type.
@@ -942,6 +962,12 @@ struct memory : public handle<dnnl_memory_t> {
         s4 = dnnl_s4,
         /// 4-bit unsigned integer.
         u4 = dnnl_u4,
+        /// 2-bit unsigned integer.
+        u2 = dnnl_u2,
+        /// 1-bit integer
+        bin = dnnl_bin,
+        /// 4-bit normalized float.
+        nf4 = dnnl_nf4,
     };
 
     /// Returns size of data type in bytes.
@@ -1287,6 +1313,19 @@ struct memory : public handle<dnnl_memory_t> {
         ABc4a4b = dnnl_ABc4a4b,
         aBc16b = dnnl_aBc16b,
         aBc32b = dnnl_aBc32b,
+        aBC8c8b2c = dnnl_aBC8c8b2c,
+        aBC8c16b2c = dnnl_aBC8c16b2c,
+        aBC8c24b2c = dnnl_aBC8c24b2c,
+        aBC8c32b2c = dnnl_aBC8c32b2c,
+        aBC8c64b2c = dnnl_aBC8c64b2c,
+        aBC16c16b2c = dnnl_aBC16c16b2c,
+        aBC16c32b2c = dnnl_aBC16c32b2c,
+        aBC16c48b2c = dnnl_aBC16c48b2c,
+        aBC16c64b2c = dnnl_aBC16c64b2c,
+        aBC16c16b4c = dnnl_aBC16c16b4c,
+        aBC16c32b4c = dnnl_aBC16c32b4c,
+        aBC16c48b4c = dnnl_aBC16c48b4c,
+        aBC16c64b4c = dnnl_aBC16c64b4c,
         ABc16b16a = dnnl_ABc16b16a,
         AcB16b16a = dnnl_AcB16b16a,
         ABc16b32a = dnnl_ABc16b32a,
@@ -1371,6 +1410,7 @@ struct memory : public handle<dnnl_memory_t> {
         aBCd4b4c = dnnl_aBCd4b4c,
         ABcd8a16b2a = dnnl_ABcd8a16b2a,
         ABcd8a8b = dnnl_ABcd8a8b,
+        ABcd8a32b = dnnl_ABcd8a32b,
         ABcd8a4b = dnnl_ABcd8a4b,
         ABcd8a2b = dnnl_ABcd8a2b,
         /// 4D tensor blocked by 2nd dimension with block size 8
@@ -1514,6 +1554,8 @@ struct memory : public handle<dnnl_memory_t> {
         BAcde8a8b = dnnl_BAcde8a8b,
         BAcde16a16b = dnnl_BAcde16a16b,
         aBdec32b = dnnl_aBdec32b,
+        Abcdef4a = dnnl_Abcdef4a,
+        Abcdef8a = dnnl_Abcdef8a,
         Abcdef16a = dnnl_Abcdef16a,
         Abcdef32a = dnnl_Abcdef32a,
         Acdb32a = dnnl_Acdb32a,
@@ -1779,6 +1821,8 @@ struct memory : public handle<dnnl_memory_t> {
         IOdhw16i16o = dnnl_IOdhw16i16o,
         gIOhw16i16o = dnnl_gIOhw16i16o,
         gOhwi32o = dnnl_gOhwi32o,
+        Goidhw4g = dnnl_Goidhw4g,
+        Goidhw8g = dnnl_Goidhw8g,
         Goidhw16g = dnnl_Goidhw16g,
         IOw8o8i = dnnl_IOw8o8i,
         IOw16o16i = dnnl_IOw16o16i,
@@ -1881,6 +1925,8 @@ struct memory : public handle<dnnl_memory_t> {
         OhwI8i8o = dnnl_OhwI8i8o,
         OIhw8o16i2o = dnnl_OIhw8o16i2o,
         OIhw8o8i = dnnl_OIhw8o8i,
+        OIhw8o32i = dnnl_OIhw8o32i,
+        OIhw16o32i = dnnl_OIhw16o32i,
         OIhw8o4i = dnnl_OIhw8o4i,
         OIhw2i8o4i = dnnl_OIhw2i8o4i,
         IOdhw8o8i = dnnl_IOdhw8o8i,
@@ -3081,6 +3127,21 @@ struct memory : public handle<dnnl_memory_t> {
         }
 #endif
 
+        static desc packed_v0(const dims &adims, data_type adata_type,
+                bool allow_empty = false) {
+            dnnl_memory_desc_t md = nullptr;
+            dnnl_status_t status
+                    = dnnl_memory_desc_create_with_packed_encoding_v0(&md,
+                            dnnl_packed, (int)adims.size(), adims.data(),
+                            convert_to_c(adata_type));
+
+            if (!allow_empty)
+                error::wrap_c_api(status,
+                        "could not construct a memory descriptor with sparse "
+                        "format");
+            return desc(md);
+        }
+
         /// Creates a memory descriptor for a scalar value that resides on the host.
         ///
         /// @param adata_type Data type of the scalar.
@@ -3110,6 +3171,19 @@ struct memory : public handle<dnnl_memory_t> {
                     dnnl_memory_desc_create_with_blob(&md, blob.data()),
                     "could not create a memory descriptor from blob");
             reset(md);
+        }
+
+        /// @note OpenVINO fork copy constructor for memory::desc.
+        /// Ensures deep copy (underlying C structure is copied as well)
+        /// To preserve behavior of 2.x oneDNN versions
+        ///
+        /// @param adesc Memory descriptor to copy.
+        desc(const memory::desc &adesc) {
+            auto cdesc = adesc.get();
+            dnnl_memory_desc_t cloned_md = nullptr;
+            dnnl_memory_desc_clone(&cloned_md, cdesc);
+
+            reset(cloned_md);
         }
 
         /// Constructs a memory descriptor for a region inside an area
@@ -4000,6 +4074,13 @@ struct post_ops : public handle<dnnl_post_ops_t> {
                 "could not append a binary post-op with ternary operators");
     }
 
+    void append_dw_conv(int in_h, int in_w, int ker_h, int ker_w, int str_h,
+            int str_w, dnnl_data_type_t in_dt) {
+        error::wrap_c_api(dnnl_post_ops_append_dw_conv(get(), in_h, in_w, ker_h,
+                                  ker_w, str_h, str_w, in_dt),
+                "could not append dw conv");
+    }
+
     /// Returns the parameters of a binary post-op.
     ///
     /// @param index Index of the binary post-op.
@@ -4110,6 +4191,32 @@ struct post_ops : public handle<dnnl_post_ops_t> {
     void get_params_prelu(int index, int &mask) const {
         error::wrap_c_api(dnnl_post_ops_get_params_prelu(get(), index, &mask),
                 "could not get parameters of a binary post-op");
+    }
+
+    void append_depthwise(algorithm alg, const std::array<size_t, 2> &offset) {
+        error::wrap_c_api(
+                dnnl_post_ops_append_depthwise(
+                        get(), convert_to_c(alg), offset.size(), offset.data()),
+                "could not append depthwise");
+    }
+
+    void append_quantization(algorithm alg,
+            const std::array<bool, 6> &per_channel,
+            const std::array<bool, 6> &all_default,
+            const std::array<size_t, 6> &offset) {
+        error::wrap_c_api(
+                dnnl_post_ops_append_quantization(get(), convert_to_c(alg),
+                        per_channel.size(), per_channel.data(),
+                        all_default.size(), all_default.data(), offset.size(),
+                        offset.data()),
+                "could not append quantization");
+    }
+
+    void append_binarization(algorithm alg, const float *weights_data,
+            const float *output_mask) {
+        error::wrap_c_api(dnnl_post_ops_append_binarization(get(),
+                                  convert_to_c(alg), weights_data, output_mask),
+                "could not append binarization");
     }
 };
 
@@ -4342,6 +4449,13 @@ struct primitive_attr : public handle<dnnl_primitive_attr_t> {
         error::wrap_c_api(dnnl_primitive_attr_set_scales_mask(get(), arg, mask),
                 "could not set scales primitive attribute");
     }
+    void set_scales_dims(int arg, const memory::dims &dims,
+            memory::data_type data_type = memory::data_type::f32) {
+        error::wrap_c_api(
+                dnnl_primitive_attr_set_scales_dims(get(), arg, dims.data(),
+                        dims.size(), memory::convert_to_c(data_type)),
+                "could not set scales primitive attribute");
+    }
 
     /// Sets primitive attributes scaling factors for a given memory
     /// argument. The scaling factors must be passed at execution time as
@@ -4412,6 +4526,13 @@ struct primitive_attr : public handle<dnnl_primitive_attr_t> {
     void set_zero_points_mask(int arg, int mask) {
         error::wrap_c_api(
                 dnnl_primitive_attr_set_zero_points_mask(get(), arg, mask),
+                "could not set zero points primitive attribute");
+    }
+    void set_zero_points_dims(
+            int arg, const memory::dims &dims, memory::data_type dt) {
+        error::wrap_c_api(
+                dnnl_primitive_attr_set_zero_points_dims(get(), arg,
+                        dims.data(), dims.size(), memory::convert_to_c(dt)),
                 "could not set zero points primitive attribute");
     }
 
@@ -4493,6 +4614,24 @@ struct primitive_attr : public handle<dnnl_primitive_attr_t> {
                                   arg, mask, (int)groups.size(), groups.data(),
                                   memory::convert_to_c(data_type)),
                 "could not set precomputed reductions primitive attribute");
+    }
+
+    void set_output_compensations(dnnl_dim_t count, int mask) {
+        error::wrap_c_api(dnnl_primitive_attr_set_output_compensations(
+                                  get(), count, mask),
+                "could not set int output compensations");
+    }
+
+    void set_input_zero_points(dnnl_dim_t count, int mask) {
+        error::wrap_c_api(
+                dnnl_primitive_attr_set_input_zero_points(get(), count, mask),
+                "could not set int input zero_points");
+    }
+
+    void set_weights_zero_points(dnnl_dim_t count, int mask) {
+        error::wrap_c_api(
+                dnnl_primitive_attr_set_weights_zero_points(get(), count, mask),
+                "could not set int weights zero_points");
     }
 
     /// Returns post-ops previously set via set_post_ops().
@@ -4717,6 +4856,20 @@ struct primitive_attr : public handle<dnnl_primitive_attr_t> {
         mask = c_mask;
         for (dnnl_dim_t c = 0; c < count; c++)
             scales[c] = c_scales[c];
+    }
+
+    void set_src_dyn_quant_params(uint64_t group_size) {
+        error::wrap_c_api(
+                dnnl_primitive_attr_set_src_dyn_quant_params(get(), group_size),
+                "could not set src dynamic quantization parameters primitive "
+                "attribute");
+    }
+
+    void get_src_dyn_quant_params(uint64_t &group_size) const {
+        error::wrap_c_api(dnnl_primitive_attr_get_src_dyn_quant_params(
+                                  get(), &group_size),
+                "could not get src dynamic quantization parameters primitive "
+                "attribute");
     }
 };
 

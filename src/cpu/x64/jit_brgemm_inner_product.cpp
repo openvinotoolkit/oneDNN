@@ -92,16 +92,155 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
 
     const void *src_scales
             = CTX_IN_MEM(const void *, DNNL_ARG_ATTR_SCALES | DNNL_ARG_SRC);
-    const void *wei_scales
+    const void *wei_scales_f
             = CTX_IN_MEM(const void *, DNNL_ARG_ATTR_SCALES | DNNL_ARG_WEIGHTS);
     const void *dst_scales
             = CTX_IN_MEM(const void *, DNNL_ARG_ATTR_SCALES | DNNL_ARG_DST);
+
+    DEFINE_ZERO_POINTS_BUFFER_ATTR_U8(
+            pd()->attr(), wei_zero_points, DNNL_ARG_WEIGHTS);
+    auto wei_scales = reinterpret_cast<const uint8_t *>(wei_scales_f);
+
+    const auto wei_scales_d
+            = ctx.memory_mdw(DNNL_ARG_ATTR_SCALES | DNNL_ARG_WEIGHTS);
+    const auto wei_zero_points_d
+            = ctx.memory_mdw(DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_WEIGHTS);
+    int wei_scales_oc_stride = wei_scales_d.dims()[0] > 1 ? 1 : 0;
+    int wei_zero_points_oc_stride = wei_zero_points_d.dims()[0] > 1 ? 1 : 0;
+    size_t wei_scales_dt_size = jbgp.wei_decomp_scales_dt == data_type::undef
+            ? 0
+            : types::data_type_size(jbgp.wei_decomp_scales_dt);
+    size_t wei_zero_points_dt_size
+            = jbgp.wei_decomp_zero_points_dt == data_type::undef
+            ? 0
+            : types::data_type_size(jbgp.wei_decomp_zero_points_dt);
+    if (jbgp.weights_decompression) {
+        // weights decompression algorithm requires weights scales to be
+        // applied before matmul to avoid huge numerical errors
+        // oscales = src_scales;
+
+        // decompression algorithm assumes scales/zero_points buffers are aligned on oc_block size
+        if (jbgp.oc % jbgp.simd_w != 0) {
+            if (!pd()->attr()
+                            ->scales_.get(DNNL_ARG_WEIGHTS)
+                            .has_default_values()) {
+                auto dims = pd()->attr()
+                                    ->scales_.get(DNNL_ARG_WEIGHTS)
+                                    .get_dims();
+                auto decomp_scales_buf = scratchpad.template get<uint8_t>(
+                        key_decompression_scales);
+                std::memcpy(decomp_scales_buf, wei_scales,
+                        dims[0] * dims[1] * wei_scales_dt_size);
+                wei_scales = decomp_scales_buf;
+            }
+
+            if (!pd()->attr()->zero_points_.has_default_values(
+                        DNNL_ARG_WEIGHTS)) {
+                auto decomp_zp_buf = scratchpad.template get<uint8_t>(
+                        key_decompression_zero_points);
+                auto dims
+                        = pd()->attr()->zero_points_.get_dims(DNNL_ARG_WEIGHTS);
+                std::memcpy(decomp_zp_buf, wei_zero_points,
+                        dims[0] * dims[1] * wei_zero_points_dt_size);
+                wei_zero_points = decomp_zp_buf;
+            }
+        }
+    }
 
     const size_t src_dt_size = types::data_type_size(jbgp.src_dt);
     const size_t bia_dt_size
             = jbgp.with_bias ? types::data_type_size(jbgp.bia_dt) : 0;
     const size_t acc_dt_size = types::data_type_size(jbgp.acc_dt);
     const size_t dst_dt_size = types::data_type_size(jbgp.dst_dt);
+
+    int8_t *qsrc = nullptr;
+    float *src_dscales = nullptr;
+    int32_t *src_grouped_sum = nullptr;
+    if (jbgp.with_src_dynamic_quant) {
+        qsrc = scratchpad.template get<int8_t>(key_src_quantized);
+        src_dscales
+                = scratchpad.template get<float>(key_src_dequantized_scales);
+        src_grouped_sum = scratchpad.template get<int32_t>(key_src_grouped_sum);
+
+        int ic_groups = div_up(jbgp.ic, jbgp.src_quant_group_size);
+        int ic_sum_groups = div_up(jbgp.ic, jbgp.src_sum_group_size);
+        const size_t orig_src_dt_size = types::data_type_size(jbgp.orig_src_dt);
+        auto src_ptr_f32 = reinterpret_cast<const float *>(src);
+        auto src_ptr_bf16 = reinterpret_cast<const bfloat16_t *>(src);
+        auto qsrc_ptr = qsrc;
+        auto src_dscales_ptr = src_dscales;
+        auto src_grouped_sum_ptr = src_grouped_sum;
+        int vec_loop_end = rnd_dn(jbgp.ic, jbgp.src_quant_group_size);
+
+        // orig_src_dt is loop-invariant across all mb iterations; resolve it once
+        // here so the tail loops below stay branch-free.
+        const bool is_bf16_src = (jbgp.orig_src_dt == data_type::bf16);
+
+        parallel_nd(jbgp.mb, [&](dim_t mb) {
+            src_quantization_runtime_params_t rt_params = {};
+            rt_params.src_ptr = src + mb * jbgp.ic * orig_src_dt_size;
+            rt_params.qsrc_ptr = qsrc_ptr + mb * jbgp.ic;
+            rt_params.src_scales_ptr = src_dscales_ptr + mb * ic_groups;
+            rt_params.src_grouped_sum_ptr
+                    = src_grouped_sum_ptr + mb * ic_sum_groups;
+            rt_params.ic_size = vec_loop_end;
+            (*brg_src_quant_kernel_)(&rt_params);
+
+            // Scalar tail for ic elements not covered by the JIT kernel
+            if (vec_loop_end != jbgp.ic) {
+                float amax = 0;
+                if (is_bf16_src) {
+                    for (int ic = vec_loop_end; ic < jbgp.ic; ic++) {
+                        amax = std::max(amax,
+                                std::abs(static_cast<float>(
+                                        src_ptr_bf16[mb * jbgp.ic + ic])));
+                    }
+                } else {
+                    for (int ic = vec_loop_end; ic < jbgp.ic; ic++) {
+                        amax = std::max(
+                                amax, std::abs(src_ptr_f32[mb * jbgp.ic + ic]));
+                    }
+                }
+
+                const float dscale = amax / 127;
+                const float qscale = (dscale != 0) ? (1.0f / dscale) : 0;
+
+                src_dscales_ptr[mb * ic_groups + ic_groups - 1] = dscale;
+                if (is_bf16_src) {
+                    for (int ic = vec_loop_end; ic < jbgp.ic; ic++) {
+                        qsrc_ptr[mb * jbgp.ic + ic]
+                                = static_cast<int8_t>(std::round(
+                                        static_cast<float>(
+                                                src_ptr_bf16[mb * jbgp.ic + ic])
+                                        * qscale));
+                    }
+                } else {
+                    for (int ic = vec_loop_end; ic < jbgp.ic; ic++) {
+                        qsrc_ptr[mb * jbgp.ic + ic] = static_cast<int8_t>(
+                                std::round(src_ptr_f32[mb * jbgp.ic + ic]
+                                        * qscale));
+                    }
+                }
+            }
+
+            if (jbgp.wei_decomp_zero_points_dt) {
+                for (int icb = vec_loop_end / jbgp.src_quant_group_size;
+                        icb < ic_sum_groups; icb++) {
+                    int ic_begin = icb * jbgp.src_sum_group_size;
+                    int ic_end = nstl::min(static_cast<int>((icb + 1)
+                                                   * jbgp.src_sum_group_size),
+                            jbgp.ic);
+                    int sum = 0;
+                    for (int ic = ic_begin; ic < ic_end; ic++) {
+                        sum += qsrc_ptr[mb * jbgp.ic + ic];
+                    }
+                    src_grouped_sum_ptr[mb * ic_sum_groups + icb] = sum;
+                }
+            }
+        });
+
+        src = reinterpret_cast<const char *>(qsrc);
+    }
 
     auto addr_batch_global = scratchpad.template get<brgemm_batch_element_t>(
             key_brgemm_primitive_batch);
@@ -117,8 +256,13 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                       key_conv_amx_tile_buffer)
             : nullptr;
 
-    const int ic_chunks = div_up(jbgp.nb_ic, jbgp.nb_ic_blocking);
+    auto decomp_buf_global
+            = (jbgp.weights_compressed || jbgp.weights_decompression)
+            ? scratchpad.template get<char>(key_brgemm_primitive_decomp_buf)
+            : nullptr;
 
+    const int ic_chunks
+            = static_cast<int>(div_up(jbgp.nb_ic, jbgp.nb_ic_blocking));
     const bool are_post_ops_applicable = one_of(true, jbgp.with_sum,
             jbgp.with_bias, jbgp.with_src_scales, jbgp.with_wei_scales,
             jbgp.with_dst_scales, jbgp.with_eltwise, jbgp.with_binary,
@@ -138,14 +282,14 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
             = types::data_type_size(jbgp.wei_dt) * weights_d.off_v(ic_dims);
 
     const auto ker = [= COMPAT_THIS_CAPTURE](int ithr_oc_mb, int nthr_oc_mb,
-                             int ithr_ic, int osb, int osb_s, int ocb,
-                             int ocb_s, int icc, int icc_s, int kd, int kh,
+                             int ithr_ic, dim_t osb, dim_t osb_s, dim_t ocb,
+                             dim_t ocb_s, int icc, int icc_s, int kd, int kh,
                              int kw, bool copy_buffer_a, int &prev_ker_idx,
                              const void *dst_scales_ptr) {
-        const int cur_ocb = ocb + ocb_s;
-        const int cur_osb = osb + osb_s;
+        const dim_t cur_ocb = ocb + ocb_s;
+        const dim_t cur_osb = osb + osb_s;
         const int cur_icc = icc + icc_s;
-        const int n = cur_osb * jbgp.os_block;
+        const int n = static_cast<int>(cur_osb * jbgp.os_block);
         const int ithr = nthr_oc_mb * ithr_ic + ithr_oc_mb;
         auto addr_batch = addr_batch_global + ithr * jbgp.adjusted_batch_size;
 
@@ -157,7 +301,7 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                         + ithr * a_buffer_per_thr + osb * a_buffer_osb_stride
                                             : nullptr;
 
-        const int oc = cur_ocb * jbgp.oc_block;
+        const int oc = static_cast<int>(cur_ocb * jbgp.oc_block);
         const size_t dst_off = get_blk_off(dst_d, jbgp.dst_dt, n, oc);
 
         const bool force_use_dst_as_acc_buffer = can_use_dst_as_acc_buffer
@@ -235,20 +379,31 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                 = (jbgp.use_buffer_a ? utils::rnd_up(jbgp.ic, jbgp.ic_block)
                                      : jbgp.ic)
                 - ic;
-        const int gemm_batch
-                = nstl::min(jbgp.gemm_batch_size, remaining_ic_blks / jbgp.K);
+        const int gemm_batch = static_cast<int>(nstl::min<dim_t>(
+                jbgp.gemm_batch_size, remaining_ic_blks / jbgp.K));
 
         auto is_bs_tail = (gemm_batch != jbgp.gemm_batch_size);
         int brg_ker_idx = brgemm_inner_product_utils::get_brg_kernel_index(
                 is_bs_tail, kernel_init, is_os_tail, is_oc_tail, false);
         auto brg_kernel = brg_kernels_[brg_ker_idx].get();
-        const int ic_blocks_per_batch = jbgp.K / jbgp.ic_block;
+        const int ic_blocks_per_batch
+                = static_cast<int>(div_up(jbgp.K, jbgp.ic_block));
 
-        const dim_t wei_cur_ocb = blk_off(weights_d, cur_ocb, 0, kd, kh, kw);
+        const dim_t wei_cur_ocb = blk_off(weights_d, cur_ocb, 0, kd, kh, kw)
+                / types::data_type_size(weights_d.data_type())
+                * types::data_type_size(jbgp.wei_dt);
+        // weights_d & jbgp.wei_dt has different data size
+        // printf("kd %ld, kh %ld, kw %ld weights_d %ld true_size %ld wei_cur_ocb %ld\n", kd, kh, kw,
+        //     weights_d.data_type(), jbgp.wei_dt, wei_cur_ocb);
+        // const dim_t wei_cur_ocb
+        // = get_blk_off(weights_d, jbgp.wei_dt, cur_ocb, 0);
 
         if (copy_buffer_a) {
             assert(!jbgp.is_bf32);
-            auto src_ptr = src + blk_off(src_d, n, ic, kd, kh, kw);
+            auto src_ptr = src
+                    + blk_off(src_d, n, ic, kd, kh, kw)
+                            / types::data_type_size(src_d.data_type())
+                            * types::data_type_size(jbgp.src_dt);
             copy_data_chunk(copy_src_kernel_, a_buffer, src_ptr,
                     is_os_tail ? jbgp.mb - n : jbgp.os_block, is_last_ic_chunk);
         }
@@ -260,11 +415,171 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                         ? (a_buffer + src_dt_size * b * jbgp.K)
                         : (src
                                   + blk_off(src_d, n, ic + b * jbgp.K, kd, kh,
-                                          kw));
+                                            kw)
+                                          / types::data_type_size(
+                                                  src_d.data_type())
+                                          * types::data_type_size(jbgp.src_dt));
                 addr_batch[b].ptr.A = A_ptr;
                 const dim_t wei_offset = wei_cur_ocb
                         + wei_ic_stride * (icb + b * ic_blocks_per_batch);
-                addr_batch[b].ptr.B = weights + wei_offset;
+                if (jbgp.weights_compressed) {
+                    using comp_tile_len_type = int;
+                    const comp_tile_len_type *compressed_tile_lengths_ptr
+                            = reinterpret_cast<const comp_tile_len_type *>(
+                                    weights);
+                    int compressed_weights_offset
+                            = static_cast<int>(wei_offset / 4096);
+
+                    auto dcomp_params = brgemm_decomp_kernel_params_t();
+                    dcomp_params.ptr_B = weights + jbgp.weights_starting_offset
+                            + compressed_tile_lengths_ptr
+                                            [compressed_weights_offset]
+                                    * 64;
+                    dcomp_params.bitmask_ptr = weights
+                            + jbgp.weight_comp_bitmask_off + wei_offset / 8;
+                    const size_t decomp_buf_per_thr = (size_t)jbgp.ic * 64;
+                    auto decomp_buf
+                            = decomp_buf_global + ithr * decomp_buf_per_thr;
+
+                    dcomp_params.scratch_buf = decomp_buf;
+                    (*brg_decomp_kernel_)(&dcomp_params);
+                    addr_batch[b].ptr.B = decomp_buf;
+                } else if (jbgp.weights_decompression
+                        && jbgp.wei_decomp_algo
+                                == weights_decomp_kind_t::prepack) {
+                    int typesize_scale = [&] {
+                        if (jbgp.orig_wei_dt == data_type::u2) {
+                            return 4;
+                        } else if (one_of(jbgp.orig_wei_dt, data_type::nf4,
+                                           data_type::s4, data_type::u4,
+                                           data_type::f4_e2m1)) {
+                            return 2;
+                        } else {
+                            return 1;
+                        }
+                    }();
+                    auto w_off = wei_offset
+                            * types::data_type_size(jbgp.orig_wei_dt)
+                            / types::data_type_size(jbgp.wei_dt)
+                            / typesize_scale;
+                    auto weights_ptr = reinterpret_cast<const uint8_t *>(
+                            &weights[w_off]);
+
+                    const size_t decomp_buf_per_thr = jbgp.ic_block
+                            * jbgp.nb_ic_blocking * jbgp.oc_block
+                            * types::data_type_size(jbgp.wei_dt);
+                    auto decomp_buf = decomp_buf_global
+                            + ithr * decomp_buf_per_thr
+                            + wei_ic_stride * b * ic_blocks_per_batch;
+
+                    const int ic_internal_block = [&] {
+                        if (pd()->jbgp_.orig_wei_dt == data_type::u2) {
+                            return 4;
+                        } else if (pd()->jbgp_.wei_dt == data_type::bf16) {
+                            return 2;
+                        } else if (one_of(pd()->jbgp_.orig_wei_dt,
+                                           data_type::nf4, data_type::s4,
+                                           data_type::u4, data_type::f4_e2m1)) {
+                            return 2;
+                        } else {
+                            return 1;
+                        }
+                    }();
+                    auto wei_zero_points_ptr = wei_zero_points
+                            + wei_zero_points_oc_stride * oc
+                                    * wei_zero_points_dt_size;
+                    auto wei_scales_ptr = wei_scales
+                            + wei_scales_oc_stride * oc * wei_scales_dt_size;
+
+                    if (jbgp.with_grouped_weights_decompression) {
+                        weights_decompression_runtime_params_t rt_params = {};
+                        auto ic_size = jbgp.ic_block * ic_blocks_per_batch
+                                / ic_internal_block;
+                        auto wei_scales_ic_group_size_local
+                                = jbgp.wei_scales_ic_group_size
+                                / ic_internal_block;
+                        auto wei_zero_points_ic_group_size_local
+                                = jbgp.wei_zero_points_ic_group_size
+                                / ic_internal_block;
+                        auto group_size
+                                = nstl::min(wei_scales_ic_group_size_local,
+                                        wei_zero_points_ic_group_size_local);
+                        auto group_ic_blocks = div_up(ic_size, group_size);
+                        auto start_group_scales
+                                = ic / jbgp.wei_scales_ic_group_size;
+                        auto start_group_zero_points
+                                = ic / jbgp.wei_zero_points_ic_group_size;
+                        for (int icb_idx = 0; icb_idx < group_ic_blocks;
+                                icb_idx++) {
+                            auto ic_idx = icb_idx * group_size;
+                            auto scales_idx
+                                    = ic_idx / wei_scales_ic_group_size_local
+                                    + start_group_scales;
+                            auto zero_points_idx = ic_idx
+                                            / wei_zero_points_ic_group_size_local
+                                    + start_group_zero_points;
+
+                            rt_params.weights_ptr = weights_ptr
+                                    + ic_idx * ic_internal_block * jbgp.oc_block
+                                            * types::data_type_size(
+                                                    jbgp.orig_wei_dt)
+                                            / typesize_scale;
+                            rt_params.decomp_buffer_ptr = decomp_buf
+                                    + ic_idx * ic_internal_block * jbgp.oc_block
+                                            * types::data_type_size(
+                                                    jbgp.wei_dt);
+                            rt_params.scales_ptr = wei_scales_ptr
+                                    + scales_idx * wei_scales_d.dims()[0]
+                                            * wei_scales_dt_size;
+                            rt_params.zero_points_ptr = wei_zero_points_ptr
+                                    + zero_points_idx
+                                            * wei_zero_points_d.dims()[0]
+                                            * wei_zero_points_dt_size;
+                            rt_params.ic_size = nstl::min(
+                                    group_size, ic_size - icb_idx * group_size);
+                            (*brg_weights_decomp_kernel_)(&rt_params);
+                        }
+                    } else {
+                        weights_decompression_runtime_params_t rt_params = {};
+                        rt_params.weights_ptr = weights_ptr;
+                        rt_params.decomp_buffer_ptr = decomp_buf;
+                        rt_params.scales_ptr = wei_scales_ptr;
+                        rt_params.zero_points_ptr = wei_zero_points_ptr;
+                        rt_params.ic_size = jbgp.ic_block * ic_blocks_per_batch
+                                / ic_internal_block;
+                        (*brg_weights_decomp_kernel_)(&rt_params);
+                    }
+
+                    addr_batch[b].ptr.B = decomp_buf;
+                } else {
+                    int typesize_scale = [&] {
+                        if (jbgp.wei_dt == data_type::u2) {
+                            return 4;
+                        } else if (one_of(jbgp.wei_dt, data_type::nf4,
+                                           data_type::s4, data_type::u4,
+                                           data_type::f4_e2m1)) {
+                            return 2;
+                        } else {
+                            return 1;
+                        }
+                    }();
+                    addr_batch[b].ptr.B = weights + wei_offset / typesize_scale;
+                }
+            }
+
+            int wei_scales_offset = 0;
+            int wei_zero_points_offset = 0;
+            int src_scales_offset = 0;
+            int src_grouped_sum_offset = 0;
+            if (jbgp.weights_decompression) {
+                wei_scales_offset
+                        = wei_scales_oc_stride * oc * wei_scales_dt_size;
+                wei_zero_points_offset = wei_zero_points_oc_stride * oc
+                        * wei_zero_points_dt_size;
+                src_scales_offset
+                        = n * div_up(jbgp.ic, jbgp.src_quant_group_size);
+                src_grouped_sum_offset
+                        = n * div_up(jbgp.ic, jbgp.src_sum_group_size);
             }
 
             auto ptr_D = dst + dst_off;
@@ -286,17 +601,25 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                         post_ops_binary_rhs_arg_vec.data(),
                         static_cast<size_t>(oc), 0, dst, 0, nullptr, nullptr,
                         nullptr, false, 1, false, false, src_scales,
-                        wei_scales ? static_cast<const char *>(wei_scales)
+                        wei_scales_f
+                                ? reinterpret_cast<const char *>(wei_scales_f)
                                         + jbgp.is_oc_scale * oc * sizeof(float)
-                                   : nullptr,
+                                : nullptr,
                         dst_scales_ptr};
 
                 brgemm_kernel_execute_postops(brg_kernel, gemm_batch,
                         addr_batch, (void *)ptr_C, (void *)ptr_D, post_ops_data,
-                        scratch);
+                        scratch, nullptr, wei_scales + wei_scales_offset,
+                        wei_zero_points + wei_zero_points_offset,
+                        src_dscales + src_scales_offset,
+                        src_grouped_sum + src_grouped_sum_offset, ic);
             } else {
                 brgemm_kernel_execute(brg_kernel, gemm_batch, addr_batch,
-                        (void *)ptr_C, is_amx ? (void *)wsp_tile : nullptr);
+                        (void *)ptr_C, is_amx ? (void *)wsp_tile : nullptr,
+                        nullptr, wei_scales + wei_scales_offset,
+                        wei_zero_points + wei_zero_points_offset,
+                        src_dscales + src_scales_offset,
+                        src_grouped_sum + src_grouped_sum_offset, ic);
             }
         }
 
@@ -313,10 +636,141 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                     = static_cast<dim_t>(gemm_batch) * ic_blocks_per_batch;
             addr_batch[0].ptr.A = src
                     + blk_off(src_d, n, ic + ic_block * jbgp.ic_block, kd, kh,
-                            kw);
+                              kw)
+                            / types::data_type_size(src_d.data_type())
+                            * types::data_type_size(jbgp.src_dt);
             const dim_t wei_offset
-                    = wei_cur_ocb + wei_ic_stride * (icb + ic_block);
-            addr_batch[0].ptr.B = weights + wei_offset;
+                    = (wei_cur_ocb + wei_ic_stride * (icb + ic_block));
+
+            if (jbgp.weights_decompression
+                    && jbgp.wei_decomp_algo == weights_decomp_kind_t::prepack) {
+                int typesize_scale = [&] {
+                    if (jbgp.orig_wei_dt == data_type::u2) {
+                        return 4;
+                    } else if (one_of(jbgp.orig_wei_dt, data_type::nf4,
+                                       data_type::s4, data_type::u4,
+                                       data_type::f4_e2m1)) {
+                        return 2;
+                    } else {
+                        return 1;
+                    }
+                }();
+                auto w_off = wei_offset
+                        * types::data_type_size(jbgp.orig_wei_dt)
+                        / types::data_type_size(jbgp.wei_dt) / typesize_scale;
+                auto weights_ptr
+                        = reinterpret_cast<const uint8_t *>(&weights[w_off]);
+
+                const size_t decomp_buf_per_thr = jbgp.ic_block
+                        * jbgp.nb_ic_blocking * jbgp.oc_block
+                        * types::data_type_size(jbgp.wei_dt);
+                auto decomp_buf = decomp_buf_global + ithr * decomp_buf_per_thr;
+
+                const int ic_internal_block = [&] {
+                    if (pd()->jbgp_.orig_wei_dt == data_type::u2) {
+                        return 4;
+                    } else if (pd()->jbgp_.wei_dt == data_type::bf16) {
+                        return 2;
+                    } else if (one_of(pd()->jbgp_.orig_wei_dt, data_type::nf4,
+                                       data_type::s4, data_type::u4,
+                                       data_type::f4_e2m1)) {
+                        return 2;
+                    } else {
+                        return 1;
+                    }
+                }();
+                auto wei_zero_points_ptr = wei_zero_points
+                        + wei_zero_points_oc_stride * oc
+                                * wei_zero_points_dt_size;
+                auto wei_scales_ptr = wei_scales
+                        + wei_scales_oc_stride * oc * wei_scales_dt_size;
+
+                if (jbgp.with_grouped_weights_decompression) {
+                    weights_decompression_runtime_params_t rt_params = {};
+                    auto ic_size = (jbgp.ic - (ic + ic_block * jbgp.ic_block))
+                            / ic_internal_block;
+                    auto wei_scales_ic_group_size_local
+                            = jbgp.wei_scales_ic_group_size / ic_internal_block;
+                    auto wei_zero_points_ic_group_size_local
+                            = jbgp.wei_zero_points_ic_group_size
+                            / ic_internal_block;
+                    auto group_size = nstl::min(wei_scales_ic_group_size_local,
+                            wei_zero_points_ic_group_size_local);
+                    auto group_ic_blocks = div_up(ic_size, group_size);
+                    auto start_group_scales
+                            = ic / jbgp.wei_scales_ic_group_size;
+                    auto start_group_zero_points
+                            = ic / jbgp.wei_zero_points_ic_group_size;
+                    for (int icb_idx = 0; icb_idx < group_ic_blocks;
+                            icb_idx++) {
+                        auto ic_idx = icb_idx * group_size;
+                        auto scales_idx
+                                = ic_idx / wei_scales_ic_group_size_local
+                                + start_group_scales;
+                        auto zero_points_idx
+                                = ic_idx / wei_zero_points_ic_group_size_local
+                                + start_group_zero_points;
+
+                        rt_params.weights_ptr = weights_ptr
+                                + ic_idx * ic_internal_block * jbgp.oc_block
+                                        * types::data_type_size(
+                                                jbgp.orig_wei_dt)
+                                        / typesize_scale;
+                        rt_params.decomp_buffer_ptr = decomp_buf
+                                + ic_idx * ic_internal_block * jbgp.oc_block
+                                        * types::data_type_size(jbgp.wei_dt);
+                        rt_params.scales_ptr = wei_scales_ptr
+                                + scales_idx * wei_scales_d.dims()[0]
+                                        * wei_scales_dt_size;
+                        rt_params.zero_points_ptr = wei_zero_points_ptr
+                                + zero_points_idx * wei_zero_points_d.dims()[0]
+                                        * wei_zero_points_dt_size;
+                        rt_params.ic_size = nstl::min((int64_t)group_size,
+                                (int64_t)(ic_size - icb_idx * group_size));
+                        (*brg_weights_decomp_kernel_)(&rt_params);
+                    }
+                } else {
+                    weights_decompression_runtime_params_t rt_params = {};
+                    rt_params.weights_ptr = weights_ptr;
+                    rt_params.decomp_buffer_ptr = decomp_buf;
+                    rt_params.scales_ptr = wei_scales_ptr;
+                    rt_params.zero_points_ptr = wei_zero_points_ptr;
+                    rt_params.ic_size
+                            = (jbgp.ic - (ic + ic_block * jbgp.ic_block))
+                            / ic_internal_block;
+                    (*brg_weights_decomp_kernel_)(&rt_params);
+                }
+
+                addr_batch[0].ptr.B = decomp_buf;
+            } else {
+                int typesize_scale = [&] {
+                    if (jbgp.wei_dt == data_type::u2) {
+                        return 4;
+                    } else if (one_of(jbgp.wei_dt, data_type::nf4,
+                                       data_type::s4, data_type::u4,
+                                       data_type::f4_e2m1)) {
+                        return 2;
+                    } else {
+                        return 1;
+                    }
+                }();
+                addr_batch[0].ptr.B = weights + wei_offset / typesize_scale;
+            }
+
+            int wei_scales_offset = 0;
+            int wei_zero_points_offset = 0;
+            int src_scales_offset = 0;
+            int src_grouped_sum_offset = 0;
+            if (jbgp.weights_decompression) {
+                wei_scales_offset
+                        = wei_scales_oc_stride * oc * wei_scales_dt_size;
+                wei_zero_points_offset = wei_zero_points_oc_stride * oc
+                        * wei_zero_points_dt_size;
+                src_scales_offset
+                        = n * div_up(jbgp.ic, jbgp.src_quant_group_size);
+                src_grouped_sum_offset
+                        = n * div_up(jbgp.ic, jbgp.src_sum_group_size);
+            }
 
             auto brg_kernel_ic_tail = brg_kernels_[brg_ker_ic_tail_idx].get();
             auto ptr_D = dst + dst_off;
@@ -337,22 +791,33 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                         post_ops_binary_rhs_arg_vec.data(),
                         static_cast<size_t>(oc), 0, dst, 0, nullptr, nullptr,
                         nullptr, false, 1, false, false, src_scales,
-                        wei_scales ? static_cast<const char *>(wei_scales)
+                        wei_scales_f
+                                ? reinterpret_cast<const char *>(wei_scales_f)
                                         + jbgp.is_oc_scale * oc * sizeof(float)
-                                   : nullptr,
+                                : nullptr,
                         dst_scales_ptr};
 
                 brgemm_kernel_execute_postops(brg_kernel_ic_tail, 1, addr_batch,
-                        (void *)ptr_C, (void *)ptr_D, post_ops_data, scratch);
+                        (void *)ptr_C, (void *)ptr_D, post_ops_data, scratch,
+                        nullptr, wei_scales + wei_scales_offset,
+                        wei_zero_points + wei_zero_points_offset,
+                        src_dscales + src_scales_offset,
+                        src_grouped_sum + src_grouped_sum_offset, ic);
             } else {
                 brgemm_kernel_execute(brg_kernel_ic_tail, 1, addr_batch,
-                        (void *)ptr_C, is_amx ? (void *)wsp_tile : nullptr);
+                        (void *)ptr_C, is_amx ? (void *)wsp_tile : nullptr,
+                        nullptr, wei_scales + wei_scales_offset,
+                        wei_zero_points + wei_zero_points_offset,
+                        src_dscales + src_scales_offset,
+                        src_grouped_sum + src_grouped_sum_offset, ic);
             }
         }
     };
 
-    const int os_chunks = div_up(jbgp.nb_os, jbgp.nb_os_blocking);
-    const int oc_chunks = div_up(jbgp.nb_oc, jbgp.nb_oc_blocking);
+    const int os_chunks
+            = static_cast<int>(div_up(jbgp.nb_os, jbgp.nb_os_blocking));
+    const int oc_chunks
+            = static_cast<int>(div_up(jbgp.nb_oc, jbgp.nb_oc_blocking));
     const int work_amount = oc_chunks * os_chunks;
 
     const auto init_thr_groups
@@ -419,16 +884,18 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                 break;
         }
         while (work < end) {
-            int ocb_s = occ * jbgp.nb_oc_blocking;
-            int ocb_e = nstl::min(ocb_s + jbgp.nb_oc_blocking, jbgp.nb_oc);
-            int ocb_work = ocb_e - ocb_s;
+            dim_t ocb_s = occ * jbgp.nb_oc_blocking;
+            dim_t ocb_e
+                    = nstl::min<dim_t>(ocb_s + jbgp.nb_oc_blocking, jbgp.nb_oc);
+            dim_t ocb_work = ocb_e - ocb_s;
 
-            int osb_s = osc * jbgp.nb_os_blocking;
-            int osb_e = nstl::min(osb_s + jbgp.nb_os_blocking, jbgp.nb_os);
-            int osb_work = osb_e - osb_s;
+            dim_t osb_s = osc * jbgp.nb_os_blocking;
+            dim_t osb_e
+                    = nstl::min<dim_t>(osb_s + jbgp.nb_os_blocking, jbgp.nb_os);
+            dim_t osb_work = osb_e - osb_s;
 
             // Each thread runs the below loops:
-            int loop_start = 0, loop_end = 0;
+            dim_t loop_start = 0, loop_end = 0;
             switch (order) {
                 case loop_order_t::osc_occ_icc_osb_ocb:
                 case loop_order_t::osc_occ_osb_ocb_icc:
@@ -440,7 +907,7 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                     break;
             }
 
-            int osb = 0, ocb = 0;
+            dim_t osb = 0, ocb = 0;
             switch (order) {
                 case loop_order_t::osc_occ_icc_osb_ocb:
                     nd_iterator_init(
@@ -526,10 +993,13 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
     });
 
     if (jbgp.nthr_ic_b > 1) {
-        const auto get_dst_reduced_off = [=](int ithr_ic, int osb, int ocb) {
+        // Explicit return type: `dim_t` and `size_t` have different ranks on
+        // macOS, so the two returns would deduce to different types.
+        const auto get_dst_reduced_off
+                = [=](int ithr_ic, dim_t osb, dim_t ocb) -> size_t {
             assert(jbgp.nthr_ic_b > 1);
-            int os = osb * jbgp.os_block;
-            int oc = ocb * jbgp.oc_block;
+            dim_t os = osb * jbgp.os_block;
+            dim_t oc = ocb * jbgp.oc_block;
             // use accumulation data type size for buffer offset computation
             const size_t dst_off = get_blk_off(dst_d, jbgp.acc_dt, os, oc);
             if (ithr_ic == 0) return dst_off;
@@ -558,18 +1028,20 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
             nd_iterator_init(
                     ocmb_start + start, osc, os_chunks, occ, oc_chunks);
             while (start < end) {
-                int ocb_s = occ * jbgp.nb_oc_blocking;
-                int ocb_e = nstl::min(ocb_s + jbgp.nb_oc_blocking, jbgp.nb_oc);
+                dim_t ocb_s = occ * jbgp.nb_oc_blocking;
+                dim_t ocb_e = nstl::min<dim_t>(
+                        ocb_s + jbgp.nb_oc_blocking, jbgp.nb_oc);
 
-                int osb_s = osc * jbgp.nb_os_blocking;
-                int osb_e = nstl::min(osb_s + jbgp.nb_os_blocking, jbgp.nb_os);
+                dim_t osb_s = osc * jbgp.nb_os_blocking;
+                dim_t osb_e = nstl::min<dim_t>(
+                        osb_s + jbgp.nb_os_blocking, jbgp.nb_os);
 
-                for (int osb = osb_s; osb < osb_e; ++osb) {
-                    int cur_os_block = nstl::min(
+                for (dim_t osb = osb_s; osb < osb_e; ++osb) {
+                    dim_t cur_os_block = nstl::min<dim_t>(
                             jbgp.os - osb * jbgp.os_block, jbgp.os_block);
                     const bool is_os_tail = cur_os_block < jbgp.os_block;
-                    const int cur_oc_chunk_size
-                            = nstl::min(jbgp.LDC, ocb_e * jbgp.oc_block)
+                    const dim_t cur_oc_chunk_size
+                            = nstl::min<dim_t>(jbgp.LDC, ocb_e * jbgp.oc_block)
                             - ocb_s * jbgp.oc_block;
                     char *dst_reduced
                             = (can_use_dst_as_acc_buffer ? dst
@@ -587,7 +1059,7 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                         }
                     }
                     if (are_post_ops_applicable) {
-                        for (int ocb = ocb_s; ocb < ocb_e; ++ocb) {
+                        for (dim_t ocb = ocb_s; ocb < ocb_e; ++ocb) {
                             const bool is_oc_tail
                                     = (jbgp.oc - ocb * jbgp.oc_block
                                             < jbgp.oc_block);
@@ -598,8 +1070,8 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                                     is_amx, prev_ker_idx, brg_ker_idx);
                             const auto brg_kernel
                                     = brg_kernels_[brg_ker_idx].get();
-                            const int os = osb * jbgp.os_block;
-                            const int oc = ocb * jbgp.oc_block;
+                            const dim_t os = osb * jbgp.os_block;
+                            const dim_t oc = ocb * jbgp.oc_block;
                             const auto ptr_bias = jbgp.with_bias
                                     ? bias + bia_dt_size * oc
                                     : nullptr;
@@ -630,7 +1102,7 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                                     static_cast<size_t>(oc), 0, dst, 0, nullptr,
                                     nullptr, nullptr, true /* skip_accm */, 1,
                                     false, false, src_scales,
-                                    wei_scales ? static_cast<const char *>(
+                                    wei_scales ? reinterpret_cast<const char *>(
                                                          wei_scales)
                                                     + jbgp.is_oc_scale * oc
                                                             * sizeof(float)
@@ -713,24 +1185,27 @@ void brgemm_inner_product_bwd_data_t<isa>::execute_backward_data(
     const dim_t acc_dt_sz = types::data_type_size(jbgp.acc_dt);
     const dim_t src_dt_sz = types::data_type_size(jbgp.src_dt);
 
-    const int oc_chunks = div_up(jbgp.nb_oc, jbgp.nb_oc_blocking);
-    const int os_chunks = div_up(jbgp.nb_os, jbgp.nb_os_blocking);
-    const int work_amount = jbgp.nb_ic * jbgp.ks() * os_chunks;
+    const int oc_chunks
+            = static_cast<int>(div_up(jbgp.nb_oc, jbgp.nb_oc_blocking));
+    const int os_chunks
+            = static_cast<int>(div_up(jbgp.nb_os, jbgp.nb_os_blocking));
+    const int work_amount
+            = static_cast<int>(jbgp.nb_ic * jbgp.ks() * os_chunks);
     const int num_threads
             = work_amount == 1 && jbgp.nthr_oc_b <= 1 ? 1 : jbgp.nthr;
 
     const auto get_weights_ptr
-            = [=](int icb, int ocb, int kd = 0, int kh = 0, int kw = 0) {
+            = [=](dim_t icb, dim_t ocb, int kd = 0, int kh = 0, int kw = 0) {
         int fwd_ic_block
                 = (is_amx && !jbgp.is_bf32) ? 2 * jbgp.simd_w : jbgp.simd_w;
         int fwd_oc_block = jbgp.get_weights_oc_block();
-        int ic = icb * jbgp.ic_block;
-        int oc = ocb * jbgp.oc_block;
+        dim_t ic = icb * jbgp.ic_block;
+        dim_t oc = ocb * jbgp.oc_block;
 
-        int fwd_icb = ic / fwd_ic_block;
-        int fwd_ocb = oc / fwd_oc_block;
-        int fwd_icb_simd = ic % fwd_ic_block;
-        int fwd_ocb_simd = oc % fwd_oc_block;
+        dim_t fwd_icb = ic / fwd_ic_block;
+        dim_t fwd_ocb = oc / fwd_oc_block;
+        dim_t fwd_icb_simd = ic % fwd_ic_block;
+        dim_t fwd_ocb_simd = oc % fwd_oc_block;
 
         char *ptr_wei_local
                 = weights + blk_off(weights_d, fwd_ocb, fwd_icb, kd, kh, kw);
@@ -745,7 +1220,7 @@ void brgemm_inner_product_bwd_data_t<isa>::execute_backward_data(
 
     const auto transform_b_chunk
             = [= COMPAT_THIS_CAPTURE](char *tr_wei, const char *wei,
-                      int trans_batch, int current_N, int current_K) {
+                      int trans_batch, dim_t current_N, dim_t current_K) {
         auto ctx = jit_brgemm_trans_wei_t::ctx_t();
         ctx.src = (void *)wei;
         ctx.tr_src = (void *)tr_wei;
@@ -813,7 +1288,7 @@ void brgemm_inner_product_bwd_data_t<isa>::execute_backward_data(
                         is_bs_tail, kernel_init, is_os_tail, is_ic_tail, false);
         auto brg_kernel = brg_kernels_[brg_ker_idx].get();
 
-        const int size_B = jbgp.LDB * rnd_up(jbgp.K, 2);
+        const dim_t size_B = jbgp.LDB * rnd_up(jbgp.K, 2);
 
         const size_t b_buf_shift = jbgp.global_b_transpose
                 ? icb * jbgp.nb_oc + ocb
@@ -911,24 +1386,26 @@ void brgemm_inner_product_bwd_data_t<isa>::execute_backward_data(
             int max_ch_block = nstl::max(jbgp.ic_block, jbgp.oc_block);
             int ic_chunk_sz = max_ch_block / jbgp.ic_block;
             int oc_chunk_sz = max_ch_block / jbgp.oc_block;
-            int nc_ic = div_up(jbgp.nb_ic, ic_chunk_sz);
-            int nc_oc = div_up(jbgp.nb_oc, oc_chunk_sz);
+            int nc_ic = static_cast<int>(div_up(jbgp.nb_ic, ic_chunk_sz));
+            int nc_oc = static_cast<int>(div_up(jbgp.nb_oc, oc_chunk_sz));
             int transp_work_amount = nc_ic * nc_oc;
             balance211(transp_work_amount, nthr, ithr, start, end);
             int icc, occ;
             nd_iterator_init(start, icc, nc_ic, occ, nc_oc);
             while (start < end) {
-                int icb_start = icc * ic_chunk_sz;
-                int icb_end = nstl::min((icc + 1) * ic_chunk_sz, jbgp.nb_ic);
-                int ocb_start = occ * oc_chunk_sz;
-                int ocb_end = nstl::min((occ + 1) * oc_chunk_sz, jbgp.nb_oc);
-                for_(int icb = icb_start; icb < icb_end; icb++)
-                for (int ocb = ocb_start; ocb < ocb_end; ocb++) {
-                    int ic = icb * jbgp.ic_block;
-                    int oc = ocb * jbgp.oc_block;
+                dim_t icb_start = icc * ic_chunk_sz;
+                dim_t icb_end
+                        = nstl::min<dim_t>((icc + 1) * ic_chunk_sz, jbgp.nb_ic);
+                dim_t ocb_start = occ * oc_chunk_sz;
+                dim_t ocb_end
+                        = nstl::min<dim_t>((occ + 1) * oc_chunk_sz, jbgp.nb_oc);
+                for_(dim_t icb = icb_start; icb < icb_end; icb++)
+                for (dim_t ocb = ocb_start; ocb < ocb_end; ocb++) {
+                    dim_t ic = icb * jbgp.ic_block;
+                    dim_t oc = ocb * jbgp.oc_block;
                     bool is_ic_tail = (jbgp.ic - ic < jbgp.ic_block);
                     bool is_oc_tail = (jbgp.oc - oc < jbgp.oc_block);
-                    const int size_B = jbgp.LDB * rnd_up(jbgp.K, 2);
+                    const dim_t size_B = jbgp.LDB * rnd_up(jbgp.K, 2);
                     char *b_buffer = b_buffer_global
                             + buf_dt_size
                                     * ((dim_t)icb * jbgp.nb_oc * size_B
@@ -969,9 +1446,9 @@ void brgemm_inner_product_bwd_data_t<isa>::execute_backward_data(
         nd_iterator_init(work, osc, os_chunks, kd, jbgp.kd, kh, jbgp.kh, kw,
                 jbgp.kw, icb, jbgp.nb_ic);
         while (work < end) {
-            const int nb_os_blocking
-                    = nstl::min(jbgp.nb_os - osc * jbgp.nb_os_blocking,
-                            jbgp.nb_os_blocking);
+            const int nb_os_blocking = static_cast<int>(
+                    nstl::min<dim_t>(jbgp.nb_os - osc * jbgp.nb_os_blocking,
+                            jbgp.nb_os_blocking));
             const int occ_work = occ_end - occ_start;
             const int loop_iteration = nb_os_blocking * occ_work;
 
@@ -1003,14 +1480,14 @@ void brgemm_inner_product_bwd_data_t<isa>::execute_backward_data(
             const int n_oc_bufs = nstl::min(oc_chunks, nthr_oc);
             if (n_oc_bufs <= 1) return;
 
-            const int dsrc_elems = jbgp.LDC * jbgp.os;
+            const dim_t dsrc_elems = jbgp.LDC * jbgp.os;
             const int reduce_chunk_size = 64;
             int start {0}, end {0};
-            balance211(div_up(dsrc_elems, reduce_chunk_size), nthr, ithr, start,
-                    end);
+            balance211(static_cast<int>(div_up(dsrc_elems, reduce_chunk_size)),
+                    nthr, ithr, start, end);
             const dim_t reduce_start = start * reduce_chunk_size;
             const dim_t reduce_finish
-                    = nstl::min(end * reduce_chunk_size, dsrc_elems);
+                    = nstl::min<dim_t>(end * reduce_chunk_size, dsrc_elems);
             if (reduce_finish <= reduce_start) return;
             const dim_t elems_to_reduce = reduce_finish - reduce_start;
 
@@ -1105,8 +1582,10 @@ struct brgemm_inner_product_bwd_weights_t<isa>::thread_info_t {
                 : nullptr;
 
         thread_local_input_buffers_ = jbgp.local_buffers_for_input_tensors;
-        int ic_chunks = div_up(jbgp.nb_ic, jbgp.nb_ic_blocking);
-        int os_chunks = div_up(jbgp.nb_os, jbgp.nb_os_blocking);
+        int ic_chunks
+                = static_cast<int>(div_up(jbgp.nb_ic, jbgp.nb_ic_blocking));
+        int os_chunks
+                = static_cast<int>(div_up(jbgp.nb_os, jbgp.nb_os_blocking));
         int sp_ic_chunks = ic_chunks * jbgp.ks();
         const size_t os_chunks_per_thr = div_up(os_chunks, jbgp.nthr_mb);
         const size_t num_os_chunks_per_thread
@@ -1175,7 +1654,8 @@ struct brgemm_inner_product_bwd_weights_t<isa>::thread_info_t {
         nd_iterator_init(ithr, ithr_os_c, nthr_os_c, ithr_oc_c, nthr_oc_c,
                 ithr_sp_ic_c, nthr_sp_ic_c);
 
-        int oc_chunks = div_up(jbgp.nb_oc, jbgp.nb_oc_blocking);
+        int oc_chunks
+                = static_cast<int>(div_up(jbgp.nb_oc, jbgp.nb_oc_blocking));
 
         /* reduction dimension */
         balance211(os_chunks, nthr_os_c, ithr_os_c, os_c_start, os_c_end);
@@ -1400,7 +1880,8 @@ void brgemm_inner_product_bwd_weights_t<isa>::compute_diff_weights_and_bias(
     const bool is_bf16 = jbgp.wei_dt == bf16 || jbgp.is_bf32;
     const bool is_amx_bf16 = is_bf16 && isa == avx512_core_amx;
     char *wsp_tile_global = (is_amx_bf16) ? ti->wsp_tile_base : nullptr;
-    int os_chunks = utils::div_up(jbgp.nb_os, jbgp.nb_os_blocking);
+    int os_chunks
+            = static_cast<int>(utils::div_up(jbgp.nb_os, jbgp.nb_os_blocking));
 
     const auto get_bia_acc_ptr = [&](int oc) {
         const int reduction_buf_start_idx = jbgp.bia_dt == f32;
@@ -1658,9 +2139,9 @@ void brgemm_inner_product_bwd_weights_t<isa>::compute_diff_weights_and_bias(
         nd_iterator_init(
                 sp_icc, kd, jbgp.kd, kh, jbgp.kh, kw, jbgp.kw, icc, ic_chunks);
 
-        const int ocb_work = nstl::min(
+        const dim_t ocb_work = nstl::min<dim_t>(
                 jbgp.nb_oc_blocking, jbgp.nb_oc - occ * jbgp.nb_oc_blocking);
-        const int icb_work = nstl::min(
+        const dim_t icb_work = nstl::min<dim_t>(
                 jbgp.nb_ic_blocking, jbgp.nb_ic - icc * jbgp.nb_ic_blocking);
 
         for_(int ocb_i = 0; ocb_i < ocb_work; ocb_i++)
@@ -1704,31 +2185,33 @@ void brgemm_inner_product_bwd_weights_t<
     const bool is_f32_out = jbgp.wei_dt == data_type::f32;
     const int icb_scale = is_f32_out ? jbgp.ic_block / jbgp.simd_w : 1;
 
-    const int icb_work = nstl::min(ti->sp_ic_c_work * jbgp.nb_ic_blocking,
-            jbgp.nb_ic - ti->sp_ic_c_start * jbgp.nb_ic_blocking);
-    const int ocb_work = nstl::min(ti->oc_c_work * jbgp.nb_oc_blocking,
+    const dim_t icb_work
+            = nstl::min<dim_t>(ti->sp_ic_c_work * jbgp.nb_ic_blocking,
+                    jbgp.nb_ic - ti->sp_ic_c_start * jbgp.nb_ic_blocking);
+    const dim_t ocb_work = nstl::min<dim_t>(ti->oc_c_work * jbgp.nb_oc_blocking,
             jbgp.nb_oc - ti->oc_c_start * jbgp.nb_oc_blocking);
-    const int work = ocb_work * icb_work * jbgp.ks();
+    const dim_t work = ocb_work * icb_work * jbgp.ks();
 
-    int os_chunks = utils::div_up(jbgp.nb_os, jbgp.nb_os_blocking);
+    int os_chunks
+            = static_cast<int>(utils::div_up(jbgp.nb_os, jbgp.nb_os_blocking));
     int reduce_buffers = nstl::min(ti->nthr_os_c, os_chunks);
     int reduce_buf_idx_start = !is_f32_out;
     int reduce_buf_idx_end = reduce_buffers - is_f32_out;
 
-    int start = 0, end = 0;
+    dim_t start = 0, end = 0;
     balance211(work, ti->nthr_os_c, ti->ithr_os_c, start, end);
     if (start == end) return;
 
-    int icb_l = 0, ocb_l = 0, kd = 0, kh = 0, kw = 0;
+    dim_t icb_l = 0, ocb_l = 0, kd = 0, kh = 0, kw = 0;
     const int acc_size = jbgp.ic_block * jbgp.oc_block;
 
     for (int ir = reduce_buf_idx_start; ir < reduce_buf_idx_end; ++ir) {
-        int counter = start;
+        dim_t counter = start;
         nd_iterator_init(start, kd, jbgp.kd, kh, jbgp.kh, kw, jbgp.kw, ocb_l,
                 ocb_work, icb_l, icb_work);
         while (counter < end) {
-            const int ocb = ti->oc_c_start * jbgp.nb_oc_blocking + ocb_l;
-            const int icb = ti->sp_ic_c_start * jbgp.nb_ic_blocking + icb_l;
+            const dim_t ocb = ti->oc_c_start * jbgp.nb_oc_blocking + ocb_l;
+            const dim_t icb = ti->sp_ic_c_start * jbgp.nb_ic_blocking + icb_l;
             char *wei_to_reduce = get_wei_acc_ptr(ti, ocb, icb, kd, kh, kw, ir);
             const memory_desc_wrapper diff_weights_d(pd()->diff_weights_md(0));
             char *wei_reduced = !is_f32_out

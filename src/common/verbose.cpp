@@ -296,8 +296,9 @@ uint32_t get_verbose(verbose_t::flag_kind verbosity_kind,
     bool filter_result = flags & filter_kind;
     return filter_result ? result : 0;
 }
-
+#if !defined(DISABLE_VERBOSE)
 static setting_t<bool> verbose_timestamp {false};
+#endif
 bool get_verbose_timestamp() {
 #if defined(DISABLE_VERBOSE)
     return false;
@@ -758,6 +759,13 @@ std::ostream &operator<<(std::ostream &ss, const primitive_attr_t *attr) {
            << "attr-precomputed-reductions:" << pr.get_verbose();
     }
 
+    const auto &legacy_input_zp = attr->input_zero_points_;
+    if (!legacy_input_zp.has_default_values()) {
+        ss << "attr-legacy-input-zero-points:";
+        ss << ":" << get_val_str(legacy_input_zp.mask_) << ":"
+           << get_val_str(legacy_input_zp.count_);
+        ss << " ";
+    }
     const post_ops_t &po = attr->post_ops_;
     if (!po.has_default_values()) {
         std::string delim = empty_delim;
@@ -776,12 +784,14 @@ std::ostream &operator<<(std::ostream &ss, const primitive_attr_t *attr) {
                     if (s.dt != data_type::undef) ss << ":" << s.dt;
                 } break;
                 case primitive_kind::convolution: {
-                    using namespace data_type;
-                    const auto &c = e.depthwise_conv;
-                    ss << delim << "dw:k" << c.kernel << "s" << c.stride << "p"
-                       << c.padding;
-                    if (c.wei_dt == s8 || c.dst_dt != f32)
-                        ss << ":" << c.dst_dt;
+                    // using namespace data_type;
+                    // const auto &c = e.depthwise_conv;
+                    // ss << delim << "dw:k" << c.kernel << "s" << c.stride << "p"
+                    //    << c.padding;
+                    // if (c.wei_dt == s8 || c.dst_dt != f32)
+                    //     ss << ":" << c.dst_dt;
+                    const char *alg_str = "depthwise_conv_old";
+                    ss << delim << alg_str;
                 } break;
                 case primitive_kind::eltwise: {
                     const post_ops_t::entry_t::eltwise_t &ew = e.eltwise;
@@ -824,6 +834,15 @@ std::ostream &operator<<(std::ostream &ss, const primitive_attr_t *attr) {
                     const auto &ep = e.prelu;
                     ss << delim << "prelu" << ":" << ep.mask;
                 } break;
+                case primitive_kind::depthwise: {
+                    const post_ops_t::entry_t::depthwise_t &dw = e.depthwise;
+                    ss << delim << dw.alg;
+                } break;
+                case primitive_kind::quantization: {
+                    const post_ops_t::entry_t::quantization_t &qt
+                            = e.quantization;
+                    ss << delim << qt.alg;
+                } break;
                 default: assert(!"unsupported post op primitive kind!"); break;
             }
             delim = attr_delim;
@@ -834,6 +853,13 @@ std::ostream &operator<<(std::ostream &ss, const primitive_attr_t *attr) {
     if (!rnn_qp.has_default_values()) {
         ss << field_delim() << "rnn_data_qparams:" << rnn_qp.scale_ << ":"
            << rnn_qp.shift_ << ";";
+        ss << "rnn_data_qparams:" << rnn_qp.scale_ << ":" << rnn_qp.shift_
+           << " ";
+    }
+
+    const src_dyn_quant_params_t &dyn_qp = attr->src_dyn_quant_params_;
+    if (!dyn_qp.has_default_values()) {
+        ss << "src_dyn_quant_group_size:" << dyn_qp.get() << ";";
     }
 
     if (!attr->dropout_.has_default_values()) {

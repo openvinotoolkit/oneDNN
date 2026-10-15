@@ -305,7 +305,7 @@ onednn_option(CPU_RUNTIME "OMP"
     "Specifies the threading runtime for CPU engines;
     supports OMP (default), TBB, SYCL, SEQ, or THREADPOOL.")
 
-if(NOT "${DNNL_CPU_RUNTIME}" MATCHES "^(NONE|OMP|TBB|SEQ|THREADPOOL|DPCPP|SYCL)$")
+if(NOT "${DNNL_CPU_RUNTIME}" MATCHES "^(NONE|OMP|TBB|TBB_AUTO|SEQ|THREADPOOL|DPCPP|SYCL)$")
     message(FATAL_ERROR "Unsupported CPU runtime: ${DNNL_CPU_RUNTIME}")
 endif()
 
@@ -361,11 +361,14 @@ onednn_option(SAFE_RBP OFF
 # AArch64 CPU options
 # -------------------
 
-onednn_option(AARCH64_USE_ACL OFF "Enables use of AArch64 optimised functions
+option(DNNL_USE_ACL "Enables use of ARM optimised functions
     from Arm Compute Library.
     This is only supported on AArch64 builds and assumes there is a
     functioning Compute Library build available at the location specified by the
-    environment variable ACL_ROOT_DIR.")
+    environment variable ACL_ROOT_DIR." OFF)
+
+option(DNNL_XBYAK_NO_EXCEPTION
+    "Enables XBYAK_NO_EXCEPTION" ON) # enabled by default
 
 # ===========
 # GPU options

@@ -68,7 +68,7 @@ namespace impl {
     void operator=(const T &) = delete;
 
 // Sanity check for 64 bits
-static_assert(sizeof(void *) == 8, "oneDNN supports 64-bit architectures only");
+// static_assert(sizeof(void *) == 8, "oneDNN supports 64-bit architectures only");
 
 // Note: if `f` has any explicit templated arguments, e.g., func<A, B>, then
 // compiler returns `error: macro "CHECK" passed 2 arguments, but takes just 1`.
@@ -274,6 +274,15 @@ inline void array_set(T *arr, const U &val, size_t size) {
         arr[i] = static_cast<T>(val);
 }
 
+inline bool array_cmp_weak(
+        const dnnl_dim_t *a1, const dnnl_dim_t *a2, size_t size) {
+    for (size_t i = 0; i < size; ++i)
+        if (a1[i] != a2[i] && a1[i] != DNNL_RUNTIME_DIM_VAL
+                && a2[i] != DNNL_RUNTIME_DIM_VAL)
+            return false;
+    return true;
+}
+
 namespace product_impl {
 template <size_t>
 struct int2type {}; // NOLINT(readability-identifier-naming)
@@ -402,7 +411,8 @@ template <typename T, typename U>
 inline typename remove_reference<T>::type max_div(const T a, const U b) {
     U div = b;
     while (div > 1) {
-        if (a % div == 0) return div;
+        if (a % div == 0)
+            return static_cast<typename remove_reference<T>::type>(div);
         div--;
     }
     return static_cast<typename remove_reference<T>::type>(div);
@@ -424,7 +434,7 @@ inline typename remove_reference<U>::type this_block_size(
     assert(offset < max);
     // TODO (Roma): can't use nstl::max() due to circular dependency... we
     // need to fix this
-    const T block_boundary = offset + block_size;
+    const T block_boundary = offset + static_cast<T>(block_size);
     if (block_boundary > max)
         return max - offset;
     else
@@ -439,7 +449,7 @@ template <typename T, typename U, typename W, typename... Args>
 inline T nd_iterator_init(T start, U &x, const W &X, Args &&...tuple) {
     start = nd_iterator_init(start, utils::forward<Args>(tuple)...);
     x = start % X;
-    return start / X;
+    return static_cast<T>(start / X);
 }
 
 inline bool nd_iterator_step() {
@@ -466,7 +476,7 @@ inline bool nd_iterator_jump(U &cur, const U end, W &x, const Y &X) {
         return true;
     } else {
         cur += max_jump;
-        x += max_jump;
+        x += static_cast<W>(max_jump);
         return false;
     }
 }
@@ -820,9 +830,17 @@ public:
 // Copyright 2005-2014 Daniel James.
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE or copy at http://www.boost.org/LICENSE_1_0.txt)
-template <typename T>
+template <typename T,
+        typename std::enable_if<!std::is_enum<T>::value, int>::type = 0>
 static size_t hash_combine(size_t seed, const T &v) {
     return seed ^= std::hash<T> {}(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+
+template <typename T,
+        typename std::enable_if<std::is_enum<T>::value, int>::type = 0>
+static size_t hash_combine(size_t seed, const T &v) {
+    using underlying_t = typename std::underlying_type<T>::type;
+    return hash_combine(seed, static_cast<underlying_t>(v));
 }
 
 inline int float2int(float x) {
@@ -878,7 +896,8 @@ public:
 
 inline bool is_native_runtime(runtime_kind_t kind) {
     return utils::one_of(kind, runtime_kind::seq, runtime_kind::omp,
-            runtime_kind::tbb, runtime_kind::threadpool);
+            runtime_kind::tbb, runtime_kind::tbb_auto,
+            runtime_kind::threadpool);
 }
 
 // Convenience wrapper to choose at compile-time between std::unique_ptr's

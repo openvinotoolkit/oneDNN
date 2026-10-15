@@ -130,9 +130,8 @@ struct jit_avx512_common_convolution_bwd_data_t : public primitive_t {
             VDISPATCH_CONV(set_default_alg_kind(alg_kind::convolution_direct),
                     VERBOSE_BAD_ALGORITHM);
             VDISPATCH_CONV(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
-            VDISPATCH_CONV(
-                    attr()->has_default_values(), VERBOSE_UNSUPPORTED_ATTR);
 
+            jcp_.post_ops = attr()->post_ops_;
             // TODO: make `init_conf` assign initialized object to `jcp_`
             CHECK(jit_avx512_common_conv_bwd_data_kernel_f32_t::init_conf(jcp_,
                     *desc(), diff_src_md_, weights_md_, diff_dst_md_,
@@ -232,8 +231,9 @@ struct jit_avx512_common_convolution_bwd_weights_t : public primitive_t {
             const size_t max_buffer_size = jcp_.nthr * 3 * 5 * 5 * 16 * 16;
             if (with_bias()) {
                 reducer_bia_conf_.init(reduce_balancer_t(jcp_.nthr,
-                        jcp_.oc_block, jcp_.ngroups * jcp_.nb_oc, jcp_.mb,
-                        max_buffer_size, true));
+                        static_cast<int>(jcp_.oc_block),
+                        static_cast<int>(jcp_.ngroups * jcp_.nb_oc),
+                        static_cast<int>(jcp_.mb), max_buffer_size, true));
             }
         }
     };

@@ -189,7 +189,7 @@ status_t ref_deconvolution_fwd_t::compute_oscale(
     const auto ndims = pd()->desc()->src_desc.ndims;
 
     parallel_nd(MB, OCP, OD, OH, OW,
-            [=](dim_t mb, int ocp, dim_t od, dim_t oh, dim_t ow) {
+            [=](dim_t mb, dim_t ocp, dim_t od, dim_t oh, dim_t ow) {
         auto dst_off = ref_conv_utils::get_data_off(
                 dst_d, ndims, mb, ocp, od, oh, ow);
         float tmp_result = 0;
@@ -240,7 +240,7 @@ status_t ref_deconvolution_fwd_t::compute_ref_attrs(const exec_ctx_t &ctx,
 
     parallel_nd(MB, OCP, OD, OH, OW,
             [= COMPAT_THIS_CAPTURE](
-                    dim_t mb, int ocp, dim_t od, dim_t oh, dim_t ow) {
+                    dim_t mb, dim_t ocp, dim_t od, dim_t oh, dim_t ow) {
         auto dst_off = ref_conv_utils::get_data_off(
                 dst_d, ndims, mb, ocp, od, oh, ow);
         float tmp_result = 0;
@@ -365,8 +365,8 @@ prepare_zp_pad_comp_ker(const dim_t ndims, const int32_t *src_zero_points,
     const memory_desc_wrapper wei_d(deconv_pd->weights_md());
     const auto get_wei_off
             = [=](dim_t g, dim_t oc, dim_t ic, dim_t kd, dim_t kh, dim_t kw) {
-        return get_weights_off(
-                wei_d, with_groups, ndims, g, oc, ic, kd, kh, kw);
+        return get_weights_off(wei_d, with_groups, static_cast<int>(ndims), g,
+                oc, ic, kd, kh, kw);
     };
 
     return [=](const dim_t g, const dim_t oc, const dim_t od, const dim_t oh,
@@ -452,8 +452,8 @@ static status_t apply_src_zero_point(const exec_ctx_t &ctx,
         const auto oc_off = g * OC + oc;
         const auto dst_off = ref_conv_utils::get_data_off(
                 dst_d, ndims, mb, oc_off, od, oh, ow);
-        int32_t conv_result
-                = conv_output[dst_off] - zp_src_compensation[oc_off];
+        int32_t conv_result = static_cast<int32_t>(
+                conv_output[dst_off] - zp_src_compensation[oc_off]);
 
         if (const auto zp_pad_compensation
                 = zp_pad_comp_ker(g, oc, od, oh, ow)) {
@@ -607,7 +607,9 @@ void ref_deconvolution_bwd_weights_t::compute_bwd_bias_ncdhw(
     parallel_nd(OC, [=](dim_t oc) {
         float db = 0;
         for (dim_t mb = 0; mb < MB; ++mb) {
+#if !defined(_MSC_VER)
             PRAGMA_OMP_SIMD(reduction(+ : db))
+#endif
             for (dim_t sp = 0; sp < SP; ++sp) {
                 auto offset = (size_t)(mb * OC + oc) * SP + sp;
                 db += diff_dst[offset];
@@ -628,7 +630,9 @@ void ref_deconvolution_bwd_weights_t::compute_bwd_bias_ndhwc(
     parallel_nd(OC, [=](dim_t oc) {
         float db = 0;
         for (dim_t mb = 0; mb < MB; ++mb) {
+#if !defined(_MSC_VER)
             PRAGMA_OMP_SIMD(reduction(+ : db))
+#endif
             for (dim_t sp = 0; sp < SP; ++sp) {
                 const dim_t offset = (mb * SP + sp) * OC + oc;
                 db += diff_dst[offset];

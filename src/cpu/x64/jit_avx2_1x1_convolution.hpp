@@ -77,7 +77,11 @@ struct jit_avx2_1x1_convolution_fwd_t : public primitive_t {
             // TODO: make `init_conf` assign initialized object to `jcp_`
             CHECK(jit_avx2_1x1_conv_kernel_f32_t::init_conf(
                     jcp_, *conv_d, *src_d, *weights_md(), *dst_md(), *attr()));
-            if (jcp_.with_dw_conv) CHECK(depthwise_po_init(engine));
+            if (jcp_.with_dw_conv) {
+                // todo: [antonvor] enable when new behavior of dw convolution fusing from oneDNN 1.6 will be supported
+                return status::unimplemented;
+                CHECK(depthwise_po_init(engine));
+            }
 
             auto scratchpad = scratchpad_registry().registrar();
             jit_avx2_1x1_conv_kernel_f32_t::init_scratchpad(scratchpad, jcp_);
@@ -278,8 +282,8 @@ struct jit_avx2_1x1_convolution_fwd_t : public primitive_t {
             while (jcp_1x1.nb_load_blocking % jcp_dw->nb_ch_blocking != 0)
                 --jcp_dw->nb_ch_blocking;
 
-            jcp_dw->dw_conv_buffer_oc
-                    = jcp_1x1.nb_load_blocking * jcp_1x1.oc_block;
+            jcp_dw->dw_conv_buffer_oc = static_cast<int>(
+                    jcp_1x1.nb_load_blocking * jcp_1x1.oc_block);
 
             const auto dat_tag_nxc = utils::pick(ndims() - 3, format_tag::nwc,
                     format_tag::nhwc, format_tag::ndhwc);
@@ -384,8 +388,7 @@ struct jit_avx2_1x1_convolution_bwd_data_t : public primitive_t {
             VDISPATCH_CONV(set_default_alg_kind(alg_kind::convolution_direct),
                     VERBOSE_BAD_ALGORITHM);
             VDISPATCH_CONV(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
-            VDISPATCH_CONV(
-                    attr()->has_default_values(), VERBOSE_UNSUPPORTED_ATTR);
+            VDISPATCH_CONV(is_supported_post_ops(), VERBOSE_UNSUPPORTED_ATTR);
             VDISPATCH_CONV(set_default_formats(), VERBOSE_UNSUPPORTED_TAG);
 
             const convolution_desc_t *conv_d = desc();
@@ -435,6 +438,24 @@ struct jit_avx2_1x1_convolution_bwd_data_t : public primitive_t {
                     : utils::pick(ndims() - 3, OIw8o8i, OIhw8o8i, OIdhw8o8i);
 
             return set_default_formats_common(dat_tag, wei_tag, dat_tag);
+        }
+
+        virtual bool is_supported_post_ops() const {
+            const auto &p = this->attr()->post_ops_;
+            if (p.len() > 1) return false;
+
+            auto all_post_ops_supported = [&]() {
+                bool ok = true;
+
+                for (int i = 0; i < p.len(); i++) {
+                    ok = ok
+                            && utils::one_of(p.entry_[i].kind,
+                                    primitive_kind::depthwise);
+                }
+                return ok;
+            };
+
+            return all_post_ops_supported();
         }
     };
 
@@ -553,34 +574,41 @@ struct jit_avx2_1x1_convolution_bwd_weights_t : public primitive_t {
 
     private:
         void init_balancers() {
-            const int ic_block = jcp_.bcast_block;
-            const int nb_ic = jcp_.nb_bcast;
-            const int nb_ic_blocking = jcp_.nb_bcast_blocking;
-            const int bcast_work = utils::div_up(nb_ic, nb_ic_blocking);
+            const dim_t ic_block = jcp_.bcast_block;
+            const dim_t nb_ic = jcp_.nb_bcast;
+            const dim_t nb_ic_blocking = jcp_.nb_bcast_blocking;
+            const dim_t bcast_work = utils::div_up(nb_ic, nb_ic_blocking);
 
-            const int oc_block = jcp_.load_block;
-            const int nb_oc = jcp_.nb_load;
-            const int nb_oc_blocking = jcp_.nb_load_blocking;
-            const int load_work = utils::div_up(nb_oc, nb_oc_blocking);
+            const dim_t oc_block = jcp_.load_block;
+            const dim_t nb_oc = jcp_.nb_load;
+            const dim_t nb_oc_blocking = jcp_.nb_load_blocking;
+            const dim_t load_work = utils::div_up(nb_oc, nb_oc_blocking);
 
-            const int job_size
+            const dim_t job_size
                     = nb_oc_blocking * nb_ic_blocking * ic_block * oc_block;
-            const int njobs_x = bcast_work;
-            const int njobs_y = jcp_.ngroups * load_work;
+            const dim_t njobs_x = bcast_work;
+            const dim_t njobs_y = jcp_.ngroups * load_work;
 
             const int max_threads = dnnl_get_max_threads();
             const size_t max_buffer_size = (size_t)max_threads * job_size * 8;
 
             if (with_bias()) {
-                reducer_bia_conf_.init(reduce_balancer_t(max_threads, oc_block,
-                        jcp_.ngroups * nb_oc, jcp_.mb, max_buffer_size, true));
+                reducer_bia_conf_.init(reduce_balancer_t(max_threads,
+                        static_cast<int>(oc_block),
+                        static_cast<int>(jcp_.ngroups * nb_oc),
+                        static_cast<int>(jcp_.mb), max_buffer_size, true));
             }
 
             reducer_wei_conf_.init(
-                    reduce_balancer_t(max_threads, job_size, njobs_y * njobs_x,
-                            jcp_.mb * jcp_.nb_reduce, max_buffer_size, true),
-                    job_size / nb_oc_blocking, nb_oc_blocking, ic_block,
-                    nb_ic * ic_block * oc_block, nb_oc);
+                    reduce_balancer_t(max_threads, static_cast<int>(job_size),
+                            static_cast<int>(njobs_y * njobs_x),
+                            static_cast<int>(jcp_.mb * jcp_.nb_reduce),
+                            max_buffer_size, true),
+                    static_cast<int>(job_size / nb_oc_blocking),
+                    static_cast<int>(nb_oc_blocking),
+                    static_cast<int>(ic_block),
+                    static_cast<int>(nb_ic * ic_block * oc_block),
+                    static_cast<int>(nb_oc));
         }
     };
 

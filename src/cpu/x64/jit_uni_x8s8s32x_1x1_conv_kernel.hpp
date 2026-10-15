@@ -35,8 +35,9 @@ struct jit_uni_x8s8s32x_1x1_conv_kernel_vmm_t : public jit_generator_t {
     DECLARE_CPU_JIT_AUX_FUNCTIONS(jit_uni_x8s8s32x_1x1_conv_kernel_vmm_t)
     jit_uni_x8s8s32x_1x1_conv_kernel_vmm_t(const jit_1x1_conv_conf_t &ajcp,
             const primitive_attr_t &attr, const memory_desc_t &dst_md);
-
-    int get_tail_size() { return jcp.oc_without_padding % jcp.oc_block; }
+    int get_tail_size() {
+        return static_cast<int>(jcp.oc_without_padding % jcp.oc_block);
+    }
 
     jit_1x1_conv_conf_t jcp;
     const primitive_attr_t &attr_;
@@ -65,7 +66,7 @@ private:
     const Xbyak::Reg64 reg_reduce_loop_iter = r13;
     const Xbyak::Reg64 aux_reg_bcast_data = r14;
     const Xbyak::Reg64 aux_reg_load_data = r15;
-    const Xbyak::Reg64 aux_reg_saturation = r15;
+    const Xbyak::Reg64 aux_reg_saturation = r14;
     const Xbyak::Reg64 reg_reduce_pos_flag = rax;
     const Xbyak::Reg64 aux1_reg_bcast_data = rbx;
     const Xbyak::Reg64 reg_bcast_loop_work = rbx;
@@ -76,6 +77,14 @@ private:
     const Xbyak::Reg64 reg_zp_compensation = aux_reg_load_data; // r15
     const Xbyak::Reg64 reg_src_zero_point = aux_reg_bcast_data; // r14
     const Xbyak::Reg64 reg_dst_zero_point = reg_src_zero_point;
+
+    const Xbyak::Reg64 reg_d_weights = aux_reg_bcast_data;
+    const Xbyak::Reg64 reg_d_bias = abi_param1;
+    const Xbyak::Reg64 reg_oc_off = aux_reg_load_data;
+    int base_post_ops_data_offset = 0;
+
+    Vmm vmm_d_weights = Vmm(0);
+    Vmm vmm_d_bias = Vmm(1);
 
     const Vmm vmm_tmp = Vmm(3);
     const Vmm vmm_one = Vmm(2);
@@ -115,7 +124,7 @@ private:
     int vreg_accum_idx(
             const int load_loop_blk, const int i_load, const int i_ur);
     Vmm vreg_accum(const int load_loop_blk, const int i_load, const int i_ur);
-    int output_ptr(const int i_load, const int i_ur);
+    dim_t output_ptr(const int i_load, const int i_ur);
     void bcast_loop(int load_loop_blk);
     void apply_sum(const int ur, const int load_loop_blk,
             const bool mask_flag_in, const float *p_sum_scale,

@@ -26,11 +26,11 @@ const impl_list_map_t &regular_bf16_impl_list_map() {
     static const impl_list_map_t the_map = REG_REORDER_P({
         // bf16 ->
         {{bf16, data_type::undef, 0}, {
-            CPU_REORDER_INSTANCE(rnn_weights_reorder_t<bf16, bf16>)
-            DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64::brgemm_matmul_copy_reorder_t))
+            CPU_REORDER_INSTANCE(rnn_weights_reorder_t, bf16, bf16)
+            DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64_brgemm_matmul_copy_reorder_t))
             DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64::jit_uni_reorder_direct_copy_t))
-            DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64::jit_blk_reorder_t))
-            DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64::jit_uni_reorder_t))
+            DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64_jit_blk_reorder_t))
+            DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64_jit_uni_reorder_t))
 
             DNNL_NON_X64_ONLY(REG_SR_BIDIR(bf16, any, f32, nChw16c))
             DNNL_NON_X64_ONLY(REG_SR_BIDIR(bf16, any, f32, nCdhw16c))
@@ -53,14 +53,14 @@ const impl_list_map_t &regular_bf16_impl_list_map() {
             DNNL_NON_X64_ONLY(REG_SR_BIDIR(bf16, any, u8, OIdhw16o16i))
             DNNL_NON_X64_ONLY(REG_SR_BIDIR(bf16, any, u8, OIdhw16i16o))
 
-            DNNL_AARCH64_ONLY(CPU_REORDER_INSTANCE(aarch64::jit_uni_reorder_t))
+            DNNL_AARCH64_ONLY(CPU_REORDER_INSTANCE(aarch64_jit_uni_reorder_t))
 
-            REG_SR(bf16, any, bf16, any, fmt_order::any, spec::reference)
-            REG_SR(bf16, any, f32, any, fmt_order::any, spec::reference)
-            REG_SR(bf16, any, s8, any, fmt_order::any, spec::reference)
-            REG_SR(bf16, any, u8, any, fmt_order::any, spec::reference)
-            REG_SR(bf16, any, f8_e5m2, any, fmt_order::any, spec::reference)
-            REG_SR(bf16, any, f8_e4m3, any, fmt_order::any, spec::reference)
+            REG_SR(bf16, any, bf16, any, fmt_order_any, spec_reference)
+            REG_SR(bf16, any, f32, any, fmt_order_any, spec_reference)
+            REG_SR(bf16, any, s8, any, fmt_order_any, spec_reference)
+            REG_SR(bf16, any, u8, any, fmt_order_any, spec_reference)
+            REG_SR(bf16, any, f8_e5m2, any, fmt_order_any, spec_reference)
+            REG_SR(bf16, any, f8_e4m3, any, fmt_order_any, spec_reference)
 
             nullptr,
         }},

@@ -300,8 +300,8 @@ struct jit_avx512_core_bf16_1x1_convolution_fwd_t : public primitive_t {
             while (jcp_1x1.nb_load_blocking % jcp_dw->nb_ch_blocking != 0)
                 --jcp_dw->nb_ch_blocking;
 
-            jcp_dw->dw_conv_buffer_oc
-                    = jcp_1x1.nb_load_blocking * jcp_1x1.oc_block;
+            jcp_dw->dw_conv_buffer_oc = static_cast<int>(
+                    jcp_1x1.nb_load_blocking * jcp_1x1.oc_block);
 
             registrar_t scratchpad(scratchpad_registry_);
             registrar_t dw_scratchpad(scratchpad, names::prefix_fusion);
@@ -389,8 +389,7 @@ struct jit_avx512_core_bf16_1x1_convolution_bwd_data_t : public primitive_t {
             VDISPATCH_CONV(set_default_alg_kind(alg_kind::convolution_direct),
                     VERBOSE_BAD_ALGORITHM);
             VDISPATCH_CONV(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
-            VDISPATCH_CONV(
-                    attr()->has_default_values(), VERBOSE_UNSUPPORTED_ATTR);
+            VDISPATCH_CONV(is_supported_post_ops(), VERBOSE_UNSUPPORTED_ATTR);
             VDISPATCH_CONV(set_default_formats(), VERBOSE_UNSUPPORTED_TAG);
 
             const convolution_desc_t *conv_d = desc();
@@ -442,6 +441,24 @@ struct jit_avx512_core_bf16_1x1_convolution_bwd_data_t : public primitive_t {
 
             return set_default_formats_common(dat_tag, wei_tag, dat_tag);
         }
+
+        bool is_supported_post_ops() const {
+            const auto &p = this->attr()->post_ops_;
+            if (p.len() > 1) return false;
+
+            auto all_post_ops_supported = [&]() {
+                bool ok = true;
+
+                for (int i = 0; i < p.len(); i++) {
+                    ok = ok
+                            && utils::one_of(p.entry_[i].kind,
+                                    primitive_kind::depthwise);
+                }
+                return ok;
+            };
+
+            return all_post_ops_supported();
+        }
     };
 
     template <cpu_isa_t isa, typename conv_t>
@@ -472,7 +489,8 @@ private:
     void execute_backward_data(const exec_ctx_t &ctx) const;
     void execute_backward_data_thr(const int, const int,
             const diff_dst_data_t *, const wei_data_t *, diff_src_data_t *,
-            const memory_tracking::grantor_t &scratchpad) const;
+            const memory_tracking::grantor_t &scratchpad,
+            const void *post_ops_binary_rhs_arg_vec) const;
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 
     std::unique_ptr<jit_avx512_core_bf16_1x1_conv_kernel_t> kernel_;

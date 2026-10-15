@@ -1,7 +1,6 @@
 /*******************************************************************************
-* Copyright 2019 Intel Corporation
+* Copyright 2019-2022 Intel Corporation
 * Copyright 2022 FUJITSU LIMITED
-* Copyright 2026 Arm Ltd. and affiliates
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -37,12 +36,12 @@ namespace {
 using namespace dnnl::impl::data_type;
 
 // clang-format off
-constexpr impl_list_item_t impl_list[] = REG_SHUFFLE_P({
-        CPU_INSTANCE_X64(jit_uni_shuffle_t<avx512_core>)
-        CPU_INSTANCE_X64(jit_uni_shuffle_t<avx>)
-        CPU_INSTANCE_X64(jit_uni_shuffle_t<sse41>)
-        CPU_INSTANCE_AARCH64(jit_uni_shuffle_t<sve>)
-        CPU_INSTANCE_AARCH64(jit_uni_shuffle_t<asimd>)
+const impl_list_item_t impl_list[] = REG_SHUFFLE_P({
+        CPU_INSTANCE_X64(jit_uni_shuffle_t, avx512_core)
+        CPU_INSTANCE_X64(jit_uni_shuffle_t, avx)
+        CPU_INSTANCE_X64(jit_uni_shuffle_t, sse41)
+        CPU_INSTANCE_AARCH64(jit_uni_shuffle_t, sve)
+        CPU_INSTANCE_AARCH64(jit_uni_shuffle_t, asimd)
         CPU_INSTANCE(ref_shuffle_t)
         /* eol */
         nullptr,

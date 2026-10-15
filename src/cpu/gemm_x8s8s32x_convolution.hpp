@@ -51,9 +51,6 @@ struct gemm_x8s8s32x_convolution_fwd_t : public primitive_t {
             using skip_mask_t = primitive_attr_t::skip_mask_t;
             const auto dst_type = dst_md(0)->data_type;
 
-            VDISPATCH_CONV(
-                    DNNL_CPU_THREADING_RUNTIME != DNNL_RUNTIME_THREADPOOL,
-                    VERBOSE_UNSUPPORTED_THREADPOOL_RUNTIME);
             VDISPATCH_CONV(is_fwd(), VERBOSE_BAD_PROPKIND);
             VDISPATCH_CONV(set_default_alg_kind(alg_kind::convolution_direct),
                     VERBOSE_BAD_ALGORITHM);
@@ -75,13 +72,18 @@ struct gemm_x8s8s32x_convolution_fwd_t : public primitive_t {
             VDISPATCH_CONV(attr()->has_default_values(skip_mask_t::scales
                                            | skip_mask_t::zero_points
                                            | skip_mask_t::post_ops
-                                           | skip_mask_t::sum_dt,
+                                           | skip_mask_t::sum_dt
+                                           | primitive_attr_t::skip_mask_t::
+                                                   input_zero_points
+                                           | primitive_attr_t::skip_mask_t::
+                                                   output_compensations,
                                    dst_type),
                     VERBOSE_UNSUPPORTED_ATTR);
 
-            VDISPATCH_CONV(attr()->post_ops_.check_sum_consistency(dst_type,
-                                   /* is_int8 */ true),
-                    VERBOSE_UNSUPPORTED_POSTOP);
+            // VDISPATCH_CONV(attr()->post_ops_.check_sum_consistency(dst_type,
+            //                        /* is_int8 */ true),
+            //         VERBOSE_UNSUPPORTED_POSTOP);
+            VDISPATCH_CONV(post_ops_ok(), VERBOSE_UNSUPPORTED_POSTOP);
             CHECK(attr_scales_ok());
             CHECK(attr_zero_points_ok());
 
@@ -93,14 +95,33 @@ struct gemm_x8s8s32x_convolution_fwd_t : public primitive_t {
                     *desc(), src_md_, weights_md_, dst_md_, bias_md_, attr_,
                     dnnl_get_max_threads()));
 
-            VDISPATCH_CONV(gemm_x8s8s32x_convolution_utils::post_ops_ok(
-                                   attr()->post_ops_, &dst_md_),
-                    VERBOSE_UNSUPPORTED_POSTOP);
+            // VDISPATCH_CONV(gemm_x8s8s32x_convolution_utils::post_ops_ok(
+            //                        attr()->post_ops_, &dst_md_),
+            //         VERBOSE_UNSUPPORTED_POSTOP);
 
             return status::success;
         }
 
         conv_gemm_conf_t jcp_ = utils::zero<decltype(jcp_)>();
+
+    protected:
+        bool post_ops_ok() const {
+            using namespace dnnl::impl::primitive_kind;
+            auto const &po = attr()->post_ops_;
+
+            auto all_post_ops_supported = [&]() {
+                bool ok = true;
+
+                for (int i = 0; i < po.len(); i++) {
+                    ok = ok
+                            && utils::one_of(po.entry_[i].kind, sum, binary,
+                                    eltwise, depthwise, quantization);
+                }
+                return ok;
+            };
+
+            return all_post_ops_supported();
+        }
     };
 
     gemm_x8s8s32x_convolution_fwd_t(const pd_t *apd) : primitive_t(apd) {}
@@ -122,8 +143,9 @@ private:
             void *dst_base, const float *scales, const float *dst_scales,
             const zero_point_call_params_t &zp,
             const memory_tracking::grantor_t &scratchpad,
-            const void *post_ops_binary_rhs_arg_vec,
-            const exec_ctx_t &ctx) const;
+            const void *post_ops_binary_rhs_arg_vec, const exec_ctx_t &ctx,
+            const uint8_t *input_zp_base,
+            const int32_t *output_compensation_base) const;
 
     using pp_ker_t = gemm_x8s8s32x_convolution_utils::pp_ker_t;
     std::unique_ptr<pp_ker_t> pp_ker_;
@@ -141,9 +163,6 @@ struct gemm_x8s8s32x_convolution_bwd_data_t : public primitive_t {
         status_t init(engine_t *engine) {
             using namespace data_type;
 
-            VDISPATCH_CONV(
-                    DNNL_CPU_THREADING_RUNTIME != DNNL_RUNTIME_THREADPOOL,
-                    VERBOSE_UNSUPPORTED_THREADPOOL_RUNTIME);
             VDISPATCH_CONV(desc()->prop_kind == prop_kind::backward_data,
                     VERBOSE_BAD_PROPKIND);
             VDISPATCH_CONV(utils::one_of(diff_dst_md()->data_type, s8, u8),

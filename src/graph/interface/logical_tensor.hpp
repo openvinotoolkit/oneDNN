@@ -165,6 +165,7 @@ struct logical_tensor_wrapper_t {
                     dnnl::impl::data_type::f4_e2m1,
                     dnnl::impl::data_type::f4_e3m0))
             return 2;
+        if (data_type() == data_type::u2) return 4;
         return 1;
     }
 

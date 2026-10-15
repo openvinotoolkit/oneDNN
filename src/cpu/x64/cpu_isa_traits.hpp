@@ -38,11 +38,11 @@
 
 /* in order to make selinux happy memory that would be marked with X-bit should
  * be obtained with mmap */
-#if !defined(XBYAK_USE_MMAP_ALLOCATOR)
-#define XBYAK_USE_MMAP_ALLOCATOR
-#endif
+// #if !defined(XBYAK_USE_MMAP_ALLOCATOR)
+// #define XBYAK_USE_MMAP_ALLOCATOR
+// #endif
 
-#if defined(NDEBUG) && !defined(XBYAK_NO_EXCEPTION)
+#ifdef DNNL_XBYAK_NO_EXCEPTION
 #define XBYAK_NO_EXCEPTION
 #endif
 
@@ -96,6 +96,7 @@ enum cpu_isa_bit_t : unsigned {
     amx_bf16_bit = 1u << 16,
     amx_fp16_bit = 1u << 17,
     amx_2_bit = 1u << 18,
+    avx512_vpopcnt_bit = 1u << 19,
 
     // Fill in hints from most significant bit to least significant bit
     prefer_ymm_bit = 1u << (cpu_isa_total_bits - 1),
@@ -127,7 +128,11 @@ inline unsigned cvt2mask(dnnl_cpu_isa_hints_t hints) {
 }
 
 inline bool is_hints_bit_set(cpu_isa_bit_t hint_bit, bool soft) {
+#if DNNL_X64
     const dnnl_cpu_isa_hints_t hints = get_cpu_isa_hints(soft);
+#else
+    const dnnl_cpu_isa_hints_t hints = dnnl_cpu_isa_no_hints;
+#endif
     const unsigned cur_hints_mask = cpu_isa_hints_utils::cvt2mask(hints);
     return (cur_hints_mask & hint_bit) == hint_bit;
 }
@@ -159,6 +164,7 @@ enum cpu_isa_t : unsigned {
     avx10_2_amx_2
     = avx10_2 | amx_tile | amx_int8 | amx_bf16 | amx_fp16 | amx_2_bit,
     avx10_2_512_amx_2 = avx10_2_amx_2,
+    avx512_vpopcnt = avx512_vpopcnt_bit,
     // NOTES: 1. isa_all by default has no isa specific hints
     isa_all = ~0u & ~cpu_isa_hints_utils::hints_mask,
 };
@@ -373,6 +379,13 @@ struct cpu_isa_traits_t<avx10_2_amx_2> : public cpu_isa_traits_t<avx10_2> {
     static constexpr const char *user_option_env = "avx10_2_amx_2";
 };
 
+template <>
+struct cpu_isa_traits_t<avx512_vpopcnt> {
+    static constexpr dnnl_cpu_isa_t user_option_val
+            = dnnl_cpu_isa_avx512_vpopcnt;
+    static constexpr const char *user_option_env = "AVX512_VPOPCNT";
+};
+
 inline const Xbyak::util::Cpu &cpu() {
     const static Xbyak::util::Cpu cpu_;
     return cpu_;
@@ -414,8 +427,11 @@ namespace {
 
 inline bool mayiuse(const cpu_isa_t cpu_isa, bool soft = false) {
     using namespace Xbyak::util;
-
+#if DNNL_X64
     unsigned cpu_isa_mask = x64::get_max_cpu_isa_mask(soft);
+#else
+    unsigned cpu_isa_mask = isa_all;
+#endif
     unsigned cpu_isa_no_hints
             = cpu_isa & ~cpu_isa_hints_utils::hints_mask & ~avx10_version_bits;
     const auto cpu_avx10_version
@@ -486,6 +502,8 @@ inline bool mayiuse(const cpu_isa_t cpu_isa, bool soft = false) {
             REG_AMX_ISA(return mayiuse(avx10_2, soft) && mayiuse(amx_tile, soft)
                     && cpu().has(Cpu::tAMX_TF32) && cpu().has(Cpu::tAMX_AVX512)
                     && cpu().has(Cpu::tAMX_MOVRS) && cpu().has(Cpu::tAMX_FP8));
+        case avx512_vpopcnt:
+            REG_AVX512_ISA(return cpu().has(Cpu::tAVX512_VPOPCNTDQ));
         case isa_all: return false;
         case isa_undef: return true;
     }
@@ -601,11 +619,16 @@ inline size_t data_type_vnni_granularity(const data_type_t data_type) {
         case f32:
         case s32: return size_t(1);
         case f16:
-        case bf16: return size_t(2);
+        case bf16:
+        case s4:
+        case u4:
+        case nf4:
+        case f4_e2m1: return size_t(2);
         case f8_e5m2:
         case f8_e4m3:
         case s8:
-        case u8: return size_t(4);
+        case u8:
+        case u2: return size_t(4);
         case data_type::undef:
         default: assert(!"unknown data_type");
     }

@@ -30,13 +30,18 @@ SET "CTEST_OPTS=--output-on-failure"
 
 IF NOT "%REPORTDIR%" == "" SET "GTEST_OUTPUT=%REPORTDIR%\report\test_report.xml"
 
-SET "PATH=%BUILDDIR%\src\%MODE%;%PATH%"
-SET "LIB=%BUILDDIR%\src\%MODE%;%LIB%"
+IF NOT "%LLVM_PATH%" == "" SET "PATH=%LLVM_PATH%\bin;%PATH%"
+SET "PATH=%BUILDDIR%\src;%BUILDDIR%\src\%MODE%;%PATH%"
+SET "LIB=%BUILDDIR%\src;%BUILDDIR%\src\%MODE%;%LIB%"
 
 ECHO "CTEST OPTIONS: %CTEST_OPTS%"
 
 CD /D %BUILDDIR%
 
-ctest %CTEST_OPTS%
+IF "%ONEDNN_SKIP_TESTS_REGEX%" == "" (
+    ctest %CTEST_OPTS%
+) ELSE (
+    ctest %CTEST_OPTS% -E "%ONEDNN_SKIP_TESTS_REGEX%"
+)
 
 echo "DONE"

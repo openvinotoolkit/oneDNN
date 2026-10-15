@@ -142,9 +142,11 @@ struct jit_avx512_core_bf16_convolution_bwd_data_t : public primitive_t {
             VDISPATCH_CONV(set_default_alg_kind(alg_kind::convolution_direct),
                     VERBOSE_BAD_ALGORITHM);
             VDISPATCH_CONV(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
-            VDISPATCH_CONV(
-                    attr()->has_default_values(), VERBOSE_UNSUPPORTED_ATTR);
+            VDISPATCH_CONV(attr()->has_default_values(
+                                   primitive_attr_t::skip_mask_t::post_ops),
+                    VERBOSE_UNSUPPORTED_ATTR);
 
+            jcp_.post_ops = attr()->post_ops_;
             // TODO: make `init_conf` assign initialized object to `jcp_`
             CHECK(jit_avx512_core_bf16_bwd_data_kernel_t::init_conf(jcp_,
                     *desc(), diff_src_md_, weights_md_, diff_dst_md_,
@@ -254,19 +256,20 @@ private:
 
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 
-    size_t tr_src_buf_number(const thread_info_t *ti, int g, int ic) const;
-    size_t tr_diff_dst_buf_number(const thread_info_t *ti, int g, int oc) const;
+    size_t tr_src_buf_number(const thread_info_t *ti, dim_t g, dim_t ic) const;
+    size_t tr_diff_dst_buf_number(
+            const thread_info_t *ti, dim_t g, dim_t oc) const;
     void trans_src(
-            src_data_t *tr_src1, const src_data_t *src1, int my_work) const;
+            src_data_t *tr_src1, const src_data_t *src1, dim_t my_work) const;
     void trans_dst(diff_dst_data_t *tr_diff_dst1,
-            const diff_dst_data_t *diff_dst1, int my_work) const;
+            const diff_dst_data_t *diff_dst1, dim_t my_work) const;
     void trans_src_nxc(src_data_t *tr_src, const src_data_t *src_base,
-            int spatial_start, dim_t spatial_start_offset, int icb_start,
-            dim_t chb_stride, int my_work) const;
+            dim_t spatial_start, dim_t spatial_start_offset, dim_t icb_start,
+            dim_t chb_stride, dim_t my_work) const;
     void trans_dst_nxc(diff_dst_data_t *tr_diff_dst,
-            const diff_dst_data_t *diff_dst_base, int spatial_start,
-            dim_t spatial_start_offset, int ocb_start, dim_t chb_stride,
-            int my_work) const;
+            const diff_dst_data_t *diff_dst_base, dim_t spatial_start,
+            dim_t spatial_start_offset, dim_t ocb_start, dim_t chb_stride,
+            dim_t my_work) const;
 
     int nthr_ = 0, nthr_mb_ = 0, nthr_g_ = 0, nthr_oc_b_ = 0, nthr_ic_b_ = 0;
 

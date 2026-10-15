@@ -110,7 +110,10 @@ inline size_t data_type_size(data_type_t data_type) {
         case u8: return sizeof(prec_traits_t<u8>::type);
         case s4: return sizeof(prec_traits_t<s4>::type);
         case u4: return sizeof(prec_traits_t<u4>::type);
+        case u2: return sizeof(prec_traits_t<u2>::type);
         case boolean: return sizeof(prec_traits_t<boolean>::type);
+        case bin: return sizeof(prec_traits_t<u8>::type);
+        case nf4: return sizeof(prec_traits_t<u8>::type);
         case data_type::undef:
         default: assert(!"unknown data_type");
     }
@@ -124,6 +127,7 @@ inline size_t elements_to_bytes(data_type_t data_type, size_t count) {
         case f4_e3m0:
         case s4:
         case u4: return (count + 1) >> 1;
+        case u2: return (count + 3) >> 2;
         default: return data_type_size(data_type) * count;
     }
 }
@@ -135,6 +139,7 @@ inline size_t bytes_to_elements(data_type_t data_type, size_t bytes) {
         case f4_e3m0:
         case s4:
         case u4: return bytes * 2;
+        case u2: return bytes * 4;
         default: return utils::div_up(bytes, data_type_size(data_type));
     }
 }
@@ -500,6 +505,9 @@ inline data_type_t default_accum_data_type(data_type_t src_dt,
 
     /* prop_kind doesn't matter */
     if (everyone_is(f32, src_dt, wei_dt)) return f32;
+    if (one_of(src_dt, f32, bf16)
+            && one_of(wei_dt, u8, s8, nf4, s4, u4, f4_e2m1, u2))
+        return f32;
     if (everyone_is(f64, src_dt, wei_dt)) return f64;
 
     if (one_of(prop_kind, forward_training, forward_inference)) {
@@ -1243,6 +1251,17 @@ inline bool memory_desc_matches_tag(const memory_desc_t &md, format_tag_t tag,
 
     const auto &blk = md.format_desc.blocking;
     const auto &blk_gold = md_gold.format_desc.blocking;
+
+    using utils::array_cmp;
+    bool same_blocks = true && blk.inner_nblks == blk_gold.inner_nblks
+            && array_cmp(blk.inner_blks, blk_gold.inner_blks, blk.inner_nblks)
+            && array_cmp(blk.inner_idxs, blk_gold.inner_idxs, blk.inner_nblks);
+
+    if (!same_blocks) return false;
+
+    if (strides == nullptr)
+        return array_cmp(blk.strides, blk_gold.strides, md.ndims);
+
     for (int d = 0; d < md.ndims; ++d) {
         dim_t stride = strides[d];
         if (stride == -1) continue;
@@ -1262,6 +1281,7 @@ format_tag_t memory_desc_matches_one_of_tag(
     }
     return format_tag::undef;
 }
+
 template <typename... Args>
 inline bool any_memory_desc_host_scalar(const memory_desc_t *md, Args... mds) {
     if (md != nullptr && md->format_kind == format_kind::host_scalar)

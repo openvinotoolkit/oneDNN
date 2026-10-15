@@ -72,11 +72,12 @@ struct jit_avx512_core_x8s8s32x_1x1_convolution_fwd_t : public primitive_t {
                     VERBOSE_BAD_ALGORITHM);
             VDISPATCH_CONV(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
 
-            VDISPATCH_CONV(
-                    attr()->has_default_values(smask_t::scales
-                                    | smask_t::zero_points | smask_t::post_ops
-                                    | smask_t::sum_dt,
-                            dst_md(0)->data_type),
+            VDISPATCH_CONV(attr()->has_default_values(smask_t::scales
+                                           | smask_t::zero_points
+                                           | smask_t::post_ops | smask_t::sum_dt
+                                           | smask_t::input_zero_points
+                                           | smask_t::output_compensations,
+                                   dst_md(0)->data_type),
                     VERBOSE_UNSUPPORTED_ATTR);
 
             VDISPATCH_CONV(set_default_formats_common(
@@ -95,6 +96,8 @@ struct jit_avx512_core_x8s8s32x_1x1_convolution_fwd_t : public primitive_t {
                     {DNNL_ARG_ATTR_POST_OP_DW | DNNL_ARG_WEIGHTS, {0, 1}},
                     {DNNL_ARG_ATTR_POST_OP_DW | DNNL_ARG_DST, {0}}}));
             CHECK(attr_zero_points_ok());
+            // VDISPATCH_CONV(!this->attr()->has_asymmetric_quantization(),
+            //         VERBOSE_UNSUPPORTED_ATTR);
 
             const convolution_desc_t *conv_d = desc();
             const memory_desc_t *src_d = src_md();
@@ -265,8 +268,8 @@ struct jit_avx512_core_x8s8s32x_1x1_convolution_fwd_t : public primitive_t {
             while (jcp_1x1.nb_load_blocking % jcp_dw_->nb_ch_blocking != 0)
                 --jcp_dw_->nb_ch_blocking;
 
-            jcp_dw_->dw_conv_buffer_oc
-                    = jcp_1x1.nb_load_blocking * jcp_1x1.oc_block;
+            jcp_dw_->dw_conv_buffer_oc = static_cast<int>(
+                    jcp_1x1.nb_load_blocking * jcp_1x1.oc_block);
             jcp_1x1.bcast_loop_output_step = jcp_1x1.ur
                     * (jcp_1x1.nb_load_blocking * jcp_1x1.oc_block)
                     * jcp_1x1.typesize_out;
@@ -274,7 +277,7 @@ struct jit_avx512_core_x8s8s32x_1x1_convolution_fwd_t : public primitive_t {
             registrar_t scratchpad(scratchpad_registry_);
             registrar_t dw_scratchpad(scratchpad, names::prefix_fusion);
 
-            size_t dw_conv_buffer_size_ = (size_t)nthr * jcp_dw_->kh
+            dim_t dw_conv_buffer_size_ = static_cast<dim_t>(nthr) * jcp_dw_->kh
                     * jcp_dw_->iw * jcp_dw_->dw_conv_buffer_oc;
             assert(dw_conv_buffer_size_);
             dw_scratchpad.book(memory_tracking::names::key_fusion_inout_buffer,
@@ -327,7 +330,8 @@ private:
             const int32_t *src_zero_point, const int32_t *dst_zero_point,
             const memory_tracking::grantor_t &scratchpad,
             const void *post_ops_binary_rhs_arg_vec,
-            const void *post_ops_binary_rhs_arg_vec_dw) const;
+            const void *post_ops_binary_rhs_arg_vec_dw,
+            const int32_t *output_compensation) const;
     const pd_t *pd() const { return (const pd_t *)primitive_t::pd().get(); }
 
     std::unique_ptr<jit_avx512_core_x8s8s32x_1x1_conv_kernel_t> kernel_;

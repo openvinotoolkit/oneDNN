@@ -20,6 +20,7 @@
 #ifndef ONEAPI_DNNL_DNNL_H
 #define ONEAPI_DNNL_DNNL_H
 
+#include <stdbool.h>
 #include "oneapi/dnnl/dnnl_common.h"
 #include "oneapi/dnnl/dnnl_config.h"
 #include "oneapi/dnnl/dnnl_types.h"
@@ -457,6 +458,9 @@ dnnl_status_t DNNL_API dnnl_primitive_attr_set_scratchpad_mode(
 ///     otherwise.
 dnnl_status_t DNNL_API dnnl_primitive_attr_set_scales_mask(
         dnnl_primitive_attr_t attr, int arg, int mask);
+dnnl_status_t DNNL_API dnnl_primitive_attr_set_scales_dims(
+        dnnl_primitive_attr_t attr, int arg, const dnnl_dims_t dims, int ndims,
+        dnnl_data_type_t data_type);
 
 /// Sets primitive attributes scaling factors for primitive operations for a
 /// given memory argument. The scaling factors must be passed at execution time
@@ -566,6 +570,9 @@ dnnl_status_t DNNL_API dnnl_primitive_attr_set_scales_v3(
 ///     otherwise.
 dnnl_status_t DNNL_API dnnl_primitive_attr_set_zero_points_mask(
         dnnl_primitive_attr_t attr, int arg, int mask);
+dnnl_status_t DNNL_API dnnl_primitive_attr_set_zero_points_dims(
+        dnnl_primitive_attr_t attr, int arg, const dnnl_dims_t dims, int ndims,
+        dnnl_data_type_t data_type);
 
 /// Sets primitive attributes zero points for primitive operations for a given
 /// memory argument. The zero points must be passed at execution time
@@ -675,6 +682,15 @@ dnnl_status_t DNNL_API dnnl_primitive_attr_set_rounding(
 ///     otherwise.
 dnnl_status_t DNNL_API dnnl_primitive_attr_get_rounding(
         dnnl_primitive_attr_t attr, int arg, dnnl_rounding_mode_t *mode);
+
+dnnl_status_t DNNL_API dnnl_primitive_attr_set_output_compensations(
+        dnnl_primitive_attr_t attr, int count, int mask);
+
+dnnl_status_t DNNL_API dnnl_primitive_attr_set_input_zero_points(
+        dnnl_primitive_attr_t attr, int count, int mask);
+
+dnnl_status_t DNNL_API dnnl_primitive_attr_set_weights_zero_points(
+        dnnl_primitive_attr_t attr, int count, int mask);
 
 /// Returns primitive attributes post-ops.
 ///
@@ -877,6 +893,14 @@ dnnl_status_t DNNL_API dnnl_post_ops_get_params_dw(
         dnnl_data_type_t *dst_data_type, dnnl_dim_t *kernel_size,
         dnnl_dim_t *stride_size, dnnl_dim_t *padding_l_size);
 
+/// Appends DW convolution post operation to the @p post_ops with given parameters
+/// @p weights and @p bias.
+///
+/// The kind of this post operation is #dnnl_convolution.
+dnnl_status_t DNNL_API dnnl_post_ops_append_dw_conv(dnnl_post_ops_t post_ops,
+        int in_h, int in_w, int ker_h, int ker_w, int str_h, int str_w,
+        dnnl_data_type_t in_dt);
+
 /// Appends a binary post-op.
 ///
 /// This post operation is categorized as #dnnl_binary.
@@ -1000,6 +1024,18 @@ dnnl_status_t DNNL_API dnnl_post_ops_append_prelu(
 ///     otherwise.
 dnnl_status_t DNNL_API dnnl_post_ops_get_params_prelu(
         const_dnnl_post_ops_t post_ops, int index, int *mask);
+
+dnnl_status_t DNNL_API dnnl_post_ops_append_depthwise(dnnl_post_ops_t post_ops,
+        dnnl_alg_kind_t alg, size_t offset_size, const size_t *offset);
+
+dnnl_status_t DNNL_API dnnl_post_ops_append_quantization(
+        dnnl_post_ops_t post_ops, dnnl_alg_kind_t alg, size_t per_channel_size,
+        const bool *per_channel, size_t all_default_size,
+        const bool *all_default, size_t offset_size, const size_t *offset);
+
+dnnl_status_t DNNL_API dnnl_post_ops_append_binarization(
+        dnnl_post_ops_t post_ops, dnnl_alg_kind_t alg,
+        const float *weights_data, const float *output_mask);
 
 /// @} dnnl_api_attributes
 
@@ -1186,6 +1222,19 @@ dnnl_status_t DNNL_API dnnl_memory_desc_create_with_grouped_encoding(
         dnnl_data_type_t data_type, int variable_dim_idx,
         dnnl_dim_t group_count, dnnl_data_type_t offsets_dt);
 #endif
+
+/// Initializes a sparse descriptor.
+///
+/// @param memory_desc Output memory descriptor.
+/// @param encoding Encoding.
+/// @param ndims Number of dimensions.
+/// @param dims Array of dimensions.
+/// @param data_type Elements data type.
+/// @returns #dnnl_success on success and a status describing the error
+///     otherwise.
+dnnl_status_t DNNL_API dnnl_memory_desc_create_with_packed_encoding_v0(
+        dnnl_memory_desc_t *memory_desc, dnnl_sparse_encoding_t encoding,
+        int ndims, const dnnl_dims_t dims, dnnl_data_type_t data_type);
 
 /// Creates a memory descriptor for a scalar value that resides on the host.
 ///
@@ -2972,6 +3021,10 @@ dnnl_status_t DNNL_API dnnl_primitive_attr_get_rnn_weights_projection_qparams(
         const_dnnl_primitive_attr_t attr, dnnl_dim_t *count, int *mask,
         const float **scales);
 
+dnnl_status_t DNNL_API dnnl_primitive_attr_set_src_dyn_quant_params(
+        dnnl_primitive_attr_t attr, uint64_t group_size);
+dnnl_status_t DNNL_API dnnl_primitive_attr_get_src_dyn_quant_params(
+        dnnl_primitive_attr_t attr, uint64_t *group_size);
 /// @} dnnl_api_attributes
 
 /// @addtogroup dnnl_api_rnn

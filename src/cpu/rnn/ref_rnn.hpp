@@ -63,15 +63,16 @@ void gates_reduction(const rnn_utils::rnn_conf_t &rnn,
     // Note: `defined(_OPENMP)` is needed for `icx -fsycl` compilation. The
     // second pass for device code doesn't contain OpenMP macros.
 #if DNNL_CPU_RUNTIME == DNNL_RUNTIME_OMP && defined(_OPENMP) \
-        && _OPENMP >= 201307 \
-        && (!defined(__INTEL_COMPILER) || __INTEL_COMPILER < 1910)
+        && _OPENMP >= 201307 && defined __INTEL_COMPILER \
+        && __INTEL_COMPILER < 1910
 #pragma omp parallel for simd collapse(2)
     for (int i = 0; i < rnn.n_gates; i++)
         for (int k = 0; k < rnn.dhc; k++)
             body_loop(i, k, ws_gates_, diff_bias_, rnn, cell_position);
 #else
     parallel_nd(rnn.n_gates, rnn.dhc, [&](dim_t i, dim_t k) {
-        body_loop(i, k, ws_gates_, diff_bias_, rnn, cell_position);
+        body_loop(static_cast<int>(i), static_cast<int>(k), ws_gates_,
+                diff_bias_, rnn, cell_position);
     });
 #endif
 }

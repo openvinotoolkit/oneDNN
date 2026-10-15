@@ -21,7 +21,7 @@
 
 set -o errexit -o pipefail -o noclobber
 
-SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 
 # Defines MP, CC, CXX and OS.
 source ${SCRIPT_DIR}/common.sh

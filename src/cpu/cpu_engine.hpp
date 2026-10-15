@@ -29,21 +29,25 @@
 
 #include "cpu/platform.hpp"
 
-#if DNNL_AARCH64 && defined(DNNL_AARCH64_USE_ACL)
-#include "cpu/aarch64/acl_thread.hpp"
+#if defined(DNNL_USE_ACL)
+#include "cpu/acl/acl_thread.hpp"
 #endif
 
-#define CPU_INSTANCE(...) \
+#define CPU_INSTANCE_IMPL(...) \
     impl_list_item_t( \
-            impl_list_item_t::type_deduction_helper_t<__VA_ARGS__::pd_t>()),
-#define CPU_INSTANCE_X64(...) DNNL_X64_ONLY(CPU_INSTANCE(__VA_ARGS__))
+            impl_list_item_t::type_deduction_helper_t<__VA_ARGS__::pd_t>())
+#define CPU_INSTANCE(...) DNNL_PRIMITIVE_IMPL(CPU_INSTANCE_IMPL, __VA_ARGS__)
+// Expanding DNNL_X64_ONLY in order to fix Conditional Compilation failure on Windows + CPU plugin.
+// DNNL_X64_ONLY == CONCAT2(Z_DO_IF_, DNNL_X64)
+#define CPU_INSTANCE_X64(...) \
+    CONCAT2(Z_DO_IF_, DNNL_X64)(CPU_INSTANCE(__VA_ARGS__))
 #define CPU_INSTANCE_SSE41(...) REG_SSE41_ISA(CPU_INSTANCE(__VA_ARGS__))
 #define CPU_INSTANCE_AVX2(...) REG_AVX2_ISA(CPU_INSTANCE(__VA_ARGS__))
 #define CPU_INSTANCE_AVX512(...) REG_AVX512_ISA(CPU_INSTANCE(__VA_ARGS__))
 #define CPU_INSTANCE_AMX(...) REG_AMX_ISA(CPU_INSTANCE(__VA_ARGS__))
 #define CPU_INSTANCE_AARCH64(...) DNNL_AARCH64_ONLY(CPU_INSTANCE(__VA_ARGS__))
-#define CPU_INSTANCE_AARCH64_ACL(...) \
-    DNNL_AARCH64_ACL_ONLY(CPU_INSTANCE(__VA_ARGS__))
+#define CPU_INSTANCE_ARM(...) DNNL_ARM_ONLY(CPU_INSTANCE(__VA_ARGS__))
+#define CPU_INSTANCE_ACL(...) DNNL_ACL_ONLY(CPU_INSTANCE(__VA_ARGS__))
 #define CPU_INSTANCE_RV64(...) DNNL_RV64_ONLY(CPU_INSTANCE(__VA_ARGS__))
 // TODO: CPU_INSTANCE_RV64GCV[_ZVFH] gate registration on the build-time
 // RVV/Zvfh intrinsics flags (legacy build-time ISA identification). Once the
@@ -171,8 +175,8 @@ public:
         *engine = new cpu_engine_t(new impl::engine_impl_t(
                 engine_kind::cpu, get_cpu_native_runtime(), 0));
 
-#if DNNL_AARCH64 && defined(DNNL_AARCH64_USE_ACL)
-        dnnl::impl::cpu::aarch64::acl_thread_utils::set_acl_threading();
+#if defined(DNNL_USE_ACL)
+        dnnl::impl::cpu::acl::acl_thread_utils::set_acl_threading();
 #endif
         return status::success;
     }

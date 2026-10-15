@@ -297,6 +297,7 @@ typedef enum {
     dnnl_ABcd8a16b2a,
     dnnl_ABcd2b8a4b,
     dnnl_ABcd8a8b,
+    dnnl_ABcd8a32b,
     dnnl_ABcd8a4b,
     /// 4D tensor blocked by 2nd dimension with block size 8
     dnnl_aBcd8b,
@@ -409,6 +410,8 @@ typedef enum {
     dnnl_aCBdef16c16b,
     dnnl_aBdefc4b,
     dnnl_aBdefc8b,
+    dnnl_Abcdef4a,
+    dnnl_Abcdef8a,
     dnnl_Abcdef16a,
     dnnl_Abcdef32a,
     dnnl_aBedc16b,
@@ -735,6 +738,19 @@ typedef enum {
     dnnl_aCB16b32c,
     dnnl_aCB16b48c,
     dnnl_aCB16b64c,
+    dnnl_aBC8c8b2c,
+    dnnl_aBC8c16b2c,
+    dnnl_aBC8c24b2c,
+    dnnl_aBC8c32b2c,
+    dnnl_aBC8c64b2c,
+    dnnl_aBC16c16b2c,
+    dnnl_aBC16c32b2c,
+    dnnl_aBC16c48b2c,
+    dnnl_aBC16c64b2c,
+    dnnl_aBC16c16b4c,
+    dnnl_aBC16c32b4c,
+    dnnl_aBC16c48b4c,
+    dnnl_aBC16c64b4c,
     dnnl_aCB16b16c2b,
     dnnl_aCB16b32c2b,
     dnnl_aCB16b48c2b,
@@ -1446,6 +1462,8 @@ typedef enum {
     dnnl_OIhw2i8o4i = dnnl_ABcd2b8a4b,
     dnnl_IOhw8o16i2o = dnnl_BAcd8a16b2a,
     dnnl_OIhw8o8i = dnnl_ABcd8a8b,
+    dnnl_OIhw8o32i = dnnl_ABcd8a32b,
+    dnnl_OIhw16o32i = dnnl_ABcd16a32b,
     dnnl_OIhw8o4i = dnnl_ABcd8a4b,
     dnnl_Owhi16o = dnnl_Adcb16a,
     dnnl_OIhw8i32o = dnnl_ABcd8b32a,
@@ -1693,6 +1711,8 @@ typedef enum {
     dnnl_gIOdhw8o16i2o = dnnl_aCBdef8b16c2b,
     dnnl_gOIdhw8o8i = dnnl_aBCdef8b8c,
     dnnl_gOIdhw8o4i = dnnl_aBCdef8b4c,
+    dnnl_Goidhw4g = dnnl_Abcdef4a,
+    dnnl_Goidhw8g = dnnl_Abcdef8a,
     dnnl_Goidhw16g = dnnl_Abcdef16a,
     dnnl_Goidhw32g = dnnl_Abcdef32a,
     dnnl_gOIdhw2i4o2i = dnnl_aBCdef2c4b2c,
@@ -2067,6 +2087,12 @@ typedef enum {
     dnnl_deconvolution,
     /// An element-wise primitive.
     dnnl_eltwise,
+    /// An depthwise-wise primitive.
+    dnnl_depthwise,
+    /// A quantization primitive.
+    dnnl_quantization,
+    /// A binatization primitive.
+    dnnl_binarization,
     /// An LRN primitive.
     dnnl_lrn,
     /// A batch normalization primitive.
@@ -2158,6 +2184,12 @@ typedef enum {
     dnnl_eltwise_mish,
     /// Eltwise: hardswish
     dnnl_eltwise_hardswish,
+    /// Eltwise: hsigmoid
+    dnnl_eltwise_hsigmoid,
+    /// Eltwise: round_half_to_even
+    dnnl_eltwise_round_half_to_even,
+    /// Eltwise: round_half_away_from_zero
+    dnnl_eltwise_round_half_away_from_zero,
     /// Eltwise: ReLU (dst for backward)
     dnnl_eltwise_relu_use_dst_for_bwd = 0x100,
     /// Eltwise: hyperbolic tangent non-linearity (tanh) (dst for backward)
@@ -2226,6 +2258,8 @@ typedef enum {
     dnnl_binary_ne = 0x1fffb,
     /// Binary select
     dnnl_binary_select = 0x1fffc,
+    /// Binary prelu
+    dnnl_binary_prelu = 0x1fffd,
     /// Nearest Neighbor Resampling Method
     dnnl_resampling_nearest = 0x2fff0,
     /// Linear Resampling Method
@@ -2252,6 +2286,13 @@ typedef enum {
     dnnl_softmax_accurate = 0x30000,
     /// Logsoftmax
     dnnl_softmax_log,
+
+    dnnl_depthwise_scale_shift = 0x3fff0,
+    dnnl_depthwise_prelu = 0x3fff1,
+
+    dnnl_quantization_quantize_dequantize = 0x4fff0,
+    dnnl_quantization_quantize = 0x4fff1,
+    dnnl_binarization_depthwise = 0x4fff2,
 } dnnl_alg_kind_t;
 
 /// Flags for normalization primitives.
@@ -2333,7 +2374,12 @@ typedef enum {
 /// A `size_t` counterpart of the DNNL_RUNTIME_DIM_VAL.
 /// For instance, this value is returned by dnnl_memory_desc_get_size() if
 /// either of the dimensions or strides equal to #DNNL_RUNTIME_DIM_VAL.
+
+#if INTPTR_MAX == INT64_MAX
 #define DNNL_RUNTIME_SIZE_VAL ((size_t)DNNL_RUNTIME_DIM_VAL)
+#else
+#define DNNL_RUNTIME_SIZE_VAL ((size_t)INT32_MIN)
+#endif
 
 /// @cond DO_NOT_DOCUMENT_THIS
 /// Hex representation for a **special** quiet NAN (!= NAN from math.h)
@@ -3019,6 +3065,7 @@ typedef enum {
     dnnl_cpu_isa_avx10_2_amx_2 = 0x22fff,
     /// @copydoc dnnl_cpu_isa_avx10_2_amx_2
     dnnl_cpu_isa_avx10_2_512_amx_2 = dnnl_cpu_isa_avx10_2_amx_2,
+    dnnl_cpu_isa_avx512_vpopcnt = 0x3fef,
 } dnnl_cpu_isa_t;
 
 /// CPU ISA hints flags

@@ -33,6 +33,9 @@
 namespace dnnl {
 namespace impl {
 
+status_t fill_blocked(memory_desc_t &md, std::vector<int> &perm,
+        std::vector<int> &inner_blks, std::vector<int> &inner_idxs);
+
 /** thin wrapper class over \struct memory_desc_t which allows easy
  * manipulations with underlying C structure, which is taken by reference */
 // NOLINTNEXTLINE(readability-identifier-naming)
@@ -219,6 +222,7 @@ struct memory_desc_wrapper : public c_compatible {
         if (utils::one_of(data_type(), data_type::s4, data_type::u4,
                     data_type::f4_e2m1, data_type::f4_e3m0))
             return 2;
+        if (data_type() == data_type::u2) return 4;
         return 1;
     }
 
@@ -323,6 +327,31 @@ struct memory_desc_wrapper : public c_compatible {
             return rnn_packed_desc().size;
         } else if (is_cublaslt_blocked_desc()) {
             return cublaslt_blocked_desc().size;
+        } else if (is_sparse_desc()) {
+            if (sparse_desc().encoding == sparse_encoding::packed) {
+                // Only  2D tensors are supported at this point.
+                assert(ndims() == 2);
+                // Only OI16i64o4i is supported at this point.
+                // assert(matches_tag(format_tag::OI16i64o4i)); - TODO: enable for sparse packed.
+                const size_t metadata = padded_dims()[0] * padded_dims()[1] / 64
+                        * sizeof(uint64_t);
+                using comp_tile_len_type = int;
+                auto comp_tile_data_size = static_cast<size_t>(
+                        ceil(static_cast<float>(
+                                     padded_dims()[0] * padded_dims()[1])
+                                / (64 * 64 * (64 / sizeof(comp_tile_len_type))))
+                        * 64);
+                return comp_tile_data_size
+                        + (padded_dims()[0] * padded_dims()[1]
+                                * data_type_size())
+                        + metadata + 1000;
+                // todo: [av] why 1000?
+            } else {
+                printf("encoding:%d\n", (int)sparse_desc().encoding),
+                        fflush(stdout);
+                assert(!"unknown sparse encoding");
+                return 0;
+            }
         } else if (is_blocking_desc()) {
             dims_t blocks = {0};
             compute_blocks(blocks);
@@ -455,8 +484,8 @@ struct memory_desc_wrapper : public c_compatible {
         if (utils::one_of(format_kind(), format_kind::undef, format_kind::any))
             return false;
         if (has_runtime_dims_or_strides() || has_broadcast()) return false;
-        return nelems(with_padding) * data_type_size()
-                / sub_byte_data_type_multiplier()
+        return utils::div_up(nelems(with_padding) * data_type_size(),
+                       sub_byte_data_type_multiplier())
                 == size(0, /* include_additional_size = */ false);
     }
 
@@ -540,7 +569,9 @@ struct memory_desc_wrapper : public c_compatible {
      * following statement might be true: lhs == rhs && !lhs.similar_to(rhs) */
     /* TODO: revise */
     bool similar_to(const memory_desc_wrapper &rhs, bool with_padding = true,
-            bool with_data_type = true, int dim_start = 0) const;
+            bool with_data_type = true, int dim_start = 0,
+            bool use_weak_cmp = false, bool check_off0 = false,
+            uint64_t stride_mask = 0xffffffffffffffff) const;
 
     /** returns true if one memory can be reordered to another */
     bool consistent_with(const memory_desc_wrapper &rhs) const;
@@ -678,6 +709,10 @@ struct memory_desc_wrapper : public c_compatible {
     static status_t compute_blocking(
             memory_desc_t &memory_desc, format_tag_t tag);
 
+    static status_t compute_blocking(format_tag_t tag,
+            std::vector<size_t> &perm, std::vector<size_t> &inner_blks,
+            std::vector<size_t> &inner_idxs);
+
 private:
     /* TODO: put logical_offset in utils */
     template <typename T>
@@ -707,7 +742,8 @@ private:
 };
 
 inline bool memory_desc_wrapper::similar_to(const memory_desc_wrapper &rhs,
-        bool with_padding, bool with_data_type, int dim_start) const {
+        bool with_padding, bool with_data_type, int dim_start,
+        bool use_weak_cmp, bool check_off0, uint64_t stride_mask) const {
     using namespace utils;
 
     if (one_of(format_kind(), format_kind::undef, format_kind::any))
@@ -719,20 +755,44 @@ inline bool memory_desc_wrapper::similar_to(const memory_desc_wrapper &rhs,
     const auto &blk = blocking_desc();
     const auto &r_blk = rhs.blocking_desc();
 
+    auto custom_cpm = use_weak_cmp ? array_cmp_weak : array_cmp<dnnl_dim_t>;
+    auto cmp_strides = [&]() {
+        if (0xffffffffffffffff == stride_mask) {
+            return custom_cpm(
+                    blk.strides + ds, r_blk.strides + ds, ndims() - ds);
+        } else {
+            for (int i = 0; i < ndims(); ++i) {
+                if (stride_mask & (uint64_t {1} << i)) {
+                    if (blk.strides[i] != r_blk.strides[i]
+                            && IMPLICATION(use_weak_cmp,
+                                    (blk.strides[i] != DNNL_RUNTIME_DIM_VAL
+                                            && r_blk.strides[i]
+                                                    != DNNL_RUNTIME_DIM_VAL))) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
+    };
+
     return ndims() == rhs.ndims() && dim_start <= ndims() /* guard */
             && format_kind() == rhs.format_kind()
             && IMPLICATION(with_data_type, data_type() == rhs.data_type())
-            && array_cmp(dims() + ds, rhs.dims() + ds, ndims() - ds)
-            && array_cmp(blk.strides + ds, r_blk.strides + ds, ndims() - ds)
-            && blk.inner_nblks == r_blk.inner_nblks
+            && custom_cpm(dims() + ds, rhs.dims() + ds, ndims() - ds)
+            && cmp_strides() && blk.inner_nblks == r_blk.inner_nblks
             && array_cmp(blk.inner_blks, r_blk.inner_blks, blk.inner_nblks)
             && array_cmp(blk.inner_idxs, r_blk.inner_idxs, blk.inner_nblks)
             && IMPLICATION(with_padding,
                     true
-                            && array_cmp(padded_dims() + ds,
+                            && custom_cpm(padded_dims() + ds,
                                     rhs.padded_dims() + ds, ndims() - ds)
-                            && array_cmp(padded_offsets() + ds,
-                                    rhs.padded_offsets() + ds, ndims() - ds));
+                            && custom_cpm(padded_offsets() + ds,
+                                    rhs.padded_offsets() + ds, ndims() - ds))
+            && IMPLICATION(check_off0,
+                    (offset0() == DNNL_RUNTIME_DIM_VAL
+                            || rhs.offset0() == DNNL_RUNTIME_DIM_VAL
+                            || offset0() == rhs.offset0()));
 }
 
 inline bool memory_desc_wrapper::consistent_with(

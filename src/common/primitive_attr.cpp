@@ -71,6 +71,27 @@ status_t rnn_create_time_scales_t::set(
     return status::success;
 }
 
+template <typename T>
+status_t shifts_t<T>::set(int count, int mask, const T *shifts) {
+    cleanup();
+
+    count_ = count;
+    mask_ = mask;
+
+    if (count_ == 1) {
+        shifts_ = shifts_buf_;
+        utils::array_set(shifts_, shifts[0], shifts_buf_size);
+    } else {
+        shifts_ = (T *)impl::malloc(count_ * sizeof(*shifts_), 64);
+        if (shifts_ == nullptr) return status::out_of_memory;
+
+        for (int c = 0; c < count_; ++c)
+            shifts_[c] = shifts[c];
+    }
+
+    return status::success;
+}
+
 status_t dropout_t::set_default_formats(const memory_desc_t *dst_md) {
     auto is_any_or_undef = [](format_kind_t kind) {
         return one_of(kind, dnnl_format_kind_any, dnnl_format_kind_undef);
@@ -123,11 +144,15 @@ bool primitive_attr_t::has_default_values(dnnl_primitive_attr::skip_mask_t mask,
     CHECK_ARG(IMPLICATION((bool)(~mask & smask_t::zero_points_data_type),
             zero_points_.has_default_data_type()));
     CHECK_MASK(smask_t::precomputed_reductions, precomputed_reductions_);
+    CHECK_MASK(smask_t::input_zero_points, input_zero_points_);
+    CHECK_MASK(smask_t::weights_zero_points, weights_zero_points_);
+    CHECK_MASK(smask_t::output_compensations, output_compensations_);
     CHECK_MASK(smask_t::post_ops, post_ops_);
     CHECK_MASK(smask_t::rnn_data_qparams, rnn_data_qparams_);
     CHECK_MASK(smask_t::rnn_weights_qparams, rnn_weights_qparams_);
     CHECK_MASK(smask_t::rnn_weights_projection_qparams,
             rnn_weights_projection_qparams_);
+    CHECK_MASK(smask_t::src_dyn_quant_params, src_dyn_quant_params_);
     CHECK_ARG(IMPLICATION((bool)(~mask & smask_t::sum_dt),
             post_ops_.sum_with_default_dt(dst_dt)));
     bool gpu_attr_ok = IMPLICATION((bool)(~mask & smask_t::gpu_attr),
@@ -161,6 +186,7 @@ bool primitive_attr_t::defined(dnnl_primitive_attr::skip_mask_t mask) const {
     CHECK_MASK(smask_t::rnn_weights_qparams, rnn_weights_qparams_);
     CHECK_MASK(smask_t::rnn_weights_projection_qparams,
             rnn_weights_projection_qparams_);
+    CHECK_MASK(smask_t::src_dyn_quant_params, src_dyn_quant_params_);
     return ok;
 #undef CHECK_MASK
 #undef CHECK_ARG
@@ -233,7 +259,7 @@ status_t post_ops_t::validate_binary(alg_kind_t alg,
     using namespace alg_kind;
     bool alg_ok = one_of(alg, binary_add, binary_mul, binary_max, binary_min,
             binary_div, binary_sub, binary_ge, binary_gt, binary_le, binary_lt,
-            binary_eq, binary_ne, binary_select);
+            binary_eq, binary_ne, binary_select, binary_prelu);
     bool is_ternary_op = (alg == binary_select);
 
     VCHECK_ATTR(alg_ok, VERBOSE_BAD_ALGORITHM);
@@ -303,6 +329,79 @@ status_t post_ops_t::append_prelu(int mask) {
     auto it_entry = entry_.emplace(entry_.end());
     it_entry->kind = primitive_kind::prelu;
     it_entry->prelu.mask = mask;
+
+    return success;
+}
+
+status_t post_ops_t::append_depthwise(
+        alg_kind_t alg, size_t offset_size, const size_t *offset) {
+    using namespace dnnl::impl::alg_kind;
+    if (len() == post_ops_limit) return out_of_memory;
+    bool known_alg = one_of(alg, depthwise_scale_shift, depthwise_prelu);
+    if (!known_alg) return invalid_arguments;
+
+    entry_.emplace_back();
+    auto &e = entry_.back();
+    e.kind = primitive_kind::depthwise;
+    e.depthwise.alg = alg;
+    array_copy(e.depthwise.offset, offset, offset_size);
+
+    return success;
+}
+
+status_t post_ops_t::append_quantization(alg_kind_t alg,
+        size_t per_channel_size, const bool *per_channel,
+        size_t all_default_size, const bool *all_default, size_t offset_size,
+        const size_t *offset) {
+    using namespace dnnl::impl::alg_kind;
+    if (len() == post_ops_limit) return out_of_memory;
+    bool known_alg = one_of(
+            alg, quantization_quantize_dequantize, quantization_quantize);
+    if (!known_alg) return invalid_arguments;
+
+    entry_.emplace_back();
+    auto &e = entry_.back();
+    e.kind = primitive_kind::quantization;
+    e.quantization.alg = alg;
+
+    array_copy(e.quantization.per_channel, per_channel, per_channel_size);
+    array_copy(e.quantization.all_default, all_default, all_default_size);
+    array_copy(e.quantization.offset, offset, offset_size);
+
+    return success;
+}
+
+status_t post_ops_t::append_binarization(alg_kind_t alg,
+        const float *weights_data, const float *output_mask_data) {
+    using namespace dnnl::impl::alg_kind;
+    if (len() == post_ops_limit) return out_of_memory;
+    bool known_alg = one_of(alg, binarization_depthwise);
+    if (!known_alg) return invalid_arguments;
+
+    entry_.emplace_back();
+    auto &e = entry_.back();
+    e.kind = primitive_kind::binarization;
+    e.binarization.alg = alg;
+    e.binarization.weights_data = weights_data;
+    e.binarization.output_mask_data = output_mask_data;
+
+    return success;
+}
+
+status_t post_ops_t::append_dw_conv(int in_h, int in_w, int ker_h, int ker_w,
+        int str_h, int str_w, dnnl::impl::data_type_t in_dt) {
+    if (len() == post_ops_limit) return out_of_memory;
+
+    entry_.emplace_back();
+    auto &e = entry_.back();
+    e.kind = primitive_kind::convolution;
+    e.depthwise_conv_old.in_h = in_h;
+    e.depthwise_conv_old.in_w = in_w;
+    e.depthwise_conv_old.ker_h = ker_h;
+    e.depthwise_conv_old.ker_w = ker_w;
+    e.depthwise_conv_old.str_h = str_h;
+    e.depthwise_conv_old.str_w = str_w;
+    e.depthwise_conv_old.in_dt = in_dt;
 
     return success;
 }
@@ -461,6 +560,9 @@ status_t primitive_attr_t::set_accumulation_mode(accumulation_mode_t am) {
 
 status_t primitive_attr_t::set_scratchpad_mode(
         scratchpad_mode_t scratchpad_mode) {
+    /* workaround for the name conflict with system struct 'user' in llvm-android toolchain */
+    using namespace dnnl::impl::scratchpad_mode;
+
     const bool ok = one_of(
             scratchpad_mode, scratchpad_mode::library, scratchpad_mode::user);
     if (!ok) return invalid_arguments;
@@ -619,6 +721,13 @@ status_t dnnl_primitive_attr_set_scales_mask(
     VCHECK_ATTR(arg >= 0, VERBOSE_BAD_PARAM, "arg");
     return attr->scales_.set(arg, mask);
 }
+status_t dnnl_primitive_attr_set_scales_dims(primitive_attr_t *attr, int arg,
+        const dims_t dims, int ndims, data_type_t data_type) {
+    bool ok = attr && arg >= 0 && ndims > 0
+            && attr->scales_.has_default_values();
+    if (!ok) return invalid_arguments;
+    return attr->scales_.set_scales(arg, dims, ndims, data_type);
+}
 
 status_t dnnl_primitive_attr_set_scales(primitive_attr_t *attr, int arg,
         int mask, int group_ndims, const dims_t group_dims,
@@ -672,6 +781,13 @@ status_t dnnl_primitive_attr_set_zero_points_mask(
     VCHECK_ATTR(attr, VERBOSE_NULL_ARG);
     VCHECK_ATTR(mask >= 0, VERBOSE_BAD_PARAM, "mask");
     return attr->zero_points_.set(arg, mask);
+}
+status_t dnnl_primitive_attr_set_zero_points_dims(primitive_attr_t *attr,
+        int arg, const dims_t dims, int ndims, dnnl_data_type_t data_type) {
+    bool ok = attr && ndims > 0;
+    if (!ok) return invalid_arguments;
+
+    return attr->zero_points_.set_zero_points(arg, dims, ndims, data_type);
 }
 
 status_t dnnl_primitive_attr_set_zero_points(dnnl_primitive_attr_t attr,
@@ -750,6 +866,30 @@ status_t dnnl_primitive_attr_set_rounding(
         primitive_attr_t *attr, int arg, dnnl_rounding_mode_t mode) {
     if (attr == nullptr) return invalid_arguments;
     return attr->rounding_mode_.set(arg, mode);
+}
+
+status_t dnnl_primitive_attr_set_output_compensations(
+        primitive_attr_t *attr, int count, int mask) {
+    bool ok = !any_null(attr) && count > 0 && mask >= 0;
+    if (!ok) return invalid_arguments;
+
+    return attr->output_compensations_.set(count, mask);
+}
+
+status_t dnnl_primitive_attr_set_input_zero_points(
+        primitive_attr_t *attr, int count, int mask) {
+    bool ok = !any_null(attr) && count > 0 && mask >= 0;
+    if (!ok) return invalid_arguments;
+
+    return attr->input_zero_points_.set(count, mask);
+}
+
+status_t dnnl_primitive_attr_set_weights_zero_points(
+        primitive_attr_t *attr, int count, int mask) {
+    bool ok = !any_null(attr) && count > 0 && mask >= 0;
+    if (!ok) return invalid_arguments;
+
+    return attr->weights_zero_points_.set(count, mask);
 }
 
 status_t dnnl_primitive_attr_get_post_ops(
@@ -934,6 +1074,48 @@ status_t dnnl_post_ops_get_params_prelu(
     return success;
 }
 
+status_t dnnl_post_ops_append_depthwise(dnnl_post_ops_t post_ops,
+        dnnl_alg_kind_t alg, size_t offset_size, const size_t *offset) {
+    if (post_ops == nullptr || offset == nullptr) return invalid_arguments;
+
+    if (offset_size != 2) return invalid_arguments;
+
+    return post_ops->append_depthwise(alg, offset_size, offset);
+}
+
+status_t dnnl_post_ops_append_quantization(post_ops_t *post_ops,
+        alg_kind_t kind, size_t per_channel_size, const bool *per_channel,
+        size_t all_default_size, const bool *all_default, size_t offset_size,
+        const size_t *offset) {
+    if (post_ops == nullptr || per_channel == nullptr || all_default == nullptr
+            || offset == nullptr)
+        return invalid_arguments;
+
+    if (per_channel_size != all_default_size || all_default_size != offset_size
+            || offset_size != 6)
+        return invalid_arguments;
+
+    return post_ops->append_quantization(kind, per_channel_size, per_channel,
+            all_default_size, all_default, offset_size, offset);
+}
+
+status_t dnnl_post_ops_append_binarization(post_ops_t *post_ops,
+        alg_kind_t kind, const float *weights_data,
+        const float *output_mask_data) {
+    if (post_ops == nullptr) return invalid_arguments;
+
+    return post_ops->append_binarization(kind, weights_data, output_mask_data);
+}
+
+status_t dnnl_post_ops_append_dw_conv(post_ops_t *post_ops, int in_h, int in_w,
+        int ker_h, int ker_w, int str_h, int str_w,
+        dnnl::impl::data_type_t in_dt) {
+    if (post_ops == nullptr) return invalid_arguments;
+
+    return post_ops->append_dw_conv(
+            in_h, in_w, ker_h, ker_w, str_h, str_w, in_dt);
+}
+
 status_t dnnl_primitive_attr_set_rnn_data_qparams(
         primitive_attr_t *attr, const float scale, const float shift) {
     if (attr == nullptr) return invalid_arguments;
@@ -1001,3 +1183,22 @@ status_t DNNL_API dnnl_primitive_attr_set_rnn_tparams(
 
     return attr->rnn_tparams_.set(mode, ngates, scales, cscale);
 }
+
+status_t dnnl_primitive_attr_set_src_dyn_quant_params(
+        primitive_attr_t *attr, const uint64_t group_size) {
+    if (attr == nullptr) return invalid_arguments;
+
+    return attr->src_dyn_quant_params_.set(group_size);
+}
+
+status_t dnnl_primitive_attr_get_src_dyn_quant_params(
+        primitive_attr_t *attr, uint64_t *group_size) {
+    if (attr == nullptr) return invalid_arguments;
+
+    if (group_size) *group_size = attr->src_dyn_quant_params_.get();
+    return success;
+}
+
+template struct dnnl::impl::shifts_t<uint8_t>;
+template struct dnnl::impl::shifts_t<int32_t>;
+template struct dnnl::impl::shifts_t<float>;

@@ -40,7 +40,7 @@ int find_innermost_dense_idx(const dnnl::impl::memory_desc_t *md) {
 namespace dnnl {
 namespace impl {
 namespace cpu {
-namespace aarch64 {
+namespace acl {
 
 status_t acl_reorder_resource_t::configure(const acl_reorder_conf_t &app) {
     if (!acl_obj_) return status::out_of_memory;
@@ -132,7 +132,7 @@ status_t acl_reorder_fwd_t::pd_t::create(reorder_pd_t **reorder_pd,
 
     // Optimised f32:bf16 ab->BA8b4a SVE-256 JIT reorder available
     VDISPATCH_REORDER_IC(
-            !(mayiuse(sve_256),
+            !(aarch64::mayiuse(aarch64::sve_256),
                     transpose && src_md->ndims == 2
                             && src_md->data_type == data_type::f32
                             && dst_md->data_type == data_type::bf16
@@ -274,7 +274,7 @@ status_t acl_reorder_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
     return status::success;
 }
 
-} // namespace aarch64
+} // namespace acl
 } // namespace cpu
 } // namespace impl
 } // namespace dnnl

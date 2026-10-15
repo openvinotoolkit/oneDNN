@@ -25,6 +25,7 @@
 #include "cpu/x64/jit_generator.hpp"
 #include "cpu/x64/jit_primitive_conf.hpp"
 
+#include "cpu/x64/injectors/jit_uni_depthwise_injector.hpp"
 #include "cpu/x64/jit_avx512_core_bf16cvt.hpp"
 
 namespace dnnl {
@@ -71,6 +72,14 @@ private:
     mask_t ktail_mask = k_oc_tail_mask;
     mask_t k_ch_tail_mask_extended = Xbyak::Opmask(3);
 
+    reg64_t reg_d_weights = abi_not_param1;
+    reg64_t reg_d_bias = iter_kh;
+    int base_post_ops_data_offset = 0;
+    constexpr static int reg64_size = 8;
+
+    Xbyak::Zmm zmm_d_weights = Xbyak::Zmm(31);
+    Xbyak::Zmm zmm_d_bias = Xbyak::Zmm(30);
+
     Xbyak::Zmm zmm_ker_reg = Xbyak::Zmm(0);
     Xbyak::Zmm zmm_src_reg = Xbyak::Zmm(1);
     Xbyak::Zmm zmm_prev_dst = Xbyak::Zmm(31);
@@ -88,16 +97,17 @@ private:
     Xbyak::Zmm get_acc_reg(int idx);
 
     int get_ow_start(int ki, int pad_l) const {
-        return utils::div_up(
-                nstl::max(0, pad_l - ki * (jcp.dilate_w + 1)), jcp.stride_w);
+        return static_cast<int>(utils::div_up(
+                nstl::max<dim_t>(0, pad_l - ki * (jcp.dilate_w + 1)),
+                jcp.stride_w));
     }
 
     int get_ow_end(int ur_w, int ki, int pad_r) const {
         return ur_w
-                - utils::div_up(
-                        nstl::max(0,
+                - static_cast<int>(utils::div_up(
+                        nstl::max<dim_t>(0,
                                 pad_r - (jcp.kw - 1 - ki) * (jcp.dilate_w + 1)),
-                        jcp.stride_w);
+                        jcp.stride_w));
     }
 
     inline bool is_src_layout_nxc() const {
@@ -139,7 +149,11 @@ struct jit_avx512_dw_conv_bwd_data_kernel_bf16_t : public jit_generator_t {
                     bf16_emu_reserv_4, bf16_emu_reserv_5, bf16_emu_reserv_6);
     }
 
-    ~jit_avx512_dw_conv_bwd_data_kernel_bf16_t() override = default;
+    ~jit_avx512_dw_conv_bwd_data_kernel_bf16_t() {
+        for (auto inj : depthwise_injectors)
+            delete inj;
+        depthwise_injectors.clear();
+    }
 
     jit_conv_conf_t jcp;
 
@@ -177,6 +191,11 @@ private:
     reg64_t reg_tmp = r15;
     Xbyak::Opmask k_ch_tail_mask = Xbyak::Opmask(1);
 
+    reg64_t reg_d_weights = r15;
+    reg64_t reg_d_bias = iter_kh;
+    int base_post_ops_data_offset = 0;
+    constexpr static int reg64_size = 8;
+
     Xbyak::Zmm bf16_emu_reserv_1 = Xbyak::Zmm(26);
     Xbyak::Zmm bf16_emu_reserv_2 = Xbyak::Zmm(27);
     Xbyak::Zmm bf16_emu_reserv_3 = Xbyak::Zmm(28);
@@ -186,10 +205,14 @@ private:
 
     std::unique_ptr<bf16_emulation_t> bf16_emu_;
 
+    nstl::vector<jit_uni_depthwise_injector_f32<avx512_core> *>
+            depthwise_injectors;
+
     inline void ch_loop_body(int ur_ch_blocks, int unroll_w);
     inline void unroll_width_body(int ur_ch_blocks);
     inline void load_ddst(int ur_ch_blocks, int ur_str_w);
     inline void apply_filter(int ur_ch_blocks, int ur_str_w, bool is_last_ch);
+    inline void apply_postprocess(int ur_ch_blocks, int ur_str_w);
     inline void store_dsrc(int ur_ch_blocks, int ur_str_w, bool is_last_ch);
 
     void generate() override;
@@ -242,7 +265,7 @@ private:
         return Xbyak::Zmm(idx + idx_start);
     }
     inline Xbyak::Zmm get_input_reg(int idx) const {
-        const int i_idx = idx_start + jcp.kw + idx % jcp.kw;
+        const int i_idx = static_cast<int>(idx_start + jcp.kw + idx % jcp.kw);
         assert(i_idx <= get_max_regs());
         return Xbyak::Zmm(i_idx);
     }
@@ -313,7 +336,7 @@ private:
     void store_bias(bool is_last_ch);
     void compute_bias();
     void calculate_w_unrolling(
-            int &unroll_trips, int &unroll_w, int &unroll_w_tail);
+            int &unroll_trips, int &unroll_w, int &unroll_w_tail) const;
 
     void generate() override;
 

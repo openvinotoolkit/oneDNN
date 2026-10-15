@@ -23,6 +23,7 @@
 #include <type_traits>
 
 #include "bit_cast.hpp"
+#include "cpu/platform.hpp"
 #include "oneapi/dnnl/dnnl.h"
 
 namespace dnnl {

@@ -164,7 +164,9 @@ status_t ncsp_batch_normalization_fwd_t<d_type>::execute_forward(
                             scr_fp32 = reinterpret_cast<const acc_data_t *>(
                                     src + soff);
                         }
+#if !defined(_MSC_VER)
                         PRAGMA_OMP_SIMD(reduction(+ : sum))
+#endif
                         for (dim_t sp = S_s; sp < S_e; ++sp) {
                             sum += scr_fp32[sp];
                         }
@@ -205,7 +207,9 @@ status_t ncsp_batch_normalization_fwd_t<d_type>::execute_forward(
                             _src = reinterpret_cast<const acc_data_t *>(
                                     src + soff);
                         }
+#if !defined(_MSC_VER)
                         PRAGMA_OMP_SIMD(reduction(+ : sum))
+#endif
                         for (dim_t sp = S_s; sp < S_e; ++sp) {
                             acc_data_t m = _src[sp] - mean[off];
                             sum += m * m;
@@ -417,7 +421,7 @@ status_t ncsp_batch_normalization_bwd_t<d_type>::execute_backward(
                         _src = reinterpret_cast<const acc_data_t *>(
                                 src + s_off);
                     }
-#if CLANG_WA_02_SAFE_TO_USE_OMP_SIMD
+#if CLANG_WA_02_SAFE_TO_USE_OMP_SIMD && !defined(_MSC_VER)
                     PRAGMA_OMP_SIMD(reduction(+ : diff_gamma, diff_beta))
 #endif
                     for (dim_t sp = S_s; sp < S_e; ++sp) {

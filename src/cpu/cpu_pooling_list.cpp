@@ -1,7 +1,7 @@
 /*******************************************************************************
-* Copyright 2019 Intel Corporation
+* Copyright 2019-2025 Intel Corporation
 * Copyright 2020-2024 FUJITSU LIMITED
-* Copyright 2022, 2026 Arm Ltd. and affiliates
+* Copyright 2022 Arm Ltd. and affiliates
 *
 * Licensed under the Apache License, Version 2.0 (the "License");
 * you may not use this file except in compliance with the License.
@@ -30,12 +30,13 @@ using namespace dnnl::impl::cpu::x64;
 #include "cpu/aarch64/jit_uni_i8i8_pooling.hpp"
 #include "cpu/aarch64/jit_uni_pooling.hpp"
 using namespace dnnl::impl::cpu::aarch64;
-#if defined(DNNL_AARCH64_USE_ACL)
-#include "cpu/aarch64/acl_pooling.hpp"
-#endif // DNNL_AARCH64_USE_ACL
 #elif DNNL_RV64
 #include "cpu/rv64/jit_uni_pooling.hpp"
 using namespace dnnl::impl::cpu::rv64;
+#endif
+#if defined(DNNL_USE_ACL)
+#include "cpu/acl/acl_pooling.hpp"
+using namespace dnnl::impl::cpu::acl;
 #endif
 
 namespace dnnl {
@@ -51,52 +52,52 @@ const std::map<pk_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map() {
     static const std::map<pk_impl_key_t, std::vector<impl_list_item_t>> the_map = REG_POOLING_P({
         {{forward}, {
             /* fp */
-            CPU_INSTANCE_X64(jit_uni_pooling_fwd_t<avx512_core_fp16, f16>)
-            CPU_INSTANCE_X64(jit_uni_pooling_fwd_t<avx512_core_fp16, f8_e5m2>)
-            CPU_INSTANCE_X64(jit_uni_pooling_fwd_t<avx512_core_fp16, f8_e4m3>)
-            CPU_INSTANCE_X64(jit_uni_pooling_fwd_t<avx512_core, bf16>)
-            CPU_INSTANCE_X64(jit_uni_pooling_fwd_t<avx512_core, f32>)
-            CPU_INSTANCE_X64(jit_uni_pooling_fwd_t<avx2_vnni_2, bf16>)
-            CPU_INSTANCE_X64(jit_uni_pooling_fwd_t<avx2_vnni_2, f16>)
-            CPU_INSTANCE_X64(jit_uni_pooling_fwd_t<avx2, f32>)
-            CPU_INSTANCE_X64(jit_uni_pooling_fwd_t<avx, f32>)
-            CPU_INSTANCE_X64(jit_uni_pooling_fwd_t<sse41, f32>)
-            CPU_INSTANCE_AARCH64(jit_uni_pooling_fwd_t<sve, f32>)
-            CPU_INSTANCE_AARCH64_ACL(acl_pooling_fwd_t)
-            CPU_INSTANCE_RV64(jit_uni_pooling_fwd_t<v>)
-            CPU_INSTANCE_RV64(jit_uni_pooling_fwd_t<zvfh>)
-            CPU_INSTANCE(nchw_pooling_fwd_t<bf16>)
-            CPU_INSTANCE(nchw_pooling_fwd_t<f32>)
-            CPU_INSTANCE(nchw_pooling_fwd_t<f16>)
-            CPU_INSTANCE(nchw_pooling_fwd_t<f8_e5m2>)
-            CPU_INSTANCE(nchw_pooling_fwd_t<f8_e4m3>)
-            CPU_INSTANCE(nhwc_pooling_fwd_t<bf16>)
-            CPU_INSTANCE(nhwc_pooling_fwd_t<f32>)
-            CPU_INSTANCE(nhwc_pooling_fwd_t<f16>)
-            CPU_INSTANCE(nhwc_pooling_fwd_t<f8_e5m2>)
-            CPU_INSTANCE(nhwc_pooling_fwd_t<f8_e4m3>)
+            CPU_INSTANCE_X64(jit_uni_pooling_fwd_t, avx512_core_fp16, f16)
+            CPU_INSTANCE_X64(jit_uni_pooling_fwd_t, avx512_core_fp16, f8_e5m2)
+            CPU_INSTANCE_X64(jit_uni_pooling_fwd_t, avx512_core_fp16, f8_e4m3)
+            CPU_INSTANCE_X64(jit_uni_pooling_fwd_t, avx512_core, bf16)
+            CPU_INSTANCE_X64(jit_uni_pooling_fwd_t, avx512_core, f32)
+            CPU_INSTANCE_X64(jit_uni_pooling_fwd_t, avx2_vnni_2, bf16)
+            CPU_INSTANCE_X64(jit_uni_pooling_fwd_t, avx2_vnni_2, f16)
+            CPU_INSTANCE_X64(jit_uni_pooling_fwd_t, avx2, f32)
+            CPU_INSTANCE_X64(jit_uni_pooling_fwd_t, avx, f32)
+            CPU_INSTANCE_X64(jit_uni_pooling_fwd_t, sse41, f32)
+            CPU_INSTANCE_AARCH64(jit_uni_pooling_fwd_t, sve, f32)
+            CPU_INSTANCE_ACL(acl_pooling_fwd_t)
+            CPU_INSTANCE_RV64(jit_uni_pooling_fwd_t, v)
+            CPU_INSTANCE_RV64(jit_uni_pooling_fwd_t, zvfh)
+            CPU_INSTANCE(nchw_pooling_fwd_t, bf16)
+            CPU_INSTANCE(nchw_pooling_fwd_t, f32)
+            CPU_INSTANCE(nchw_pooling_fwd_t, f16)
+            CPU_INSTANCE(nchw_pooling_fwd_t, f8_e5m2)
+            CPU_INSTANCE(nchw_pooling_fwd_t, f8_e4m3)
+            CPU_INSTANCE(nhwc_pooling_fwd_t, bf16)
+            CPU_INSTANCE(nhwc_pooling_fwd_t, f32)
+            CPU_INSTANCE(nhwc_pooling_fwd_t, f16)
+            CPU_INSTANCE(nhwc_pooling_fwd_t, f8_e5m2)
+            CPU_INSTANCE(nhwc_pooling_fwd_t, f8_e4m3)
             /* int */
-            CPU_INSTANCE_X64(jit_uni_i8i8_pooling_fwd_t<avx512_core>)
-            CPU_INSTANCE_X64(jit_uni_i8i8_pooling_fwd_t<avx2>)
-            CPU_INSTANCE_X64(jit_uni_i8i8_pooling_fwd_t<sse41>)
-            CPU_INSTANCE_AARCH64(jit_uni_i8i8_pooling_fwd_t<sve_512>)
+            CPU_INSTANCE_X64(jit_uni_i8i8_pooling_fwd_t, avx512_core)
+            CPU_INSTANCE_X64(jit_uni_i8i8_pooling_fwd_t, avx2)
+            CPU_INSTANCE_X64(jit_uni_i8i8_pooling_fwd_t, sse41)
+            CPU_INSTANCE_AARCH64(jit_uni_i8i8_pooling_fwd_t, sve_512)
             CPU_INSTANCE(ref_pooling_fwd_t)
             nullptr,
         }},
         {{backward}, REG_BWD_PK({
-            CPU_INSTANCE_X64(jit_uni_pooling_bwd_t<avx512_core_fp16, f16>)
-            CPU_INSTANCE_X64(jit_uni_pooling_bwd_t<avx512_core, bf16>)
-            CPU_INSTANCE_X64(jit_uni_pooling_bwd_t<avx512_core, f32>)
-            CPU_INSTANCE_X64(jit_uni_pooling_bwd_t<avx2, f32>)
-            CPU_INSTANCE_X64(jit_uni_pooling_bwd_t<avx, f32>)
-            CPU_INSTANCE_X64(jit_uni_pooling_bwd_t<sse41, f32>)
-            CPU_INSTANCE_AARCH64(jit_uni_pooling_bwd_t<sve, f32>)
-            CPU_INSTANCE(nchw_pooling_bwd_t<bf16>)
-            CPU_INSTANCE(nchw_pooling_bwd_t<f32>)
-            CPU_INSTANCE(nchw_pooling_bwd_t<f16>)
-            CPU_INSTANCE(nhwc_pooling_bwd_t<bf16>)
-            CPU_INSTANCE(nhwc_pooling_bwd_t<f32>)
-            CPU_INSTANCE(nhwc_pooling_bwd_t<f16>)
+            CPU_INSTANCE_X64(jit_uni_pooling_bwd_t, avx512_core_fp16, f16)
+            CPU_INSTANCE_X64(jit_uni_pooling_bwd_t, avx512_core, bf16)
+            CPU_INSTANCE_X64(jit_uni_pooling_bwd_t, avx512_core, f32)
+            CPU_INSTANCE_X64(jit_uni_pooling_bwd_t, avx2, f32)
+            CPU_INSTANCE_X64(jit_uni_pooling_bwd_t, avx, f32)
+            CPU_INSTANCE_X64(jit_uni_pooling_bwd_t, sse41, f32)
+            CPU_INSTANCE_AARCH64(jit_uni_pooling_bwd_t, sve, f32)
+            CPU_INSTANCE(nchw_pooling_bwd_t, bf16)
+            CPU_INSTANCE(nchw_pooling_bwd_t, f32)
+            CPU_INSTANCE(nchw_pooling_bwd_t, f16)
+            CPU_INSTANCE(nhwc_pooling_bwd_t, bf16)
+            CPU_INSTANCE(nhwc_pooling_bwd_t, f32)
+            CPU_INSTANCE(nhwc_pooling_bwd_t, f16)
             CPU_INSTANCE(ref_pooling_bwd_t)
             nullptr,
         })},

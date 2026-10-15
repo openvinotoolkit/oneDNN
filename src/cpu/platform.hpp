@@ -26,7 +26,9 @@
 
 // Possible architectures:
 // - DNNL_X64
+// - DNNL_X86
 // - DNNL_AARCH64
+// - DNNL_ARM
 // - DNNL_PPC64
 // - DNNL_S390X
 // - DNNL_RV64
@@ -34,13 +36,21 @@
 // Target architecture macro is set to 1, others to 0. All macros are defined.
 
 #if defined(DNNL_X64) + defined(DNNL_AARCH64) + defined(DNNL_PPC64) \
-                + defined(DNNL_S390X) + defined(DNNL_RV64) \
-                + defined(DNNL_ARCH_GENERIC) \
+                + defined(DNNL_S390X) + defined(DNNL_RV64) + defined(DNNL_ARM) \
+                + defined(DNNL_X86) + defined(DNNL_ARCH_GENERIC) \
         == 0
-#if defined(__x86_64__) || defined(_M_X64)
+#if defined(__amd64__) || defined(__amd64) || defined(__x86_64__) \
+        || defined(__x86_64) || defined(_M_X64) || defined(_M_AMD64)
 #define DNNL_X64 1
-#elif defined(__aarch64__)
+#elif defined(i386) || defined(__i386) || defined(__i386__) \
+        || defined(__IA32__) || defined(_M_I86) || defined(_M_IX86) \
+        || defined(__X86__) || defined(_X86_) || defined(__I86__) \
+        || defined(__386)
+#define DNNL_X86 1
+#elif defined(__aarch64__) || defined(_M_ARM64)
 #define DNNL_AARCH64 1
+#elif defined(__arm__) || defined(_M_ARM) || defined(__ARMEL__)
+#define DNNL_ARM 1
 #elif defined(__powerpc64__) || defined(__PPC64__) || defined(_ARCH_PPC64)
 #define DNNL_PPC64 1
 #elif defined(__s390x__)
@@ -53,8 +63,8 @@
 #endif // defined(DNNL_X64) + ... == 0
 
 #if defined(DNNL_X64) + defined(DNNL_AARCH64) + defined(DNNL_PPC64) \
-                + defined(DNNL_S390X) + defined(DNNL_RV64) \
-                + defined(DNNL_ARCH_GENERIC) \
+                + defined(DNNL_S390X) + defined(DNNL_RV64) + defined(DNNL_ARM) \
+                + defined(DNNL_X86) + defined(DNNL_ARCH_GENERIC) \
         != 1
 #error One and only one architecture should be defined at a time
 #endif
@@ -62,8 +72,14 @@
 #if !defined(DNNL_X64)
 #define DNNL_X64 0
 #endif
+#if !defined(DNNL_X86)
+#define DNNL_X86 0
+#endif
 #if !defined(DNNL_AARCH64)
 #define DNNL_AARCH64 0
+#endif
+#if !defined(DNNL_ARM)
+#define DNNL_ARM 0
 #endif
 #if !defined(DNNL_PPC64)
 #define DNNL_PPC64 0
@@ -84,6 +100,7 @@
 #define DNNL_PPC64_ONLY(...) Z_CONDITIONAL_DO(DNNL_PPC64, __VA_ARGS__)
 #define DNNL_S390X_ONLY(...) Z_CONDITIONAL_DO(DNNL_S390X_ONLY, __VA_ARGS__)
 #define DNNL_AARCH64_ONLY(...) Z_CONDITIONAL_DO(DNNL_AARCH64, __VA_ARGS__)
+#define DNNL_ARM_ONLY(...) Z_CONDITIONAL_DO(DNNL_ARM, __VA_ARGS__)
 #define DNNL_RV64_ONLY(...) Z_CONDITIONAL_DO(DNNL_RV64, __VA_ARGS__)
 
 // Using RISC-V implementations optimized with RVV Intrinsics is optional for RISC-V builds
@@ -109,11 +126,11 @@
 #define DNNL_NON_X64_ONLY(...) Z_CONDITIONAL_DO(Z_NOT(DNNL_X64), __VA_ARGS__)
 
 // Using Arm Compute Library kernels is optional for AArch64 builds
-// and can be enabled with the DNNL_AARCH64_USE_ACL CMake option
-#if defined(DNNL_AARCH64) && defined(DNNL_AARCH64_USE_ACL)
-#define DNNL_AARCH64_ACL_ONLY(...) __VA_ARGS__
+// and can be enabled with the DNNL_USE_ACL CMake option
+#ifdef DNNL_USE_ACL
+#define DNNL_ACL_ONLY(...) __VA_ARGS__
 #else
-#define DNNL_AARCH64_ACL_ONLY(...)
+#define DNNL_ACL_ONLY(...)
 #endif
 
 // Primitive ISA section for configuring knobs.

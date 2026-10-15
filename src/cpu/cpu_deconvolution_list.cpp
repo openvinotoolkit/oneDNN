@@ -1,5 +1,5 @@
 /*******************************************************************************
-* Copyright 2019 Intel Corporation
+* Copyright 2019-2025 Intel Corporation
 * Copyright 2022 FUJITSU LIMITED
 * Copyright 2022, 2024-2025 Arm Ltd. and affiliates
 *
@@ -30,10 +30,11 @@ using namespace dnnl::impl::cpu::x64;
 #elif DNNL_AARCH64
 #include "cpu/aarch64/jit_brgemm_deconv.hpp"
 #include "cpu/aarch64/jit_sve_512_core_x8s8s32x_deconvolution.hpp"
-#if defined(DNNL_AARCH64_USE_ACL)
-#include "cpu/aarch64/acl_deconvolution.hpp"
-#endif
 using namespace dnnl::impl::cpu::aarch64;
+#endif
+#if defined(DNNL_USE_ACL)
+#include "cpu/acl/acl_deconvolution.hpp"
+using namespace dnnl::impl::cpu::acl;
 #endif
 
 namespace dnnl {
@@ -48,28 +49,28 @@ using namespace dnnl::impl::prop_kind;
 const std::map<pk_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map() {
     static const std::map<pk_impl_key_t, std::vector<impl_list_item_t>> the_map = REG_DECONV_P({
         {{forward}, {
-            CPU_INSTANCE_AMX(brgemm_deconvolution_fwd_t<avx10_2_amx_2>)
-            CPU_INSTANCE_AMX(brgemm_deconvolution_fwd_t<avx512_core_amx_fp16>)
-            CPU_INSTANCE_AMX(brgemm_deconvolution_fwd_t<avx512_core_amx>)
+            CPU_INSTANCE_AMX(brgemm_deconvolution_fwd_t, avx10_2_512_amx_2)
+            CPU_INSTANCE_AMX(brgemm_deconvolution_fwd_t, avx512_core_amx_fp16)
+            CPU_INSTANCE_AMX(brgemm_deconvolution_fwd_t, avx512_core_amx)
             CPU_INSTANCE_AMX(jit_avx512_core_amx_deconvolution_fwd_t)
-            CPU_INSTANCE_AVX512(brgemm_deconvolution_fwd_t<avx10_2>)
-            CPU_INSTANCE_AVX512(brgemm_deconvolution_fwd_t<avx512_core_fp16>)
-            CPU_INSTANCE_AVX512(brgemm_deconvolution_fwd_t<avx512_core_bf16>)
-            CPU_INSTANCE_AVX512(brgemm_deconvolution_fwd_t<avx512_core_vnni>)
-            CPU_INSTANCE_AVX512(brgemm_deconvolution_fwd_t<avx512_core>)
+            CPU_INSTANCE_AVX512(brgemm_deconvolution_fwd_t, avx10_2_512)
+            CPU_INSTANCE_AVX512(brgemm_deconvolution_fwd_t, avx512_core_fp16)
+            CPU_INSTANCE_AVX512(brgemm_deconvolution_fwd_t, avx512_core_bf16)
+            CPU_INSTANCE_AVX512(brgemm_deconvolution_fwd_t, avx512_core_vnni)
+            CPU_INSTANCE_AVX512(brgemm_deconvolution_fwd_t, avx512_core)
             CPU_INSTANCE_AVX512(jit_avx512_core_x8s8s32x_1x1_deconvolution_fwd_t)
             CPU_INSTANCE_AVX512(jit_avx512_core_x8s8s32x_deconvolution_fwd_t)
-            CPU_INSTANCE_AVX2(brgemm_deconvolution_fwd_t<avx2_vnni_2>)
-            CPU_INSTANCE_AVX2(brgemm_deconvolution_fwd_t<avx2_vnni>)
-            CPU_INSTANCE_AVX2(brgemm_deconvolution_fwd_t<avx2>)
-            CPU_INSTANCE_AVX2(jit_uni_x8s8s32x_1x1_deconvolution_fwd_t<avx2>)
-            CPU_INSTANCE_AVX2(jit_uni_x8s8s32x_deconvolution_fwd_t<avx2>)
-            CPU_INSTANCE_SSE41(jit_uni_x8s8s32x_1x1_deconvolution_fwd_t<sse41>)
-            CPU_INSTANCE_SSE41(jit_uni_x8s8s32x_deconvolution_fwd_t<sse41>)
-            CPU_INSTANCE_AARCH64(brgemm_deconvolution_fwd_t<sve_256>)
-            CPU_INSTANCE_AARCH64(brgemm_deconvolution_fwd_t<sve_128>)
+            CPU_INSTANCE_AVX2(brgemm_deconvolution_fwd_t, avx2_vnni_2)
+            CPU_INSTANCE_AVX2(brgemm_deconvolution_fwd_t, avx2_vnni)
+            CPU_INSTANCE_AVX2(brgemm_deconvolution_fwd_t, avx2)
+            CPU_INSTANCE_AVX2(jit_uni_x8s8s32x_1x1_deconvolution_fwd_t, avx2)
+            CPU_INSTANCE_AVX2(jit_uni_x8s8s32x_deconvolution_fwd_t, avx2)
+            CPU_INSTANCE_SSE41(jit_uni_x8s8s32x_1x1_deconvolution_fwd_t, sse41)
+            CPU_INSTANCE_SSE41(jit_uni_x8s8s32x_deconvolution_fwd_t, sse41)
+            CPU_INSTANCE_AARCH64(brgemm_deconvolution_fwd_t, sve_256)
+            CPU_INSTANCE_AARCH64(brgemm_deconvolution_fwd_t, sve_128)
             CPU_INSTANCE_AARCH64(jit_sve_512_core_x8s8s32x_deconvolution_fwd_t)
-            CPU_INSTANCE_AARCH64_ACL(acl_deconvolution_fwd_t)
+            CPU_INSTANCE_ACL(acl_deconvolution_fwd_t)
             CPU_INSTANCE(ref_deconvolution_fwd_t)
             nullptr,
         }},

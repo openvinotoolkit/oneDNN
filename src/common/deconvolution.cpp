@@ -142,11 +142,13 @@ status_t deconv_desc_init(deconvolution_desc_t *deconv_desc,
         VCHECK_DECONV(pad_l >= 0,
                 "%s: left padding value (%d) must be non-negative",
                 VERBOSE_INCONSISTENT_PRB, static_cast<int>(pad_l));
-        VCHECK_DECONV(pad_r + str > 0,
-                "%s: right padding (%d) and stride (%d) must sum up to a "
-                "positive value",
-                VERBOSE_INCONSISTENT_PRB, static_cast<int>(pad_r),
-                static_cast<int>(str));
+        //WA: OV has feature to set output shape, which would cause specified output space dims are larger than deconv actural space dims.
+        //    Need to extra padding on the space dims. pad_r < 0 && pad_r + str <=0 in these test cases.
+        // VCHECK_DECONV(pad_r + str > 0,
+        //         "%s: right padding (%d) and stride (%d) must sum up to a "
+        //         "positive value",
+        //         VERBOSE_INCONSISTENT_PRB, static_cast<int>(pad_r),
+        //         static_cast<int>(str));
         VCHECK_DECONV((dst - ker_range + pad_l + pad_r) / str + 1 == src,
                 "%s: mismatch between actual and computed src dims, src (%d) "
                 "!= (dst(%d) - ker(%d) + pad_l(%d) + pad_r(%d))/ str(%d) + 1",

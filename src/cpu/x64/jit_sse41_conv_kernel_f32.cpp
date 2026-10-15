@@ -35,6 +35,7 @@ namespace x64 {
 using namespace dnnl::impl::format_tag;
 using namespace dnnl::impl::prop_kind;
 using namespace dnnl::impl::utils;
+using namespace dnnl::impl::memory_tracking::names;
 
 using namespace Xbyak;
 
@@ -42,11 +43,14 @@ jit_sse41_conv_fwd_kernel_f32_t::jit_sse41_conv_fwd_kernel_f32_t(
         const jit_conv_conf_t &ajcp, const primitive_attr_t &attr,
         const memory_desc_t &dst_md)
     : jit_generator_t(jit_name(), sse41), jcp(ajcp), attr_(attr) {
-    if (jcp.with_eltwise || jcp.with_binary) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise
+            || jcp.with_quantization) {
         static constexpr bool preserve_gpr = true;
         static constexpr bool preserve_vmm = false;
-        static constexpr size_t helper_vmm_idx = 15;
-        const size_t tail_size = jcp.oc_without_padding % simd_w_;
+        static constexpr int helper_vmm_idx = 15;
+        // output channel tail need special compare to find it. Binary ops may ignore it:
+        // only load more data and do the computation, although a little waste but worth it.
+        const int tail_size = 0;
         static constexpr bool use_exact_tail_scalar_bcast = false;
 
         const binary_injector::rhs_arg_static_params_t rhs_arg_static_params {
@@ -56,26 +60,30 @@ jit_sse41_conv_fwd_kernel_f32_t::jit_sse41_conv_fwd_kernel_f32_t(
                 use_exact_tail_scalar_bcast};
         const binary_injector::static_params_t static_params {
                 this->param1, rhs_arg_static_params};
+        quantization_injector::static_params_t quantization_static_params {
+                xmm_d_weights.getIdx(), xmm_d_bias.getIdx(), reg_d_weights,
+                reg_d_bias};
 
         postops_injector_ = utils::make_unique<
                 injector::jit_uni_postops_injector_t<sse41>>(
-                this, jcp.post_ops, static_params);
+                this, jcp.post_ops, static_params, quantization_static_params);
     }
 }
 
 void jit_sse41_conv_fwd_kernel_f32_t::oh_step_unroll_kw(
         int ur_w, int pad_l, int pad_r, int oc_blocks) {
-    int kw = jcp.kw;
-    int stride_w = jcp.stride_w;
-    int dilate_w = jcp.dilate_w + 1;
-    int ic_blk = jcp.ic_block;
+    const dim_t kw = jcp.kw;
+    const dim_t stride_w = jcp.stride_w;
+    const dim_t dilate_w = jcp.dilate_w + 1;
+    const int ic_blk = static_cast<int>(jcp.ic_block);
 
     for (int ki = 0; ki < kw; ki++) {
-        int jj_start = div_up(nstl::max(0, pad_l - ki * dilate_w), stride_w);
-        int jj_end = ur_w
-                - div_up(nstl::max(0,
+        int jj_start = static_cast<int>(
+                div_up(nstl::max<dim_t>(0, pad_l - ki * dilate_w), stride_w));
+        int jj_end = static_cast<int>(ur_w
+                - div_up(nstl::max<dim_t>(0,
                                  ki * dilate_w + pad_r - (kw - 1) * dilate_w),
-                        stride_w);
+                        stride_w));
         for (int ifm2 = 0; ifm2 < ic_blk; ifm2++) {
             for (int jj = jj_start; jj < jj_end; jj++) {
                 size_t inp_off = get_input_offset(
@@ -103,8 +111,8 @@ void jit_sse41_conv_fwd_kernel_f32_t::oh_step_nopad(
         int ur_w, int pad_l, int pad_r, int oc_blocks) {
     Label kw_loop;
 
-    int kw = jcp.kw;
-    int ic_blk = jcp.ic_block;
+    const dim_t kw = jcp.kw;
+    const int ic_blk = static_cast<int>(jcp.ic_block);
 
     xor_(ki_iter, ki_iter);
     L(kw_loop);
@@ -157,6 +165,17 @@ static void iterate(const int oc_blocks, const int ur_w, const F &f) {
 }
 void jit_sse41_conv_fwd_kernel_f32_t::apply_postops(
         const int oc_blocks, const int ur_w) {
+    std::map<size_t, int> vmm_idx_off;
+    iterate(oc_blocks, ur_w, [&](const bool, const int i, const int j) {
+        vmm_idx_off.insert(
+                {get_xmm_idx(ur_w, i, j), i * jcp.oc_block * sizeof(float)});
+    });
+    depthwise_injector::dynamic_params_t ddp {xmm_d_weights.getIdx(),
+            xmm_d_bias.getIdx(), reg_d_weights, reg_d_bias, reg_oc_off,
+            vmm_idx_off, this->rsp};
+    quantization_injector::dynamic_params_t qdp {
+            reg_oc_off, vmm_idx_off, jcp.dst_dt, this->rsp};
+
     injector_utils::vmm_index_set_t vmm_idxs;
     if (jcp.with_binary) {
         binary_injector::rhs_arg_dynamic_params_t rhs_arg_params;
@@ -171,19 +190,21 @@ void jit_sse41_conv_fwd_kernel_f32_t::apply_postops(
             if (mask_flag) rhs_arg_params.vmm_tail_idx_.emplace(vmm_idx);
         });
 
-        postops_injector_->compute_vector_range(vmm_idxs, rhs_arg_params);
+        postops_injector_->compute_vector_range(
+                vmm_idxs, rhs_arg_params, ddp, qdp);
     } else {
         iterate(oc_blocks, ur_w, [&](const bool, const int i, const int j) {
             vmm_idxs.emplace(get_xmm_idx(ur_w, i, j));
         });
-        postops_injector_->compute_vector_range(vmm_idxs);
+        postops_injector_->compute_vector_range(vmm_idxs,
+                binary_injector::rhs_arg_dynamic_params_t(), ddp, qdp);
     }
 }
 
 void jit_sse41_conv_fwd_kernel_f32_t::width_blk_step(
         int ur_w, int pad_l, int pad_r, int oc_blocks) {
-    int kw = jcp.kw;
-    int oc_blk = jcp.oc_block;
+    const int kw = static_cast<int>(jcp.kw);
+    const int oc_blk = static_cast<int>(jcp.oc_block);
 
     xor_(simd_iter, simd_iter);
 
@@ -235,7 +256,7 @@ void jit_sse41_conv_fwd_kernel_f32_t::width_blk_step(
     L(init_done);
 
     Label skip_kh_loop;
-    mov(kj, reg_kh);
+    mov(kj, ptr[this->param1 + GET_OFF(kh_padding)]);
     if ((jcp.dilate_h >= jcp.ih)
             || (jcp.kh - 1) * (jcp.dilate_h + 1)
                     < nstl::max(jcp.t_pad, jcp.b_pad)) {
@@ -262,7 +283,8 @@ void jit_sse41_conv_fwd_kernel_f32_t::width_blk_step(
 
     L(skip_kh_loop);
 
-    if (jcp.with_eltwise || jcp.with_binary) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise
+            || jcp.with_quantization) {
         Label regular_store;
         test(reg_ci_flag, FLAG_IC_LAST);
         je(regular_store, T_NEAR);
@@ -284,34 +306,39 @@ void jit_sse41_conv_fwd_kernel_f32_t::width_blk_step(
     add(aux_reg_kernel, sizeof(float) * 4);
     add(reg_output, sizeof(float) * 4);
     add(reg_bias, sizeof(float) * 4);
+    add(reg_oc_off, sizeof(float) * 4);
+
     inc(simd_iter);
     cmp(simd_iter, 2);
     jl(init_simd_iter_loop, T_NEAR);
 
     sub(reg_output, sizeof(float) * 8);
     sub(reg_bias, sizeof(float) * 8);
+    sub(reg_oc_off, sizeof(float) * 8);
 }
 
 inline void jit_sse41_conv_fwd_kernel_f32_t::solve_common(int oc_blocks) {
-    int ur_w = jcp.ur_w;
-    int ur_w_tail = jcp.ur_w_tail;
-    int n_oi = jcp.ow / ur_w;
-    int iw = jcp.iw;
-    int kw = jcp.kw;
-    int str_w = jcp.stride_w;
+    const int ur_w = jcp.ur_w;
+    const int ur_w_tail = jcp.ur_w_tail;
+    int n_oi = static_cast<int>(jcp.ow / ur_w);
+    const dim_t iw = jcp.iw;
+    const dim_t kw = jcp.kw;
+    const dim_t str_w = jcp.stride_w;
 
-    int l_pad = jcp.l_pad;
-    int r_pad = nstl::max(0, jcp.r_pad);
-    int r_pad1 = calculate_end_padding(l_pad, ur_w * n_oi, iw, str_w,
-            calculate_extended_filter_size(kw, jcp.dilate_w));
+    const dim_t l_pad = jcp.l_pad;
+    int r_pad = static_cast<int>(nstl::max<dim_t>(0, jcp.r_pad));
+    int r_pad1 = static_cast<int>(calculate_end_padding(l_pad, ur_w * n_oi, iw,
+            str_w, calculate_extended_filter_size(kw, jcp.dilate_w)));
     if (r_pad1 > 0) n_oi--;
 
     if (l_pad > 0) {
         n_oi--;
         if (n_oi < 0 && r_pad1 > 0)
-            width_blk_step(ur_w, l_pad, r_pad1, oc_blocks); // "lrpad"
+            width_blk_step(ur_w, static_cast<int>(l_pad), r_pad1,
+                    oc_blocks); // "lrpad"
         else
-            width_blk_step(ur_w, l_pad, 0, oc_blocks); // "lpad"
+            width_blk_step(ur_w, static_cast<int>(l_pad), 0,
+                    oc_blocks); // "lpad"
         add(reg_input, get_input_offset(0, filter_w_to_input(0, ur_w, l_pad)));
         add(reg_output, get_output_offset(0, ur_w));
     }
@@ -344,13 +371,17 @@ inline void jit_sse41_conv_fwd_kernel_f32_t::solve_common(int oc_blocks) {
 void jit_sse41_conv_fwd_kernel_f32_t::generate() {
     this->preamble();
 
+    if (postops_injector_)
+        postops_injector_->push_post_ops_data_on_stack(this->param1,
+                GET_OFF(post_ops_binary_rhs_arg_vec), reg_input, reg_output);
+
     mov(reg_input, ptr[this->param1 + GET_OFF(src)]);
     mov(reg_output, ptr[this->param1 + GET_OFF(dst)]);
     mov(reg_kernel, ptr[this->param1 + GET_OFF(filt)]);
     if (jcp.with_bias) mov(reg_bias, ptr[this->param1 + GET_OFF(bias)]);
-    mov(reg_kh, ptr[this->param1 + GET_OFF(kh_padding)]);
     mov(reg_ci_flag, ptr[this->param1 + GET_OFF(flags)]);
     mov(reg_oc_blocks, ptr[this->param1 + GET_OFF(oc_blocks)]);
+    mov(reg_oc_off, ptr[param1 + GET_OFF(oc_off)]);
 
     int nb_oc_tail = jcp.nb_oc % jcp.nb_oc_blocking;
     Label tail, exit;
@@ -369,6 +400,8 @@ void jit_sse41_conv_fwd_kernel_f32_t::generate() {
     }
 
     L(exit);
+
+    if (postops_injector_) postops_injector_->reset_stack_pointer();
 
     this->postamble();
 
@@ -400,6 +433,7 @@ status_t jit_sse41_conv_fwd_kernel_f32_t::init_conf(jit_conv_conf_t &jcp,
     jcp.mb = src_d.dims()[0];
 
     jcp.oc = dst_d.dims()[1] / jcp.ngroups;
+    jcp.oc_without_padding = jcp.oc;
     jcp.ic = src_d.dims()[1] / jcp.ngroups;
 
     jcp.ih = (ndims == 3) ? 1 : src_d.dims()[2];
@@ -419,17 +453,17 @@ status_t jit_sse41_conv_fwd_kernel_f32_t::init_conf(jit_conv_conf_t &jcp,
     jcp.dilate_h = (ndims == 3) ? 0 : cd.dilates[0];
     jcp.dilate_w = cd.dilates[ndims - 3];
 
-    int ext_kw = calculate_extended_filter_size(jcp.kw, jcp.dilate_w);
-    int ext_kh = calculate_extended_filter_size(jcp.kh, jcp.dilate_h);
+    const dim_t ext_kw = calculate_extended_filter_size(jcp.kw, jcp.dilate_w);
+    const dim_t ext_kh = calculate_extended_filter_size(jcp.kh, jcp.dilate_h);
     jcp.r_pad = calculate_end_padding(
             jcp.l_pad, jcp.ow, jcp.iw, jcp.stride_w, ext_kw);
     jcp.b_pad = calculate_end_padding(
             jcp.t_pad, jcp.oh, jcp.ih, jcp.stride_h, ext_kh);
-    bool kernel_outside_src = false || ext_kw <= jcp.l_pad
-            || ext_kw <= jcp.r_pad || ext_kh <= jcp.t_pad
-            || ext_kh <= jcp.b_pad;
-    VDISPATCH_CONV_IC(!kernel_outside_src, VERBOSE_UNSUPPORTED_PAD_FEATURE,
-            "weights and src size mismatch");
+    // bool kernel_outside_src = false || ext_kw <= jcp.l_pad
+    //         || ext_kw <= jcp.r_pad || ext_kh <= jcp.t_pad
+    //         || ext_kh <= jcp.b_pad;
+    // VDISPATCH_CONV_IC(!kernel_outside_src, VERBOSE_UNSUPPORTED_PAD_FEATURE,
+    //         "weights and src size mismatch");
 
     const auto dat_tag_nxc = (ndims == 3 ? nwc : nhwc);
     const auto dat_tag_ncx = (ndims == 3 ? ncw : nchw);
@@ -458,6 +492,8 @@ status_t jit_sse41_conv_fwd_kernel_f32_t::init_conf(jit_conv_conf_t &jcp,
     const int binary_ind = post_ops.find(primitive_kind::binary);
     const int prelu_ind = post_ops.find(primitive_kind::prelu);
     jcp.with_binary = !everyone_is(-1, binary_ind, prelu_ind);
+    jcp.with_depthwise = post_ops.find(primitive_kind::depthwise) != -1;
+    jcp.with_quantization = post_ops.find(primitive_kind::quantization) != -1;
 
     jcp.post_ops = post_ops;
 
@@ -466,8 +502,9 @@ status_t jit_sse41_conv_fwd_kernel_f32_t::init_conf(jit_conv_conf_t &jcp,
     static constexpr bool sum_requires_scale_one = true;
     static constexpr bool sum_requires_zp_zero = true;
     bool post_ops_ok_ = post_ops_ok(post_ops_ok_args_t(sse41,
-            {eltwise, binary, sum}, jcp.post_ops, &dst_d, sum_at_pos_0_only,
-            sum_requires_scale_one, sum_requires_zp_zero));
+            {eltwise, binary, sum, depthwise, quantization}, jcp.post_ops,
+            &dst_d, sum_at_pos_0_only, sum_requires_scale_one,
+            sum_requires_zp_zero));
     // temporary workaround that skips sse41 implementation for ternary
     // post-ops with scalar broadcasting to avoid register collisions.
     post_ops_ok_ = post_ops_ok_
@@ -477,7 +514,7 @@ status_t jit_sse41_conv_fwd_kernel_f32_t::init_conf(jit_conv_conf_t &jcp,
                                     post_ops, dst_d));
     VDISPATCH_CONV_IC(post_ops_ok_, VERBOSE_UNSUPPORTED_POSTOP);
 
-    const bool flat = jcp.ic == 3 || jcp.ic == 1;
+    const bool flat = one_of(jcp.ic, 1, 2, 3);
     const bool mimo = !flat;
 
     const bool tag_ok = true
@@ -500,11 +537,17 @@ status_t jit_sse41_conv_fwd_kernel_f32_t::init_conf(jit_conv_conf_t &jcp,
     VDISPATCH_CONV_IC(channel_pad_ok, VERBOSE_UNSUPPORTED_PAD_FEATURE,
             "i/o and padded channel size mismatch");
 
+    bool ok_to_pad_channels = true && !is_data_layout_nxc && jcp.ngroups == 1;
+
     const int simd_w = 8; // 2 SSE vectors processing at once
+    if (ok_to_pad_channels) {
+        jcp.oc = rnd_up(jcp.oc, simd_w);
+        if (mimo) { jcp.ic = rnd_up(jcp.ic, simd_w); }
+    }
 
     jcp.ur_h = 1; /* no code-unrolling by h so far */
     jcp.ur_w = 3;
-    if (jcp.ow < jcp.ur_w) jcp.ur_w = jcp.ow;
+    if (jcp.ow < jcp.ur_w) jcp.ur_w = static_cast<int>(jcp.ow);
     jcp.ur_w_tail = jcp.ow % jcp.ur_w;
 
     jcp.nb_oc_blocking
@@ -517,24 +560,26 @@ status_t jit_sse41_conv_fwd_kernel_f32_t::init_conf(jit_conv_conf_t &jcp,
             && IMPLICATION(mimo, jcp.ic % simd_w == 0);
     VDISPATCH_CONV_IC(args_ok, VERBOSE_BLOCKING_FAIL, "bad parameters");
 
-    int r_pad_no_tail = nstl::max(0,
+    int r_pad_no_tail = static_cast<int>(nstl::max<dim_t>(0,
             calculate_end_padding(jcp.l_pad, jcp.ow - jcp.ur_w_tail, jcp.iw,
-                    jcp.stride_w, ext_kw));
+                    jcp.stride_w, ext_kw)));
 
     // kernel needs 1 temporary YMM register
     const int num_avail_regs = 15;
     if (r_pad_no_tail > jcp.ur_w * jcp.stride_w && jcp.ow / jcp.ur_w > 1) {
         /* recalculate ur_w, nb_oc_blocking and ur_w_tail */
-        jcp.ur_w = nstl::min(r_pad_no_tail / jcp.stride_w + jcp.ur_w_tail,
-                nstl::min(jcp.ow, num_avail_regs / 2));
+        jcp.ur_w = static_cast<int>(
+                nstl::min<dim_t>(r_pad_no_tail / jcp.stride_w + jcp.ur_w_tail,
+                        nstl::min<dim_t>(jcp.ow, num_avail_regs / 2)));
         jcp.nb_oc_blocking = (num_avail_regs - jcp.ur_w) / jcp.ur_w;
         jcp.ur_w_tail = jcp.ow % jcp.ur_w;
         /* check again ... */
-        r_pad_no_tail = nstl::max(0,
+        r_pad_no_tail = static_cast<int>(nstl::max<dim_t>(0,
                 calculate_end_padding(jcp.l_pad, jcp.ow - jcp.ur_w_tail, jcp.iw,
-                        jcp.stride_w, ext_kw));
+                        jcp.stride_w, ext_kw)));
 
-        VDISPATCH_CONV_IC(jcp.ur_w >= nstl::max(jcp.l_pad, r_pad_no_tail),
+        VDISPATCH_CONV_IC(
+                jcp.ur_w >= nstl::max<dim_t>(jcp.l_pad, r_pad_no_tail),
                 VERBOSE_UNSUPPORTED_PAD_FEATURE,
                 "width unroll exceeds padding size");
     }
@@ -556,6 +601,14 @@ status_t jit_sse41_conv_fwd_kernel_f32_t::init_conf(jit_conv_conf_t &jcp,
     }
 
     return status::success;
+}
+
+void jit_sse41_conv_fwd_kernel_f32_t::init_scratchpad(
+        memory_tracking::registrar_t &scratchpad, const jit_conv_conf_t &jcp) {
+    using namespace dnnl::impl::memory_tracking::names;
+
+    if (jcp.prop_kind != backward_data && jcp.oc != jcp.oc_without_padding)
+        scratchpad.book<float>(key_conv_padded_bias, sizeof(float) * jcp.oc);
 }
 
 } // namespace x64

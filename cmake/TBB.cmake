@@ -36,7 +36,10 @@ macro(handle_tbb_target)
             set_property(TARGET TBB::tbb PROPERTY "MAP_IMPORTED_CONFIG_RELWITHMDD" "RELEASE" "NONE")
             set_property(TARGET TBB::tbb PROPERTY "MAP_IMPORTED_CONFIG_DEBUG" "RELEASE" "NONE")
         endif()
-        include_directories_with_host_compiler(${_tbb_include_dirs})
+        foreach(inc_dir ${_tbb_include_dirs})
+            include_directories(BEFORE SYSTEM ${inc_dir})
+            append_host_compiler_options(CMAKE_CXX_FLAGS "-I${inc_dir}")
+        endforeach()
         list(APPEND EXTRA_SHARED_LIBS TBB::tbb)
 
         # Print TBB location
@@ -69,7 +72,7 @@ macro(handle_tbb_target)
     add_definitions(-DTBB_PREVIEW_TASK_ARENA_CONSTRAINTS_EXTENSION=1)
 endmacro()
 
-if(NOT DNNL_CPU_THREADING_RUNTIME STREQUAL "TBB")
+if(NOT "${DNNL_CPU_THREADING_RUNTIME}" MATCHES "^(TBB|TBB_AUTO)$")
     return()
 endif()
 

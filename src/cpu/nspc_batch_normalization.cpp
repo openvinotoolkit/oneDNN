@@ -110,7 +110,7 @@ status_t nspc_batch_normalization_fwd_t<d_type>::execute_forward(
                                 src + s_off);
                     }
                     PRAGMA_OMP_SIMD()
-                    for (int c = 0; c < C; c++) {
+                    for (dim_t c = 0; c < C; c++) {
                         ws_reduce[C * ithr + c] += _src[c];
                     }
                 }
@@ -150,7 +150,7 @@ status_t nspc_batch_normalization_fwd_t<d_type>::execute_forward(
                                 src + s_off);
                     }
                     PRAGMA_OMP_SIMD()
-                    for (int c = 0; c < C; c++) {
+                    for (dim_t c = 0; c < C; c++) {
                         acc_data_t m = _src[c] - mean_loc[c];
                         ws_reduce[C * ithr + c] += m * m;
                     }
@@ -204,7 +204,7 @@ status_t nspc_batch_normalization_fwd_t<d_type>::execute_forward(
 #if CLANG_WA_02_SAFE_TO_USE_OMP_SIMD
                 PRAGMA_OMP_SIMD()
 #endif
-                for (int c = 0; c < C; c++) {
+                for (dim_t c = 0; c < C; c++) {
                     const size_t c_off = s_off + c;
                     acc_data_t sqrt_variance = static_cast<acc_data_t>(
                             sqrtf(variance_loc[c] + eps));
@@ -385,7 +385,7 @@ status_t nspc_batch_normalization_bwd_t<d_type>::execute_backward(
                     _src = reinterpret_cast<const acc_data_t *>(src + s_off);
                 }
 
-#if CLANG_WA_02_SAFE_TO_USE_OMP_SIMD
+#if CLANG_WA_02_SAFE_TO_USE_OMP_SIMD && !defined(_MSC_VER)
                 PRAGMA_OMP_SIMD(simdlen(16))
 #endif
                 for (dim_t c = 0; c < nb_c_blk * c_blk; c++) {

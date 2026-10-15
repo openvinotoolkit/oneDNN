@@ -90,9 +90,9 @@ status_t ref_pooling_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
                 assert(0 <= value
                         && value <= numeric_limits<typename prec_traits_t<
                                         data_type::u8>::type>::max());
-                ws[off] = value;
+                ws[off] = static_cast<unsigned char>(value);
             } else
-                reinterpret_cast<int *>(ws)[off] = value;
+                reinterpret_cast<int *>(ws)[off] = static_cast<int>(value);
         }
     };
 
@@ -137,7 +137,7 @@ status_t ref_pooling_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
                 }
             }
         }
-        int num_summands;
+        dim_t num_summands;
         if (alg == alg_kind::pooling_avg_include_padding)
             num_summands = KW * KH * KD;
         else {
@@ -166,13 +166,56 @@ status_t ref_pooling_fwd_t::execute_forward(const exec_ctx_t &ctx) const {
                     * (KW - iw_start_excluded - iw_end_excluded);
         }
         d /= num_summands;
+
+        const auto &p = pd()->attr()->post_ops_;
+        for (int i = 0; i < p.len(); i++) {
+            auto &post_op = p.entry_[i];
+            if (post_op.is_quantization()) {
+                auto quant = post_op.quantization;
+                auto quantization_base = CTX_IN_MEM(const float *,
+                        (DNNL_ARG_ATTR_MULTIPLE_POST_OP(i) | DNNL_ARG_SRC_1));
+                const auto crop_low_data
+                        = quantization_base + quant.offset[quant.crop_low];
+                const auto crop_high_data
+                        = quantization_base + quant.offset[quant.crop_high];
+                const auto inp_scale_data
+                        = quantization_base + quant.offset[quant.inp_scale];
+                const auto inp_shift_data
+                        = quantization_base + quant.offset[quant.inp_shift];
+                const auto output_scale_data
+                        = quantization_base + quant.offset[quant.output_scale];
+                const auto output_shift_data
+                        = quantization_base + quant.offset[quant.output_shift];
+
+                float cl = crop_low_data[!quant.per_channel[quant.crop_low]
+                                ? 0
+                                : oc];
+                float ch = crop_high_data[!quant.per_channel[quant.crop_high]
+                                ? 0
+                                : oc];
+                float isc = inp_scale_data[!quant.per_channel[quant.inp_scale]
+                                ? 0
+                                : oc];
+                float ish = inp_shift_data[!quant.per_channel[quant.inp_shift]
+                                ? 0
+                                : oc];
+                float osc = output_scale_data
+                        [!quant.per_channel[quant.output_scale] ? 0 : oc];
+                float osh = output_shift_data
+                        [!quant.per_channel[quant.output_shift] ? 0 : oc];
+
+                d = nstl::min(ch, nstl::max(cl, d));
+                d = d * isc + ish;
+                d = roundf(d);
+                d = d * osc + osh;
+            }
+        }
     };
 
     const bool is_max_pool = alg == alg_kind::pooling_max;
 
     float base_res
-            = is_max_pool ? types::lowest_value<float>(dst_d.data_type()) : 0.f;
-
+            = is_max_pool ? types::lowest_value<float>(src_d.data_type()) : 0.f;
     using ker_t
             = std::function<void(float &, dim_t, dim_t, dim_t, dim_t, dim_t)>;
     ker_t kernel = is_max_pool ? (ker_t)ker_max : (ker_t)ker_avg;
@@ -340,7 +383,7 @@ status_t ref_pooling_bwd_t::execute(const exec_ctx_t &ctx) const {
         balance211(diff_src_d.nelems(true), nthr, ithr, start, end);
         if (start == end) return;
 
-        for (int i = start; i < end; i++)
+        for (dim_t i = start; i < end; i++)
             io::store_float_value(data_type::f32, 0, diff_src, i);
     });
 

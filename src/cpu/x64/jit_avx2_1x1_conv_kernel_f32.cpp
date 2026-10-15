@@ -49,13 +49,14 @@ jit_avx2_1x1_conv_kernel_f32_t::jit_avx2_1x1_conv_kernel_f32_t(
         const jit_1x1_conv_conf_t &ajcp, const primitive_attr_t &attr,
         const memory_desc_t &dst_md)
     : jit_generator_t(jit_name(), avx2), jcp(ajcp), attr_(attr) {
-    if (jcp.with_eltwise || jcp.with_binary) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise
+            || jcp.with_quantization) {
         using namespace binary_injector;
         static constexpr bool preserve_gpr = true;
         static constexpr bool preserve_vmm = false;
         static constexpr size_t helper_vmm_idx = 15;
         static constexpr bool use_exact_tail_scalar_bcast = false;
-        const size_t tail_size = jcp.oc_without_padding % isa_simd_width_;
+        const int tail_size = jcp.oc_without_padding % isa_simd_width_;
 
         rhs_arg_static_params_t rhs_arg_static_params {helper_vmm_idx, r13, r14,
                 r15, preserve_gpr, preserve_vmm,
@@ -63,10 +64,13 @@ jit_avx2_1x1_conv_kernel_f32_t::jit_avx2_1x1_conv_kernel_f32_t(
                 memory_desc_wrapper(dst_md), tail_size,
                 use_exact_tail_scalar_bcast};
         static_params_t static_params {this->param1, rhs_arg_static_params};
+        quantization_injector::static_params_t quantization_static_params {
+                ymm_d_weights.getIdx(), ymm_d_bias.getIdx(), reg_d_weights,
+                reg_d_bias};
 
         postops_injector_ = utils::make_unique<
                 injector::jit_uni_postops_injector_t<avx2>>(
-                this, jcp.post_ops, static_params);
+                this, jcp.post_ops, static_params, quantization_static_params);
     }
 }
 
@@ -83,9 +87,9 @@ void jit_avx2_1x1_conv_kernel_f32_t::generate_bcast_loop(int load_loop_blk) {
     L(bcast_loop);
     {
         assert(jcp.bcast_block % jcp.ur == 0);
-        const int num_substeps = jcp.bcast_block / jcp.ur;
+        const dim_t num_substeps = jcp.bcast_block / jcp.ur;
         assert(num_substeps > 0 && num_substeps < 10);
-        for (int i = 0; i < num_substeps; i++) {
+        for (dim_t i = 0; i < num_substeps; i++) {
             if (i == num_substeps - 1) L(large_tail);
             generate_reduce_loop(load_loop_blk, jcp.ur);
             if (i < num_substeps - 1) {
@@ -147,12 +151,25 @@ void iterate(const int load_loop_blk, const int ur, const F &f) {
 
 void jit_avx2_1x1_conv_kernel_f32_t::apply_postops(
         const int load_loop_blk, const int ur, const int load_dim_tail) {
-    if (jcp.with_eltwise || jcp.with_binary) {
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise
+            || jcp.with_quantization) {
         assert(ur * load_loop_blk < 14);
 
         Label store_nopost_ops;
         test(reg_reduce_pos_flag, FLAG_REDUCE_LAST);
         jz(store_nopost_ops, T_NEAR);
+
+        std::map<size_t, int> vmm_idx_off;
+        iterate(load_loop_blk, ur, load_dim_tail,
+                [&](const bool, const int i, const int j) {
+            vmm_idx_off.insert({vreg_accum_idx(load_loop_blk, i, j),
+                    i * jcp.oc_block * sizeof(float)});
+        });
+        depthwise_injector::dynamic_params_t ddp {ymm_d_weights.getIdx(),
+                ymm_d_bias.getIdx(), reg_d_weights, reg_d_bias, reg_oc_off,
+                vmm_idx_off, this->rsp};
+        quantization_injector::dynamic_params_t qdp {
+                reg_oc_off, vmm_idx_off, jcp.dst_dt, this->rsp};
 
         injector_utils::vmm_index_set_t vmm_idxs;
         if (jcp.with_binary) {
@@ -202,14 +219,16 @@ void jit_avx2_1x1_conv_kernel_f32_t::apply_postops(
                 jmp(postops_done, T_NEAR);
                 L(postops_no_tail);
             }
-            postops_injector_->compute_vector_range(vmm_idxs, rhs_arg_params);
+            postops_injector_->compute_vector_range(
+                    vmm_idxs, rhs_arg_params, ddp, qdp);
             L(postops_done);
         } else {
             iterate(load_loop_blk, ur, load_dim_tail,
                     [&](const bool, const int i, const int j) {
                 vmm_idxs.emplace(vreg_accum_idx(load_loop_blk, i, j));
             });
-            postops_injector_->compute_vector_range(vmm_idxs);
+            postops_injector_->compute_vector_range(vmm_idxs,
+                    binary_injector::rhs_arg_dynamic_params_t(), ddp, qdp);
         }
         L(store_nopost_ops);
     }
@@ -233,24 +252,24 @@ void jit_avx2_1x1_conv_kernel_f32_t::generate_reduce_loop(
         return ptr[reg_bias_data + sizeof(float) * jcp.oc_block * i];
     };
 
-    auto bcast_ptr = [this](int u, int j) {
+    auto bcast_ptr = [this](dim_t u, int j) {
         assert(j < jcp.ur);
         assert(u <= jcp.reduce_loop_unroll);
-        const size_t offset = get_bcast_offset(jcp, u, j);
+        const size_t offset = get_bcast_offset(jcp, static_cast<int>(u), j);
         return make_safe_addr(aux_reg_bcast_data, offset, reg_long_offt);
     };
 
-    auto get_load_offset_bwd_w = [this](int u, int i) {
-        size_t u0 = u % jcp.reduce_loop_unroll;
-        size_t u1 = u / jcp.reduce_loop_unroll;
+    auto get_load_offset_bwd_w = [this](dim_t u, int i) {
+        const int u0 = static_cast<int>(u % jcp.reduce_loop_unroll);
+        const dim_t u1 = u / jcp.reduce_loop_unroll;
         return u1 * jcp.reduce_loop_load_step
                 + sizeof(float) * get_load_bwd_w_offset(jcp, i, u0);
     };
 
-    auto load_ptr = [this](int u, int i) {
+    auto load_ptr = [this](dim_t u, int i) {
         size_t offt;
-        size_t u0 = u % jcp.reduce_loop_unroll;
-        size_t u1 = u / jcp.reduce_loop_unroll;
+        const int u0 = static_cast<int>(u % jcp.reduce_loop_unroll);
+        const dim_t u1 = u / jcp.reduce_loop_unroll;
         switch (jcp.prop_kind) {
             case backward_data:
                 offt = (i * jcp.oc_block + u0) * jcp.ic_block;
@@ -310,7 +329,8 @@ void jit_avx2_1x1_conv_kernel_f32_t::generate_reduce_loop(
                         L(load_bias_tail);
                         load_bytes(vreg_accum(load_loop_blk, i, j),
                                 reg_bias_data, i * jcp.oc_block * sizeof(float),
-                                load_dim_tail * sizeof(float));
+                                static_cast<int>(
+                                        load_dim_tail * sizeof(float)));
                         L(load_bias_done);
                     } else {
                         vmovups(vreg_accum(load_loop_blk, i, j), bias_ptr(i));
@@ -341,7 +361,7 @@ void jit_avx2_1x1_conv_kernel_f32_t::generate_reduce_loop(
                 L(load_init_tail);
                 load_bytes(vreg_load(i), aux_reg_load_data,
                         get_load_offset_bwd_w(0, i),
-                        load_dim_tail * sizeof(float));
+                        static_cast<int>(load_dim_tail * sizeof(float)));
                 L(load_init_done);
             } else {
                 vmovups(vreg_load(i), load_ptr(0, i));
@@ -373,7 +393,7 @@ void jit_avx2_1x1_conv_kernel_f32_t::generate_reduce_loop(
                     L(sum_tail);
                     load_bytes(vtmp, aux_reg_output_data,
                             get_output_offset(i, j),
-                            load_dim_tail * sizeof(float));
+                            static_cast<int>(load_dim_tail * sizeof(float)));
                     vaddps(r, r, vtmp);
                     L(sum_done);
                 } else {
@@ -425,7 +445,8 @@ void jit_avx2_1x1_conv_kernel_f32_t::generate_reduce_loop(
                         }
                         store_bytes(vreg_accum(load_loop_blk, i, j),
                                 aux_reg_output_data, get_output_offset(i, j),
-                                load_dim_tail * sizeof(float));
+                                static_cast<int>(
+                                        load_dim_tail * sizeof(float)));
                     }
                     L(store_done);
                 } else {
@@ -466,7 +487,8 @@ void jit_avx2_1x1_conv_kernel_f32_t::generate_reduce_loop(
                             L(fma_load_tail);
                             load_bytes(vreg_load(i), aux_reg_load_data,
                                     get_load_offset_bwd_w(u + 1, i),
-                                    load_dim_tail * sizeof(float));
+                                    static_cast<int>(
+                                            load_dim_tail * sizeof(float)));
                             L(fma_load_done);
                         } else {
                             vmovups(vreg_load(i), load_ptr(u + 1, i));
@@ -557,7 +579,9 @@ void jit_avx2_1x1_conv_kernel_f32_t::generate_diff_bias_loop(
 
     for (int i = 0; i < load_loop_blk; i++)
         vmovups(diff_bias_ptr(i), diff_bias_reg(i));
-    add(reg_diff_bias_data, load_loop_blk * jcp.oc_block * sizeof(float));
+    add(reg_diff_bias_data,
+            static_cast<uint32_t>(
+                    load_loop_blk * jcp.oc_block * sizeof(float)));
     mov(ptr[rsp + reg_diff_bias_data_stack_offt], reg_diff_bias_data);
 
     L(diff_bias_loop_out);
@@ -567,6 +591,11 @@ void jit_avx2_1x1_conv_kernel_f32_t::generate() {
     preamble();
 
     sub(rsp, stack_space_needed);
+
+    if (postops_injector_)
+        postops_injector_->push_post_ops_data_on_stack(this->param1,
+                GET_OFF(post_ops_binary_rhs_arg_vec), reg_bcast_data,
+                reg_load_data);
 
     if (jcp.with_binary) {
         mov(ptr[rsp + reg_abi_param1_backup], abi_param1);
@@ -595,10 +624,12 @@ void jit_avx2_1x1_conv_kernel_f32_t::generate() {
     mov(reg_reduce_pos_flag, ptr[param1 + GET_OFF(first_last_flag)]);
     if (jcp.prop_kind == backward_weights)
         mov(reg_output_stride, ptr[param1 + GET_OFF(output_stride)]);
+    mov(reg_oc_off, ptr[param1 + GET_OFF(oc_off)]);
 
     auto generate_load_loop_body = [&](int load_loop_blk) {
         generate_bcast_loop(load_loop_blk);
-        add(reg_load_data, load_loop_blk * jcp.load_loop_load_step);
+        add(reg_load_data,
+                static_cast<uint32_t>(load_loop_blk * jcp.load_loop_load_step));
         const size_t offst_with_dw_conv
                 = get_load_loop_output_fwd_offset(jcp, load_loop_blk);
         const size_t offst_wo_dw_conv
@@ -607,7 +638,8 @@ void jit_avx2_1x1_conv_kernel_f32_t::generate() {
             case forward_training:
             case forward_inference:
                 add(reg_bias_data,
-                        load_loop_blk * jcp.oc_block * sizeof(float));
+                        static_cast<uint32_t>(
+                                load_loop_blk * jcp.oc_block * sizeof(float)));
                 safe_add(reg_output_data, offst_with_dw_conv, reg_long_offt);
                 if (jcp.with_binary && jcp.with_dw_conv) {
                     mov(aux_reg_load_data, ptr[rsp + reg_dw_binary_output_off]);
@@ -628,6 +660,7 @@ void jit_avx2_1x1_conv_kernel_f32_t::generate() {
             default: assert(!"invalid prop_kind");
         }
         sub(reg_load_loop_work, load_loop_blk * jcp.load_loop_iter_step);
+        add(reg_oc_off, load_loop_blk * jcp.oc_block * sizeof(float));
     };
 
     Label load_loop_blk_8;
@@ -677,6 +710,8 @@ void jit_avx2_1x1_conv_kernel_f32_t::generate() {
 
     add(rsp, stack_space_needed);
 
+    if (postops_injector_) postops_injector_->reset_stack_pointer();
+
     postamble();
 
     if (jcp.with_eltwise)
@@ -691,8 +726,7 @@ status_t jit_avx2_1x1_conv_kernel_f32_t::init_conf(jit_1x1_conv_conf_t &jcp,
     if (!mayiuse(avx)) return status::unimplemented;
     jcp.isa = mayiuse(avx2) ? avx2 : avx;
 
-    // Big int (> INT_MAX) values are unsupported and jcp fields may overflow
-    // TODO: change data type of jcp fields to size_t
+    // Values larger than INT_MAX are unsupported at JIT/API boundaries.
     VDISPATCH_CONV_IC(!has_large_size(cd, src_d, weights_d, dst_d),
             VERBOSE_BAD_PARAM, "large size is not supported");
 
@@ -736,8 +770,8 @@ status_t jit_avx2_1x1_conv_kernel_f32_t::init_conf(jit_1x1_conv_conf_t &jcp,
                             format_kind::undef, cd.diff_bias_desc.format_kind)
             != format_kind::undef;
 
-    jcp.os = static_cast<dim_t>(jcp.od) * jcp.oh * jcp.ow;
-    jcp.is = static_cast<dim_t>(jcp.id) * jcp.ih * jcp.iw;
+    jcp.os = jcp.od * jcp.oh * jcp.ow;
+    jcp.is = jcp.id * jcp.ih * jcp.iw;
 
     jcp.typesize_in = sizeof(prec_traits_t<data_type::f32>::type);
     jcp.typesize_out = sizeof(prec_traits_t<data_type::f32>::type);
@@ -757,6 +791,11 @@ status_t jit_avx2_1x1_conv_kernel_f32_t::init_conf(jit_1x1_conv_conf_t &jcp,
             = post_ops.find(primitive_kind::binary, 0, dw_conv_ind);
     const int prelu_ind = post_ops.find(primitive_kind::prelu, 0, dw_conv_ind);
     jcp.with_binary = !everyone_is(-1, binary_ind, prelu_ind);
+
+    jcp.with_depthwise
+            = post_ops.find(primitive_kind::depthwise, 0, dw_conv_ind) != -1;
+    jcp.with_quantization
+            = post_ops.find(primitive_kind::quantization, 0, dw_conv_ind) != -1;
 
     if (dw_conv_ind >= 0) {
         // dw_conv and post_ops after it are handled externally, so skip them
@@ -790,7 +829,8 @@ status_t jit_avx2_1x1_conv_kernel_f32_t::init_conf(jit_1x1_conv_conf_t &jcp,
         jcp.ic = rnd_up(jcp.ic, simd_w);
     }
 
-    if (jcp.with_eltwise || jcp.with_binary)
+    if (jcp.with_eltwise || jcp.with_binary || jcp.with_depthwise
+            || jcp.with_quantization)
         VDISPATCH_CONV_IC(jcp.isa >= avx2, VERBOSE_UNSUPPORTED_FEATURE,
                 "eltwise and binary post-ops not implemented on isa");
 
@@ -799,8 +839,9 @@ status_t jit_avx2_1x1_conv_kernel_f32_t::init_conf(jit_1x1_conv_conf_t &jcp,
     static constexpr bool sum_requires_scale_one = true;
     static constexpr bool sum_requires_zp_zero = true;
     bool post_ops_ok_ = post_ops_ok(post_ops_ok_args_t(jcp.isa,
-            {eltwise, binary, sum}, jcp.post_ops, &dst_d, sum_at_pos_0_only,
-            sum_requires_scale_one, sum_requires_zp_zero));
+            {eltwise, binary, sum, depthwise, quantization}, jcp.post_ops,
+            &dst_d, sum_at_pos_0_only, sum_requires_scale_one,
+            sum_requires_zp_zero));
     // temporary workaround that skips avx2 implementation for ternary
     // post-ops with scalar broadcasting to avoid register collisions.
     post_ops_ok_ = post_ops_ok_
@@ -836,14 +877,15 @@ status_t jit_avx2_1x1_conv_kernel_f32_t::init_conf(jit_1x1_conv_conf_t &jcp,
     jcp.ic_block = jcp.oc_block = simd_w;
 
     jcp.ur = jcp.isa == avx2 ? 4 : 3; // Intel AVX support
-    if (jcp.with_dw_conv) jcp.ur = nstl::min(jcp.ow, jcp.ur);
+    if (jcp.with_dw_conv)
+        jcp.ur = static_cast<int>(nstl::min<dim_t>(jcp.ow, jcp.ur));
 
-    int load_blocking {0};
-    int load_blocking_max {0};
-    int bcast_blocking {0};
-    int bcast_blocking_max {0};
-    int reduce_blocking {0};
-    int reduce_blocking_max {0};
+    dim_t load_blocking {0};
+    dim_t load_blocking_max {0};
+    dim_t bcast_blocking {0};
+    dim_t bcast_blocking_max {0};
+    dim_t reduce_blocking {0};
+    dim_t reduce_blocking_max {0};
 
     if (one_of(jcp.prop_kind, forward_training, forward_inference)) {
         jcp.reduce_dim = jcp.ic;
@@ -964,7 +1006,7 @@ status_t jit_avx2_1x1_conv_kernel_f32_t::init_conf(jit_1x1_conv_conf_t &jcp,
                 !is_data_layout_nxc, jcp.load_dim % load_blocking == 0));
 
         bcast_blocking = div_up(jcp.bcast_dim, jcp.bcast_block);
-        const int bcast_blocking_lim = is_data_layout_nxc ? 17 : 9;
+        const dim_t bcast_blocking_lim = is_data_layout_nxc ? 17 : 9;
         const bool no_bcast_tail = jcp.bcast_dim % jcp.bcast_block == 0;
         const bool small_size_for_bcast
                 = static_cast<dim_t>(jcp.id) * jcp.ih * jcp.iw <= 1024;
@@ -989,7 +1031,7 @@ status_t jit_avx2_1x1_conv_kernel_f32_t::init_conf(jit_1x1_conv_conf_t &jcp,
                 !is_data_layout_nxc, jcp.bcast_dim % bcast_blocking == 0));
 
         reduce_blocking = is_data_layout_nxc
-                ? rnd_up(nstl::min(jcp.ow, 128), jcp.reduce_block)
+                ? rnd_up(nstl::min<dim_t>(jcp.ow, 128), jcp.reduce_block)
                 : 128; // affects L1$ utilization
         reduce_blocking_max = rnd_dn(reduce_blocking * 3 / 2, jcp.reduce_block);
     } else
@@ -1002,7 +1044,8 @@ status_t jit_avx2_1x1_conv_kernel_f32_t::init_conf(jit_1x1_conv_conf_t &jcp,
     assert(reduce_blocking);
 
     assert(jcp.bcast_block % jcp.ur == 0);
-    jcp.ur_tail = (jcp.with_dw_conv ? jcp.ow : jcp.bcast_dim) % jcp.bcast_block;
+    jcp.ur_tail = static_cast<int>(
+            (jcp.with_dw_conv ? jcp.ow : jcp.bcast_dim) % jcp.bcast_block);
 
     jcp.nb_bcast_blocking = bcast_blocking / jcp.bcast_block;
     jcp.nb_bcast_blocking_max = bcast_blocking_max / jcp.bcast_block;

@@ -19,16 +19,26 @@
 set(CMAKE_SYSTEM_NAME Linux)
 set(CMAKE_SYSTEM_PROCESSOR riscv64)
 
-# Cross-compilation tools
-set(CMAKE_C_COMPILER riscv64-linux-gnu-gcc-14)
-set(CMAKE_CXX_COMPILER riscv64-linux-gnu-g++-14)
+if(NOT DEFINED CMAKE_C_COMPILER)
+    if(DEFINED ENV{CC} AND NOT "$ENV{CC}" STREQUAL "")
+        set(CMAKE_C_COMPILER "$ENV{CC}")
+    else()
+        set(CMAKE_C_COMPILER riscv64-linux-gnu-gcc)
+    endif()
+endif()
 
-# Search paths
+if(NOT DEFINED CMAKE_CXX_COMPILER)
+    if(DEFINED ENV{CXX} AND NOT "$ENV{CXX}" STREQUAL "")
+        set(CMAKE_CXX_COMPILER "$ENV{CXX}")
+    else()
+        set(CMAKE_CXX_COMPILER riscv64-linux-gnu-g++)
+    endif()
+endif()
+
 set(CMAKE_FIND_ROOT_PATH /usr/riscv64-linux-gnu)
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 
-# Explicitly set the target
 set(CMAKE_CROSSCOMPILING TRUE)

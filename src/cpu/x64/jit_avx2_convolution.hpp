@@ -148,9 +148,9 @@ struct jit_avx2_convolution_bwd_data_t : public primitive_t {
             VDISPATCH_CONV(set_default_alg_kind(alg_kind::convolution_direct),
                     VERBOSE_BAD_ALGORITHM);
             VDISPATCH_CONV(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
-            VDISPATCH_CONV(
-                    attr()->has_default_values(), VERBOSE_UNSUPPORTED_ATTR);
             VDISPATCH_CONV(set_default_formats(), VERBOSE_UNSUPPORTED_TAG);
+
+            jcp_.post_ops = attr()->post_ops_;
 
             // TODO: make `init_conf` assign initialized object to `jcp_`
             CHECK(jit_avx2_conv_bwd_data_kernel_f32_t::init_conf(jcp_, *desc(),
@@ -307,14 +307,17 @@ struct jit_avx2_convolution_bwd_weights_t : public primitive_t {
 
             if (with_bias()) {
                 reducer_bia_conf_.init(reduce_balancer_t(max_threads,
-                        jcp_.oc_block, jcp_.ngroups * jcp_.nb_oc, jcp_.mb,
-                        max_buffer_size, true));
+                        static_cast<int>(jcp_.oc_block),
+                        static_cast<int>(jcp_.ngroups * jcp_.nb_oc),
+                        static_cast<int>(jcp_.mb), max_buffer_size, true));
             }
 
             reducer_wei_conf_.init(reduce_balancer_t(max_threads,
-                    jcp_.kd * jcp_.kh * jcp_.kw * jcp_.ic_block * jcp_.oc_block,
-                    jcp_.ngroups * jcp_.nb_ic * jcp_.nb_oc, jcp_.mb * jcp_.od,
-                    max_buffer_size, true));
+                    static_cast<int>(jcp_.kd * jcp_.kh * jcp_.kw * jcp_.ic_block
+                            * jcp_.oc_block),
+                    static_cast<int>(jcp_.ngroups * jcp_.nb_ic * jcp_.nb_oc),
+                    static_cast<int>(jcp_.mb * jcp_.od), max_buffer_size,
+                    true));
         }
     };
 

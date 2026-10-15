@@ -108,8 +108,6 @@ status_t gemm_x8s8s32x_matmul_t::pd_t::init(engine_t *engine) {
                 && IMPLICATION(is_runtime_value(N()), !has_prelu);
     };
 
-    VDISPATCH_MATMUL(DNNL_CPU_THREADING_RUNTIME != DNNL_RUNTIME_THREADPOOL,
-            VERBOSE_UNSUPPORTED_THREADPOOL_RUNTIME);
     VDISPATCH_MATMUL(is_dense_format_kind(), VERBOSE_UNSUPPORTED_SPARSE_CFG);
     VDISPATCH_MATMUL(!has_zero_dim_memory(), VERBOSE_EMPTY_TENSOR, "");
 
@@ -168,7 +166,7 @@ template <typename src_dt>
 void pp_src_and_weights_zero_points(std::vector<int32_t> &src_comp,
         std::vector<int32_t> &wei_comp, dim_t M, dim_t N, dim_t K,
         const src_dt *src, dim_t src_s0, dim_t src_s1, const int8_t *wei,
-        dim_t wei_s0, dim_t wei_s1, int32_t *acc, int ldc,
+        dim_t wei_s0, dim_t wei_s1, int32_t *acc, dim_t ldc,
         int32_t src_zero_point, int32_t wei_zero_point) {
     if (wei_zero_point) {
         for_(dim_t m = 0; m < M; ++m)
