@@ -684,8 +684,10 @@ using lbr_augru_forward_test_f32 = rnn_forward_test_t<lbr_augru_forward, float>;
 
 using cfg_f32 = test_rnn_params_t;
 
-#define PLAIN_RNN(a) {a, 0.0f}
-#define NOT_RNN {alg::undef, 0.0f}
+#define PLAIN_RNN(a) \
+    { a, 0.0f }
+#define NOT_RNN \
+    { alg::undef, 0.0f }
 
 TEST_P(rnn_forward_test_f32, TestsRnn) {}
 CPU_INSTANTIATE_TEST_SUITE_P(TestRnn, rnn_forward_test_f32,
