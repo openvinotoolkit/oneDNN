@@ -192,7 +192,7 @@ private:
     const reg64_t reg_aux_A_vpad = r11;
 
     const bool use_extended_loop_regs = !brg.with_grouped_wei_decomp
-            && regscratchpad_.ExtendedRegisters();
+            && !brg.with_wei_decomp && regscratchpad_.ExtendedRegisters();
     const reg64_savable_t reg_bdb_loop {
             regscratchpad_, r9, r16, use_extended_loop_regs};
     const reg64_savable_t reg_ldb_loop {
@@ -3375,6 +3375,10 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel_dyn_quant(dim_t bd_block2,
             0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03,
             0x03, 0x03, 0x03, 0x03};
 
+    // The loop registers are borrowed as temporaries below: they must have a
+    // scratchpad slot.
+    JIT_ASSERT(reg_bdb_loop.savable() && reg_ldb_loop.savable());
+
     reg_bdb_loop.save();
     reg_ldb_loop.save();
 
@@ -3836,6 +3840,10 @@ void jit_brgemm_kernel_t<Wmm>::gemm_microkernel(dim_t bd_block2,
                     }
                 };
 
+                // The loop registers are borrowed as temporaries below: they must have a
+                // scratchpad slot.
+                JIT_ASSERT(reg_bdb_loop.savable() && reg_ldb_loop.savable());
+
                 reg_bdb_loop.save();
                 reg_ldb_loop.save();
 
@@ -4180,6 +4188,10 @@ void jit_brgemm_kernel_t<Wmm>::bs_loop(dim_t bd_block2, bool is_bdb_tail,
                 reg_dividend.restore();
             };
 
+            // The loop registers are borrowed as temporaries below: they must have a
+            // scratchpad slot.
+            JIT_ASSERT(reg_bdb_loop.savable() && reg_ldb_loop.savable());
+
             reg_bdb_loop.save();
             reg_aux_D.saveTo(reg_aux2_D);
             reg_ldb_loop.save();
@@ -4234,6 +4246,10 @@ void jit_brgemm_kernel_t<Wmm>::bs_loop(dim_t bd_block2, bool is_bdb_tail,
                     && (brg.wei_decomp_scales_stride != 0
                             || brg.wei_decomp_zero_points_stride != 0))
                 || brg.with_src_dyn_quant) {
+            // The loop registers are borrowed as temporaries below: they must have a
+            // scratchpad slot.
+            JIT_ASSERT(reg_bdb_loop.savable() && reg_ldb_loop.savable());
+
             reg_rdb_loop.saveTo(reg_bdb_loop);
             auto &reg_ptr = reg_rdb_loop;
 

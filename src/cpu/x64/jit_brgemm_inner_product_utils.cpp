@@ -180,8 +180,7 @@ jit_brgemm_ip_conf_t::get_desired_weights_tag() const {
     const bool is_fp8 = utils::one_of(jbgp.wei_dt, f8_e5m2, f8_e4m3);
     const bool is_not_vnni_tag
             = (jbgp.wei_dt == f32
-                      || (jbgp.wei_dt == f16
-                              && one_of(jbgp.isa, avx512_core_fp16, avx10_2)))
+                      || (jbgp.wei_dt == f16 && jbgp.isa == avx512_core_fp16))
             && !jbgp.weights_decompression;
     const bool is_vcvtph2ps_kernel
             = (one_of(jbgp.orig_wei_dt, f16, bf16) && jbgp.src_dt == f32);
