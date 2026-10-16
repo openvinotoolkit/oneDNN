@@ -331,6 +331,49 @@ jit_brgemm_ip_conf_t::get_desired_weights_tag() const {
                                         OIdhw4i8o4i)}};
             }
         }
+    } else if (jbgp.weights_decompression && jbgp.orig_wei_dt == u3) {
+        if (jbgp.with_src_dynamic_quant) {
+            return {{64,
+                            pick(n_sp_dims, OI16i64o2i, OIw16i64o2i,
+                                    OIhw16i64o2i, OIdhw16i64o2i)},
+                    {48,
+                            pick(n_sp_dims, OI16i48o2i, OIw16i48o2i,
+                                    OIhw16i48o2i, OIdhw16i48o2i)},
+                    {32,
+                            pick(n_sp_dims, OI16i32o2i, OIw16i32o2i,
+                                    OIhw16i32o2i, OIdhw16i32o2i)},
+                    {16,
+                            pick(n_sp_dims, OI16i16o2i, OIw16i16o2i,
+                                    OIhw16i16o2i, OIdhw16i16o2i)}};
+        } else {
+            if (is_superset(jbgp.isa, avx512_core)) {
+                return {{64,
+                                pick(n_sp_dims, OI16i64o4i, OIw16i64o4i,
+                                        OIhw16i64o4i, OIdhw16i64o4i)},
+                        {48,
+                                pick(n_sp_dims, OI16i48o4i, OIw16i48o4i,
+                                        OIhw16i48o4i, OIdhw16i48o4i)},
+                        {32,
+                                pick(n_sp_dims, OI16i32o4i, OIw16i32o4i,
+                                        OIhw16i32o4i, OIdhw16i32o4i)},
+                        {16,
+                                pick(n_sp_dims, OI16i16o4i, OIw16i16o4i,
+                                        OIhw16i16o4i, OIdhw16i16o4i)}};
+            } else {
+                return {{32,
+                                pick(n_sp_dims, OI4i32o4i, OIw4i32o4i,
+                                        OIhw4i32o4i, OIdhw4i32o4i)},
+                        {24,
+                                pick(n_sp_dims, OI4i24o4i, OIw4i24o4i,
+                                        OIhw4i24o4i, OIdhw4i24o4i)},
+                        {16,
+                                pick(n_sp_dims, OI4i16o4i, OIw4i16o4i,
+                                        OIhw4i16o4i, OIdhw4i16o4i)},
+                        {8,
+                                pick(n_sp_dims, OI4i8o4i, OIw4i8o4i, OIhw4i8o4i,
+                                        OIdhw4i8o4i)}};
+            }
+        }
     } else if (is_xf16) {
         if (jbgp.is_amx) {
             return {{64,
@@ -1518,7 +1561,7 @@ status_t jit_brgemm_ip_conf_t::init_conf_base(cpu_isa_t isa,
 
     jbgp.weights_decompression
             = (one_of(jbgp.src_dt, f32, bf16)
-                      && one_of(jbgp.wei_dt, u8, s8, nf4, s4, u4, u2, f4_e2m1))
+                      && one_of(jbgp.wei_dt, u8, s8, nf4, s4, u4, u2, u3, f4_e2m1))
             || (one_of(jbgp.src_dt, f32) && one_of(jbgp.wei_dt, f16, bf16));
     jbgp.wei_decomp_algo = weights_decomp_kind_t::immediate;
     jbgp.orig_wei_dt = jbgp.wei_dt;
@@ -1586,7 +1629,7 @@ status_t jit_brgemm_ip_conf_t::init_conf_base(cpu_isa_t isa,
             return status::unimplemented;
 
         if (jbgp.with_src_dynamic_quant) {
-            if (!(one_of(jbgp.wei_dt, u2, u4, u8)
+            if (!(one_of(jbgp.wei_dt, u2, u3, u4, u8)
                         && one_of(jbgp.wei_decomp_scales_dt, f32)
                         && one_of(jbgp.wei_decomp_zero_points_dt, u2, u8,
                                 data_type::undef)))
@@ -1602,6 +1645,12 @@ status_t jit_brgemm_ip_conf_t::init_conf_base(cpu_isa_t isa,
 
             size_t rd_unroll = jbgp.src_quant_group_size;
             jbgp.src_sum_group_size = nstl::min(rd_unroll, min_group_size);
+
+            // U3 requires src_sum_group_size to be a multiple of 32 because the 32 bits for vnni dot product
+            // are corresponding to 32 elements in IC dimension, which is because u3 repack assures
+            // each of the 3 bits of an element be loaded to 3 different vector registers.
+            if (jbgp.wei_dt == u3 && jbgp.src_sum_group_size % 32)
+                return status::unimplemented;
 
             if (jbgp.wei_scales_ic_group_size != static_cast<size_t>(jbgp.ic)
                     && jbgp.wei_scales_ic_group_size % jbgp.src_sum_group_size)

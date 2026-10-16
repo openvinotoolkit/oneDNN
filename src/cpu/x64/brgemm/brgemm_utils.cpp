@@ -56,18 +56,18 @@ status_t init_kernel_datatype(
 
     brg->is_int8 = utils::one_of(dt_a, data_type::u8, data_type::s8)
             && utils::one_of(dt_b, data_type::u8, data_type::s8, data_type::u4,
-                    data_type::u2);
+                    data_type::u2, data_type::u3);
     brg->is_bf16 = (dt_a == data_type::bf16)
             && utils::one_of(dt_b, data_type::bf16, data_type::u8,
                     data_type::s8, data_type::nf4, data_type::s4, data_type::u4,
-                    data_type::f4_e2m1, data_type::u2);
+                    data_type::f4_e2m1, data_type::u2, data_type::u3);
     // Note: f32:bf16 is treated as f32 case while f32:f16 has already been
     // treated as f16. Probably, need a common ground here.
     brg->is_f32 = (dt_a == data_type::f32)
             && utils::one_of(dt_b, data_type::f32, data_type::f16,
                     data_type::bf16, data_type::u8, data_type::s8,
                     data_type::nf4, data_type::s4, data_type::u4,
-                    data_type::f4_e2m1, data_type::u2);
+                    data_type::f4_e2m1, data_type::u2, data_type::u3);
     brg->is_f16 = (dt_a == data_type::f16)
             && utils::one_of(dt_b, data_type::f32, data_type::f16);
     brg->is_fp8 = one_of(dt_a, data_type::f8_e5m2, data_type::f8_e4m3)
@@ -291,6 +291,15 @@ int calculate_max_bcast_block(brgemm_desc_t *brg, const int adj_ld_block2) {
             && !brg->with_src_dyn_quant)
         microkernel_max_reg_count -= 1;
     if (brg->with_src_dyn_quant) microkernel_max_reg_count -= 1;
+    if (brg->dt_b == data_type::u3) {
+        const int non_dyn_quant_extra = brg->isa_impl == avx2 ? 1 : 3;
+        microkernel_max_reg_count -= brg->with_src_dyn_quant
+                ? (is_superset(brg->isa_impl, avx512_core)
+                                ? 3 * adj_ld_block2 + 1
+                                : 2)
+                : adj_ld_block2 + non_dyn_quant_extra
+                        + (brg->is_u3_zp_fold() ? 1 : 0);
+    }
 
     auto microkernel_max_bcast_block
             = microkernel_max_reg_count / (adj_ld_block2 + brg->n_bcast_1_load);
@@ -950,7 +959,7 @@ status_t brgemm_blocking_vmm(brgemm_desc_t *brg) {
             : data_type_vnni_granularity(brg->dt_a);
     int rd_unroll = brg->dt_b == data_type::u2 ? 64
             : one_of(brg->dt_b, data_type::nf4, data_type::u4, data_type::s4,
-                      data_type::f4_e2m1)
+                      data_type::f4_e2m1, data_type::u3)
             ? 32
             : 4;
     if (brg->with_grouped_wei_decomp && !brg->with_src_dyn_quant) {
@@ -1011,7 +1020,13 @@ status_t brgemm_blocking(brgemm_desc_t *brg) {
         } else if (one_of(brg->dt_b, data_type::u2)) {
             brg->ld_step = 16;
             brg->rd_step = 4;
+        } else if (one_of(brg->dt_b, data_type::u3)) {
+            brg->ld_step = 32;
+            brg->rd_step = 4;
         }
+    } else if (brg->dt_b == data_type::u3) {
+        brg->ld_step = 8;
+        brg->rd_step = 1;
     }
 
     set_isa_impl(brg);
