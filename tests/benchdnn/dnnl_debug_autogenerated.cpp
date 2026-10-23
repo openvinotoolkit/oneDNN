@@ -55,6 +55,7 @@ dnnl_data_type_t str2dt(const char *str) {
     CASE(nf4);
     CASE(bin);
     CASE(u2);
+    CASE(u3);
     CASE(data_type_max);
 #undef CASE
     if (!strcmp("undef", str) || !strcmp("dnnl_data_type_undef", str))
@@ -626,6 +627,10 @@ dnnl_format_tag_t str2fmt_tag(const char *str) {
     CASE(aBC16c32b4c);
     CASE(aBC16c48b4c);
     CASE(aBC16c64b4c);
+    CASE(aBC4c8b4c);
+    CASE(aBC4c16b4c);
+    CASE(aBC4c24b4c);
+    CASE(aBC4c32b4c);
     CASE(aCB16b16c2b);
     CASE(aCB16b32c2b);
     CASE(aCB16b48c2b);

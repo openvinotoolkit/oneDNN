@@ -64,6 +64,7 @@ const char *dnnl_dt2str(dnnl_data_type_t v) {
     if (v == dnnl_nf4) return "nf4";
     if (v == dnnl_bin) return "bin";
     if (v == dnnl_u2) return "u2";
+    if (v == dnnl_u3) return "u3";
     if (v == dnnl_data_type_max) return "data_type_max";
     assert(!"unknown dt");
     return "unknown dt";
@@ -649,6 +650,10 @@ const char *dnnl_fmt_tag2str(dnnl_format_tag_t v) {
     if (v == dnnl_aBC16c32b4c) return "aBC16c32b4c";
     if (v == dnnl_aBC16c48b4c) return "aBC16c48b4c";
     if (v == dnnl_aBC16c64b4c) return "aBC16c64b4c";
+    if (v == dnnl_aBC4c8b4c) return "aBC4c8b4c";
+    if (v == dnnl_aBC4c16b4c) return "aBC4c16b4c";
+    if (v == dnnl_aBC4c24b4c) return "aBC4c24b4c";
+    if (v == dnnl_aBC4c32b4c) return "aBC4c32b4c";
     if (v == dnnl_aCB16b16c2b) return "aCB16b16c2b";
     if (v == dnnl_aCB16b32c2b) return "aCB16b32c2b";
     if (v == dnnl_aCB16b48c2b) return "aCB16b48c2b";
