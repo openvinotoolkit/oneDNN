@@ -422,8 +422,6 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::generate() {
                     if (jcp_.with_zero_points && jcp_.with_scales)
                         uni_vfmsub213ps(vmm_load, vmm_scales(ocb),
                                 vmm_zero_points(ocb));
-                    else if (jcp_.with_zero_points)
-                        uni_vsubps(vmm_load, vmm_load, vmm_zero_points(ocb));
                     else if (jcp_.with_scales)
                         uni_vmulps(vmm_load, vmm_load, vmm_scales(ocb));
                 }
@@ -466,9 +464,6 @@ void jit_brgemm_weights_decompression_kernel_t<isa>::generate() {
 
                     if (jcp_.with_zero_points && jcp_.with_scales)
                         uni_vfmsub213ps(vmm_weights(0), vmm_scales(ocb),
-                                vmm_zero_points(ocb));
-                    else if (jcp_.with_zero_points)
-                        uni_vsubps(vmm_weights(0), vmm_weights(0),
                                 vmm_zero_points(ocb));
                     else if (jcp_.with_scales)
                         uni_vmulps(vmm_weights(0), vmm_weights(0),
