@@ -55,6 +55,10 @@ struct jit_brgemm_kernel_t : public jit_base_brgemm_kernel_t {
         // The implementation uses is_superset(), is_subset() utilities.
         // So avoid isa_all, isa_undef in these comparisons.
         assert(!utils::one_of(brg.isa_impl, isa_all, isa_undef));
+        // f8 stores rely on is_fp8 for the converter register reservation
+        assert(IMPLICATION(
+                one_of(brg.dt_d, data_type::f8_e5m2, data_type::f8_e4m3),
+                brg.is_fp8));
         const dim_t is_ldb2_tail = brg.ldb2_tail ? 1 : 0;
         const dim_t is_ldb_tail = brg.ldb_tail ? 1 : 0;
         is_ldb_loop_ = brg.ldb2 + is_ldb2_tail + is_ldb_tail > 1;
@@ -318,9 +322,10 @@ private:
 
     static int get_max_effective_vregs(const brgemm_desc_t &brg) {
         auto used_vregs = 0;
+        // fp8: f32 -> f8 stores use vmm_fp8_emu_aux*, also on native fp8 ISAs
         if (brg.is_int8 && !brg.has_int8_vnni)
             used_vregs = 2;
-        else if (brg.is_fp8_via_convert())
+        else if (brg.is_fp8)
             used_vregs = 5;
         else if (brg.is_f16_b_non_amx_vnni())
             used_vregs = 2;
@@ -2251,7 +2256,8 @@ void jit_brgemm_kernel_t<Wmm>::store_accumulators_apply_post_ops(int bd_block,
     reg64_savable_guard_t reg_aux_D_backup_guard(
             {&reg_aux_D_backup}, brg.is_runtime_ldd && bd_block > 1);
 
-    if (brg.is_fp8_via_convert()) reg64_fp8_aux.save();
+    // f32 -> f8 stores clobber reg64_fp8_aux, also on native fp8 ISAs
+    if (brg.is_fp8) reg64_fp8_aux.save();
 
     if (is_superset(brg.isa_impl, avx10_2))
         prefetchrst2(ptr[reg_aux_D]);
@@ -2350,7 +2356,7 @@ void jit_brgemm_kernel_t<Wmm>::store_accumulators_apply_post_ops(int bd_block,
         if (brg.is_runtime_ldd && bd_block > 1 && ld == ld_block2 - 1)
             reg_D_shift_bytes.addTo(reg_aux_D);
     }
-    if (brg.is_fp8_via_convert()) reg64_fp8_aux.restore();
+    if (brg.is_fp8) reg64_fp8_aux.restore();
 }
 
 template <typename Wmm>
