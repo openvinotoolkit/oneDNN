@@ -91,6 +91,11 @@ protected:
         return is_superset(host_->max_cpu_isa(), cpu_isa_t::avx10_2);
     }
 
+    // Round-to-odd to 5 mantissa bits (see float8.cpp), so that f32 -> f16 -> f8 rounds only once.
+    // Clobbers xmm_aux1_, xmm_aux2_, xmm_aux3_ and reg64_aux_.
+    Xbyak::Xmm round_to_odd_for_f8(
+            const Xbyak::Xmm &xmm_out, const Xbyak::Operand &op_in);
+
     Xbyak::Zmm zmm_mask(
             const Xbyak::Xmm &xmm_in, const Xbyak::Xmm &xmm_with_mask) const {
         const Xbyak::Zmm zmm_out(xmm_in.getIdx());
