@@ -81,11 +81,14 @@ void parallel(int nthr, const std::function<void(int, int)> &f) {
         }
         threadpool_utils::activate_threadpool(tp);
     } else {
-        bool async = tp->get_flags()
+        const bool async = tp->get_flags()
                 & dnnl::threadpool_interop::threadpool_iface::ASYNCHRONOUS;
         counting_barrier_t b;
         if (async) b.init(nthr);
-        tp->parallel_for(nthr, [&, tp](int ithr, int nthr) {
+        // Keep the worker setup shared while choosing how to capture the
+        // potentially expensive std::function for each threadpool runtime.
+        auto body = [=](int ithr, int nthr,
+                            const std::function<void(int, int)> &fn) {
             bool is_master = threadpool_utils::get_active_threadpool() == tp;
             if (!is_master) {
                 threadpool_utils::activate_threadpool(tp);
@@ -98,7 +101,7 @@ void parallel(int nthr, const std::function<void(int, int)> &f) {
                 }
 #endif
             }
-            f(ithr, nthr);
+            fn(ithr, nthr);
             if (!is_master) {
 #if defined(DNNL_ENABLE_ITT_TASKS)
                 if (itt_enable)
@@ -106,9 +109,20 @@ void parallel(int nthr, const std::function<void(int, int)> &f) {
 #endif
                 threadpool_utils::deactivate_threadpool();
             }
-            if (async) b.notify();
-        });
-        if (async) b.wait();
+        };
+        if (async) {
+            // The threadpool may retain this callback after parallel_for
+            // returns. Copy f, and keep b alive until all workers notify.
+            tp->parallel_for(nthr, [=, &b](int ithr, int nthr) {
+                body(ithr, nthr, f);
+                b.notify();
+            });
+            b.wait();
+        } else {
+            // Synchronous threadpools finish before returning: do not copy f.
+            tp->parallel_for(
+                    nthr, [&](int ithr, int nthr) { body(ithr, nthr, f); });
+        }
     }
 #endif
 #endif
