@@ -21,7 +21,10 @@ file(GLOB_RECURSE SOURCES
 
 if(NOT DNNL_RISCV_USE_RVV_INTRINSICS)
     # Do not compile RISC-V implementations optimized with RVV intrinsics
-    list(FILTER SOURCES EXCLUDE REGEX "rvv_*")
+    list(REMOVE_ITEM SOURCES
+        "${CMAKE_CURRENT_SOURCE_DIR}/rvv_inner_product.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/rvv_gemm_reorder.cpp"
+    )
 
     # Registering a library w/o any sources leads to a CMake error.
     # If required, create an empty source file to prevent it.
