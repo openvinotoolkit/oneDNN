@@ -2730,12 +2730,29 @@ protected:
     template <typename Vmm>
     void downconvert_to_dst_dt(const Vmm &input, data_type_t dst_dt) {
         using Vmm_lower_t = typename vreg_traits_t<Vmm>::Vmm_lower_t;
+        constexpr bool is_zmm = std::is_same<Vmm, Xbyak::Zmm>::value;
         switch (dst_dt) {
             case data_type::bf16:
-                vcvtneps2bf16(Ymm(input.getIdx()), input);
+                if (is_zmm) {
+                    vcvtneps2bf16(Ymm(input.getIdx()), input);
+                } else {
+                    // Ymm -> Xmm: EVEX (avx512_core_bf16 + VL) or
+                    // VEX (AVX-NE-CONVERT, e.g. avx2_vnni_2) encoding
+                    assert(is_superset(conf_->isa, avx512_core_bf16)
+                            || is_superset(conf_->isa, avx2_vnni_2));
+                    vcvtneps2bf16(Xmm(input.getIdx()), input,
+                            is_superset(conf_->isa, avx512_core_bf16)
+                                    ? Xbyak::EvexEncoding
+                                    : Xbyak::VexEncoding);
+                }
                 break;
             case data_type::f16:
-                vcvtps2phx(Vmm_lower_t(input.getIdx()), input);
+                if (is_zmm) {
+                    vcvtps2phx(Vmm_lower_t(input.getIdx()), input);
+                } else {
+                    // Ymm -> Xmm: F16C instruction
+                    vcvtps2ph(Xmm(input.getIdx()), input, _op_mxcsr);
+                }
                 break;
             case data_type::f32:
                 // f32 is already in the correct format
@@ -2745,10 +2762,27 @@ protected:
         }
     }
 
+    /**
+    * @brief Converts two registers of F32 values to the specified destination
+    *        data type and packs the results into reg1:
+    *        lower half - converted reg1, upper half - converted reg2.
+    *
+    * @tparam Vmm Vector register type (Zmm, Ymm)
+    */
     template <typename Vmm>
     void downconvert_to_dst_dt(
             const Vmm &reg1, const Vmm &reg2, data_type_t dst_dt) {
         using Vmm_lower_t = typename vreg_traits_t<Vmm>::Vmm_lower_t;
+        constexpr bool is_zmm = std::is_same<Vmm, Xbyak::Zmm>::value;
+        if (!is_zmm && one_of(dst_dt, data_type::bf16, data_type::f16)) {
+            // No 2-source conversion on AVX2: convert each register into
+            // its lower Xmm and combine the halves.
+            downconvert_to_dst_dt(reg1, dst_dt);
+            downconvert_to_dst_dt(reg2, dst_dt);
+            vinserti128(Ymm(reg1.getIdx()), Ymm(reg1.getIdx()),
+                    Xmm(reg2.getIdx()), 1);
+            return;
+        }
         switch (dst_dt) {
             case data_type::bf16: vcvtne2ps2bf16(reg1, reg2, reg1); break;
             case data_type::f16: {
@@ -2756,7 +2790,7 @@ protected:
                 const auto src_vmm_lower1 = Vmm_lower_t(reg2.getIdx());
                 vcvtps2phx(src_vmm_lower0, reg1);
                 vcvtps2phx(src_vmm_lower1, reg2);
-                copy_half_reg(reg1, src_vmm_lower1);
+                copy_half_reg(Zmm(reg1.getIdx()), Ymm(src_vmm_lower1.getIdx()));
                 break;
             }
             case data_type::f32:
@@ -2765,6 +2799,39 @@ protected:
             default:
                 assert(!"Unsupported destination data type for decompression");
         }
+    }
+
+    /**
+    * @brief AVX2 helper: loads up to 16 contiguous F32 values from
+    *        ptr[reg + offset] and down-converts them to 16 bf16/f16 values
+    *        packed into a single Ymm (the same layout as a Ymm loaded with
+    *        16 bf16/f16 source values).
+    *        A Ymm holds only 8 F32 values, so data is loaded in two halves.
+    *        Elements beyond `nelems` are set to zero.
+    *
+    * @param dst Destination register
+    * @param tmp Temporary register (clobbered)
+    * @param nelems Number of valid F32 elements to load (0 <= nelems <= 16)
+    * @param dst_dt Destination data type (bf16 or f16)
+    */
+    void load_f32_and_downcvt_ymm(const Ymm &dst, const Ymm &tmp,
+            const Xbyak::Reg64 &reg, int64_t offset, int nelems,
+            data_type_t dst_dt) {
+        assert(nelems >= 0 && nelems <= 16);
+        assert(one_of(dst_dt, data_type::bf16, data_type::f16));
+        constexpr int half_elems = 8;
+        constexpr int f32_sz = static_cast<int>(sizeof(float));
+        auto load_half = [&](const Ymm &vmm, int64_t off, int n) {
+            if (n >= half_elems)
+                vmovups(vmm, ptr[reg + off]);
+            else if (n > 0)
+                load_bytes(vmm, reg, off, n * f32_sz);
+            else
+                uni_vpxor(vmm, vmm, vmm);
+        };
+        load_half(dst, offset, nstl::min(nelems, half_elems));
+        load_half(tmp, offset + half_elems * f32_sz, nelems - half_elems);
+        downconvert_to_dst_dt(dst, tmp, dst_dt);
     }
 
     /**
@@ -4067,6 +4134,18 @@ void jit_brgemm_matmul_copy_b_bf16_t<Vmm>::copy_2x32(
                 / elems_per_byte;
         const auto reg_src_load
                 = is_dynamic_stride && k % 2 != 0 ? reg_src_load_1 : reg_src;
+        if (std::is_same<Vmm, Xbyak::Ymm>::value
+                && conf_->orig_wei_dt == data_type::f32
+                && one_of(conf_->wei_dt, data_type::bf16, data_type::f16)) {
+            // AVX2: n_blk_step (16) F32 columns don't fit into a single Ymm,
+            // so load them in two halves and pack the down-converted values
+            // into one Ymm, as if 16 bf16/f16 values were loaded.
+            const int nelems = nstl::min(ncolumns - n, (int)n_blk_step);
+            load_f32_and_downcvt_ymm(Ymm(src_reg.getIdx()),
+                    Ymm(vmm_tmp.getIdx()), reg_src_load, offset, nelems,
+                    conf_->wei_dt);
+            return;
+        }
         auto load_addr = maybe_EVEX_compress_addr(reg_src_load, offset);
         if (!isa_has_masks(conf_->isa)) {
             if (is_tail)
@@ -5680,7 +5759,16 @@ void jit_brgemm_matmul_copy_b_transposed_t<Ymm>::copy_row_x_col(
 
         const bool is_tail = columns_tail > 0;
 
-        if (conf_->is_f32_with_int_wei) {
+        if (req_cvtps2xf16_ && conf_->orig_wei_dt == data_type::f32) {
+            // f32 -> bf16/f16 (e.g. bf32): k_blk_step_ (16) F32 values don't
+            // fit into a single Ymm, so load them in two halves and pack the
+            // down-converted values into one Ymm. The following 8x8 dword
+            // transpose then produces pairs of K values, i.e. VNNI layout.
+            // Note: tmp_vmm(1) is free here (see swap 1 below).
+            load_f32_and_downcvt_ymm(vmm_src, tmp_vmm(1), reg_src,
+                    i * src_stride_, is_tail ? columns_tail : k_blk_step_,
+                    conf_->wei_dt);
+        } else if (conf_->is_f32_with_int_wei) {
             const auto src_offset = (i * src_stride_) / src_elems_per_byte_;
             const auto addr = maybe_EVEX_compress_addr(reg_src, src_offset);
             const auto xmm_preload = Xmm(vmm_src.getIdx());
@@ -6919,6 +7007,11 @@ status_t create_brgemm_matmul_copy_b(
     // `false` on avx512_core_fp16.
     const bool is_f16 = !conf->is_xf16_fp8
             && everyone_is(data_type::f16, conf->src_dt, conf->wei_dt);
+    // On AVX2, f32 -> bf16 weights down-conversion requires AVX-NE-CONVERT
+    // (vcvtneps2bf16 xmm, ymm), which is available starting from avx2_vnni_2
+    if (conf->is_bf32 && !is_superset(conf->isa, avx512_core)
+            && !is_superset(conf->isa, avx2_vnni_2))
+        return status::unimplemented;
     if (conf->transposed_B) {
         if (is_superset(conf->isa, avx512_core))
             CHECK(safe_ptr_assign(copy_ker,
