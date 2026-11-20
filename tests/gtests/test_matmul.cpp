@@ -687,6 +687,13 @@ INSTANTIATE_TEST_SUITE_P(TensorDims, attr_test_t,
                         memory::data_type::bf16, 4),
                 std::make_tuple(memory::dims {2, 10, 10, 10},
                         memory::dims {2, 10, 10, 10}, tag::abcd,
-                        memory::data_type::f16, 4)));
+                        memory::data_type::f16, 4),
+                // 3D per_w broadcast must not make brgemm matmul bail out
+                std::make_tuple(memory::dims {3, 16, 16},
+                        memory::dims {1, 1, 16}, tag::abc,
+                        memory::data_type::f32, 3),
+                std::make_tuple(memory::dims {3, 16, 16},
+                        memory::dims {1, 1, 16}, tag::abc,
+                        memory::data_type::bf16, 3)));
 
 } // namespace dnnl
