@@ -26,6 +26,16 @@
 namespace dnnl {
 namespace impl {
 
+namespace {
+// Round-to-odd to 5 mantissa bits: clear the 18 low bits, set bit 18 if any was set.
+// Rounding the result to f8 (RNE) then equals a single rounding from f32.
+float round_to_odd_for_f8(float f) {
+    constexpr uint32_t mask = 0x3ffff;
+    const uint32_t u = utils::bit_cast<uint32_t>(f);
+    return utils::bit_cast<float>((u | ((u & mask) + mask)) & ~mask);
+}
+} // namespace
+
 float8_e8m0_t &float8_e8m0_t::operator=(float f) {
     // we keep exponent bits and discard sign bit.
     // - support only round to zero to simplify conversion.
@@ -155,7 +165,8 @@ float8_e5m2_t &float8_e5m2_t::operator=(bfloat16_t f) {
 }
 
 float8_e5m2_t &float8_e5m2_t::operator=(float f) {
-    float16_t f16 = f;
+    // round to odd first to avoid double rounding error
+    float16_t f16 = round_to_odd_for_f8(f);
     float8_e5m2_t f8 = f16;
     raw_bits_ = f8.raw_bits_;
     return *this;
@@ -267,7 +278,8 @@ float8_e4m3_t &float8_e4m3_t::operator=(float16_t f) {
 }
 
 float8_e4m3_t &float8_e4m3_t::operator=(float f) {
-    float16_t f16 = f;
+    // round to odd first to avoid double rounding error
+    float16_t f16 = round_to_odd_for_f8(f);
     float8_e4m3_t f8 = f16;
     raw_bits_ = f8.raw_bits_;
     return *this;

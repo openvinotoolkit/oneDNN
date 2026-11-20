@@ -33,6 +33,30 @@ void fp8_conversion_base_t::bcst_f8_to_f32(
     vcvt_f8_to_f32(xmm_out, tmp_xmm);
 }
 
+Xbyak::Xmm fp8_conversion_base_t::round_to_odd_for_f8(
+        const Xbyak::Xmm &xmm_out, const Xbyak::Operand &op_in) {
+    assert(utils::one_of(
+            true, op_in.isXMM(), op_in.isYMM(), op_in.isZMM(), op_in.isMEM()));
+
+    // keep the width of the input register, memory operand is loaded to zmm
+    const auto kind = op_in.isMEM() ? Xbyak::Operand::ZMM : op_in.getKind();
+    const Xbyak::Xmm vmm_in(
+            kind, op_in.isMEM() ? xmm_aux1_.getIdx() : op_in.getIdx());
+    const Xbyak::Xmm vmm_out(kind, xmm_aux2_.getIdx());
+    const Xbyak::Xmm vmm_mask(kind, xmm_aux3_.getIdx());
+
+    if (op_in.isMEM()) host_->vmovups(zmm_mask(xmm_aux1_, xmm_out), op_in);
+
+    // out = (in | ((in & mask) + mask)) & ~mask, mask covers the 18 low bits:
+    // bit 18 of ((in & mask) + mask) is set if any of the low bits is set
+    host_->mov(reg64_aux_.cvt32(), 0x3ffff);
+    host_->vpbroadcastd(vmm_mask, reg64_aux_.cvt32());
+    host_->vpandd(vmm_out, vmm_in, vmm_mask);
+    host_->vpaddd(vmm_out, vmm_out, vmm_mask);
+    host_->vpternlogd(vmm_out, vmm_in, vmm_mask, 0x54);
+    return vmm_out;
+}
+
 void fp8_conversion_e5m2_t::prepare_table() {
     host_->align(64);
     host_->L(label_vnni_permute_index_table_);
@@ -532,8 +556,9 @@ void fp8_conversion_e5m2_t::vcvt_f32_to_f8(
 
     const Xbyak::Ymm ymm_out(xmm_out.getIdx());
 
-    // f16 <- f32
-    host_->vcvtps2phx(op_in.isXMM() ? xmm_out : ymm_mask(xmm_out), op_in);
+    // f16 <- f32 (exact after rounding to odd, to avoid double rounding)
+    host_->vcvtps2phx(op_in.isXMM() ? xmm_out : ymm_mask(xmm_out),
+            round_to_odd_for_f8(xmm_out, op_in));
     // f8_e5m2 <- f16 (RNE)
     if (is_fp8_native())
         host_->vcvtph2bf8(xmm_out, ymm_out);
@@ -594,8 +619,8 @@ void fp8_conversion_e4m3_t::vcvt_f32_to_f8(
 
     const Xbyak::Ymm ymm_out(xmm_out.getIdx());
 
-    // f16 <- f32
-    host_->vcvtps2phx(ymm_mask(xmm_out), op_in);
+    // f16 <- f32 (exact after rounding to odd, to avoid double rounding)
+    host_->vcvtps2phx(ymm_mask(xmm_out), round_to_odd_for_f8(xmm_out, op_in));
     // f8_e4m3 <- f16 (RNE)
     if (is_fp8_native())
         host_->vcvtph2hf8(xmm_out, ymm_out);

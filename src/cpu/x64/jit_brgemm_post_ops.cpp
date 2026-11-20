@@ -1144,9 +1144,9 @@ void dnnl::impl::cpu::x64::jit_brgemm_kernel_post_ops_t<Vmm>::generate() {
     const int nb2_tail = nb % n_block2_;
     int n_block = (nb2 == 0) ? nstl::max(1, nb2_tail) : n_block2_;
 
-    int m_max_regs = (brg_.is_bf16_emu
-                    ? 24
-                    : (brg_.is_fp8_via_convert() ? 23 : max_vregs_ - 4));
+    // fp8 converters use emu_reserv_* (zmm23-27) as scratch, keep them free
+    const bool has_f8_cvt = f8_e5m2_cvt_ || f8_e4m3_cvt_;
+    int m_max_regs = brg_.is_bf16_emu ? 24 : has_f8_cvt ? 23 : max_vregs_ - 4;
     m_max_regs /= n_block;
     int m_block
             = static_cast<int>(nstl::min<dim_t>(brg_.bcast_dim, m_max_regs));
