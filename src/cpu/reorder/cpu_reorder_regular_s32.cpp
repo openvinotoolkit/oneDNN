@@ -44,11 +44,7 @@ const impl_list_map_t &regular_s32_impl_list_map() {
             DNNL_NON_X64_ONLY(REG_SR_BIDIR(s32, any, s8, nChw16c))
             DNNL_NON_X64_ONLY(REG_SR_BIDIR(s32, any, u8, nChw16c))
 
-            REG_SR(s32, any, f32, any, fmt_order_any, spec_reference)
-            REG_SR(s32, any, s32, any, fmt_order_any, spec_reference)
-            REG_SR(s32, any, s8, any, fmt_order_any, spec_reference)
-            REG_SR(s32, any, u8, any, fmt_order_any, spec_reference)
-
+            CPU_REORDER_INSTANCE(ref_reorder_t)
             nullptr,
         }},
     });

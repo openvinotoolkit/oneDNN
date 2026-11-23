@@ -46,6 +46,10 @@ void jit_brgemm_src_quantization_kernel_t<isa>::load_src(
             uni_vpslld(vmm_load, vmm_load, 16);
             break;
         }
+        case data_type::f16: {
+            vcvtph2ps(vmm_load, addr);
+            break;
+        }
         default: assert(!"unsupported data type");
     }
 }

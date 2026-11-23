@@ -18,6 +18,7 @@
 
 #include "common/c_types_map.hpp"
 #include "common/dnnl_thread.hpp"
+#include "common/float16.hpp"
 #include "common/type_helpers.hpp"
 #include "common/utils.hpp"
 
@@ -167,6 +168,7 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
         const size_t orig_src_dt_size = types::data_type_size(jbgp.orig_src_dt);
         auto src_ptr_f32 = reinterpret_cast<const float *>(src);
         auto src_ptr_bf16 = reinterpret_cast<const bfloat16_t *>(src);
+        auto src_ptr_f16 = reinterpret_cast<const float16_t *>(src);
         auto qsrc_ptr = qsrc;
         auto src_dscales_ptr = src_dscales;
         auto src_grouped_sum_ptr = src_grouped_sum;
@@ -175,6 +177,7 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
         // orig_src_dt is loop-invariant across all mb iterations; resolve it once
         // here so the tail loops below stay branch-free.
         const bool is_bf16_src = (jbgp.orig_src_dt == data_type::bf16);
+        const bool is_f16_src = (jbgp.orig_src_dt == data_type::f16);
 
         parallel_nd(jbgp.mb, [&](dim_t mb) {
             src_quantization_runtime_params_t rt_params = {};
@@ -195,6 +198,12 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                                 std::abs(static_cast<float>(
                                         src_ptr_bf16[mb * jbgp.ic + ic])));
                     }
+                } else if (is_f16_src) {
+                    for (int ic = vec_loop_end; ic < jbgp.ic; ic++) {
+                        amax = std::max(amax,
+                                std::abs(static_cast<float>(
+                                        src_ptr_f16[mb * jbgp.ic + ic])));
+                    }
                 } else {
                     for (int ic = vec_loop_end; ic < jbgp.ic; ic++) {
                         amax = std::max(
@@ -212,6 +221,14 @@ status_t brgemm_inner_product_fwd_t<isa>::execute_forward(
                                 = static_cast<int8_t>(std::round(
                                         static_cast<float>(
                                                 src_ptr_bf16[mb * jbgp.ic + ic])
+                                        * qscale));
+                    }
+                } else if (is_f16_src) {
+                    for (int ic = vec_loop_end; ic < jbgp.ic; ic++) {
+                        qsrc_ptr[mb * jbgp.ic + ic]
+                                = static_cast<int8_t>(std::round(
+                                        static_cast<float>(
+                                                src_ptr_f16[mb * jbgp.ic + ic])
                                         * qscale));
                     }
                 } else {

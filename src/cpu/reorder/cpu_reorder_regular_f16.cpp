@@ -35,13 +35,7 @@ const impl_list_map_t &regular_f16_impl_list_map() {
 
             DNNL_AARCH64_ONLY(CPU_REORDER_INSTANCE(aarch64::jit_uni_reorder_t))
 
-            REG_SR(f16, any, f8_e5m2, any, fmt_order_any, spec_reference)
-            REG_SR(f16, any, f8_e4m3, any, fmt_order_any, spec_reference)
-            REG_SR(f16, any, f16, any, fmt_order_any, spec_reference)
-            REG_SR(f16, any, f32, any, fmt_order_any, spec_reference)
-            REG_SR(f16, any, s8, any, fmt_order_any, spec_reference)
-            REG_SR(f16, any, u8, any, fmt_order_any, spec_reference)
-
+            CPU_REORDER_INSTANCE(ref_reorder_t)
             nullptr,
         }},
     });

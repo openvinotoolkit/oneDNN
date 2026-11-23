@@ -120,6 +120,7 @@ if(NOT DNNL_CPU_RUNTIME STREQUAL "NONE")
         test_gemm_u8u8s32.cpp
         test_convolution_format_any.cpp
         test_global_scratchpad.cpp
+        test_reorder_dequantization.cpp
         )
       if(DNNL_CPU_RUNTIME STREQUAL "THREADPOOL")
         list(APPEND CPU_SPECIFIC_TESTS test_iface_threadpool.cpp)

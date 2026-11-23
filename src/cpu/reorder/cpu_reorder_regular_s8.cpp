@@ -59,13 +59,7 @@ const impl_list_map_t &regular_s8_impl_list_map() {
             DNNL_NON_X64_ONLY(REG_SR_BIDIR(s8, any, bf16, gOIhw4i16o4i))
             DNNL_NON_X64_ONLY(REG_SR_BIDIR(s8, any, s8, gOIhw4i16o4i))
 
-            REG_SR(s8, any, f32, any, fmt_order_any, spec_reference)
-            REG_SR(s8, any, s32, any, fmt_order_any, spec_reference)
-            REG_SR(s8, any, bf16, any, fmt_order_any, spec_reference)
-            REG_SR(s8, any, f16, any, fmt_order_any, spec_reference)
-            REG_SR(s8, any, s8, any, fmt_order_any, spec_reference)
-            REG_SR(s8, any, u8, any, fmt_order_any, spec_reference)
-
+            CPU_REORDER_INSTANCE(ref_reorder_t)
             DNNL_X64_ONLY(CPU_REORDER_INSTANCE(simple_sparse_reorder_v0_t, s8, format_tag::oi, s8, OI16i64o4i, sparse_inputs_order::keep, sparse_spec::reference))
             DNNL_X64_ONLY(CPU_REORDER_INSTANCE(simple_sparse_reorder_v0_t, s8, format_tag::io, s8, OI16i64o4i, sparse_inputs_order::keep, sparse_spec::reference))
 

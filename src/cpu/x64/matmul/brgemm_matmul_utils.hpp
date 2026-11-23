@@ -221,6 +221,8 @@ struct brgemm_matmul_conf_t {
     bool transposed_A;
     bool transposed_B;
     bool blocked_B;
+    // Copy B without conversion or VNNI interleaving.
+    bool plain_B = false;
     bool treat_A_as_plain;
 
     // A_strides could be changed during

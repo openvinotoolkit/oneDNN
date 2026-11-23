@@ -53,13 +53,11 @@ const impl_list_map_t &regular_s4_impl_list_map() {
             REG_SR(s4, any, s4, aBC16c64b4c, fmt_order_keep)
             REG_SR(s4, any, u8, any, fmt_order_keep, spec::reference)
             REG_SR(s4, any, f32, any, fmt_order_keep, spec::reference)
-            REG_SR(s4, any, f32, any, fmt_order::any, spec::reference)
-            REG_SR(s4, any, bf16, any, fmt_order::any, spec::reference)
-            REG_SR(s4, any, f16, any, fmt_order::any, spec::reference)
+            CPU_REORDER_INSTANCE(ref_reorder_t)
             nullptr,
         }},
         {{s4, f32, 0}, {
-            REG_SR(s4, any, f32, any, fmt_order::any, spec::reference)
+            CPU_REORDER_INSTANCE(ref_reorder_t)
             DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64_brgemm_matmul_copy_reorder_t))
             nullptr,
         }},

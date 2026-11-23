@@ -234,6 +234,23 @@ const std::map<pk_dt_impl_key_t, std::vector<impl_list_item_t>> &impl_list_map()
             CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx512_core_bf16)
             nullptr,
         }},
+        // F16 sources are quantized to s8 inside the compressed-weight primitive.
+        {{forward, f16, u4, f32}, {
+            CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx512_core_fp16)
+            nullptr,
+        }},
+        {{forward, f16, u4, f16}, {
+            CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx512_core_fp16)
+            nullptr,
+        }},
+        {{forward, f16, u8, f32}, {
+            CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx512_core_fp16)
+            nullptr,
+        }},
+        {{forward, f16, u8, f16}, {
+            CPU_INSTANCE_AVX512(brgemm_inner_product_fwd_t, avx512_core_fp16)
+            nullptr,
+        }},
         {{forward, f16, f16, f32}, {
             // CPU_INSTANCE_X64(matmul_inner_product_fwd_t)
             CPU_INSTANCE_AMX(brgemm_inner_product_fwd_t, avx512_core_amx_fp16)

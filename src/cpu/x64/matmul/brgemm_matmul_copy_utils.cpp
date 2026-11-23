@@ -14,12 +14,18 @@
 * limitations under the License.
 *******************************************************************************/
 
+#include <cstring>
+#include <memory>
+
 #include "common/c_types_map.hpp"
+#include "common/dnnl_thread.hpp"
+#include "common/memory_desc.hpp"
 #include "common/nstl.hpp"
 #include "common/type_helpers.hpp"
 #include "common/utils.hpp"
 #include "cpu/x64/jit_avx512_core_fp8cvt.hpp"
 #include "cpu/x64/jit_generator.hpp"
+#include "cpu/x64/jit_uni_reorder.hpp"
 
 #include "cpu/x64/matmul/brgemm_matmul_copy_utils.hpp"
 
@@ -34,6 +40,72 @@ using namespace dnnl::impl::utils;
 using namespace Xbyak;
 
 #define GET_OFF(x) offsetof(ctx_t, x)
+
+struct jit_brgemm_matmul_copy_b_plain_t final
+    : public jit_brgemm_matmul_copy_b_t {
+    explicit jit_brgemm_matmul_copy_b_plain_t(const brgemm_matmul_conf_t *conf)
+        : jit_brgemm_matmul_copy_b_t(conf) {}
+
+    status_t create_kernel() override {
+        if (!one_of(conf_->wei_dt, data_type::f16, data_type::f32)
+                || conf_->orig_wei_dt != conf_->wei_dt
+                || conf_->src_dt != data_type::f32 || conf_->K <= 0
+                || conf_->N <= 0 || conf_->N > conf_->N_blk
+                || conf_->K_blk != conf_->K || conf_->K_tail != 0
+                || conf_->LDB < conf_->N || conf_->blocked_B
+                || conf_->with_wei_decompression || conf_->has_zero_point_a
+                || conf_->has_zero_point_b || conf_->s8s8_compensation_required
+                || conf_->apply_scales_in_buffer_b
+                || conf_->req_wei_vnni_downconvert)
+            return status::unimplemented;
+
+        const auto element_size
+                = static_cast<dim_t>(types::data_type_size(conf_->wei_dt));
+        if (conf_->copy_B_wei_stride <= 0
+                || conf_->copy_B_wei_stride % element_size != 0
+                || conf_->b_dt_sz != element_size
+                || conf_->tr_b_dt_sz != element_size)
+            return status::invalid_arguments;
+
+        const dim_t src_ld = conf_->copy_B_wei_stride / element_size;
+        const dims_t dimensions {conf_->K, conf_->N};
+        const dims_t src_strides {conf_->transposed_B ? 1 : src_ld,
+                conf_->transposed_B ? src_ld : 1};
+        const dims_t dst_strides {conf_->LDB, 1};
+        memory_desc_t src, dst;
+        CHECK(memory_desc_init_by_strides(
+                src, 2, dimensions, conf_->wei_dt, src_strides));
+        CHECK(memory_desc_init_by_strides(
+                dst, 2, dimensions, conf_->wei_dt, dst_strides));
+        primitive_attr_t attributes;
+        tr::prb_t problem {};
+        CHECK(tr::prb_init(problem, src, dst, &attributes));
+        if (problem.is_tail_present || problem.ioff != 0 || problem.ooff != 0)
+            return status::unimplemented;
+        tr::kernel_t::desc_t descriptor {};
+        CHECK(tr::kernel_t::desc_init(descriptor, problem, problem.ndims));
+        if (descriptor.prb.ndims != problem.ndims) return status::unimplemented;
+        CHECK(safe_ptr_assign(kernel_, tr::kernel_t::create(descriptor)));
+        return kernel_->create_kernel();
+    }
+
+    void operator()(ctx_t *ctx) override {
+        assert(ctx->current_K_iters == conf_->K
+                && ctx->current_N_blk == conf_->N);
+        auto *dst = const_cast<void *>(ctx->tr_src);
+        const auto bytes = static_cast<size_t>(conf_->K)
+                * static_cast<size_t>(conf_->LDB)
+                * types::data_type_size(conf_->wei_dt);
+        std::memset(dst, 0, bytes);
+        tr::call_param_t parameters {};
+        parameters.in = ctx->src;
+        parameters.out = dst;
+        (*kernel_)(&parameters);
+    }
+
+private:
+    std::unique_ptr<tr::kernel_t> kernel_;
+};
 
 template <typename Vmm>
 struct jit_brgemm_matmul_copy_a_impl_t : public jit_brgemm_matmul_copy_a_t,
@@ -6911,6 +6983,11 @@ private:
 status_t create_brgemm_matmul_copy_b(
         std::unique_ptr<jit_brgemm_matmul_copy_b_t> &copy_ker,
         const brgemm_matmul_conf_t *conf) {
+    if (conf->plain_B) {
+        CHECK(safe_ptr_assign(
+                copy_ker, new jit_brgemm_matmul_copy_b_plain_t(conf)));
+        return copy_ker->create_kernel();
+    }
     const bool is_bf16 = !conf->is_xf16_fp8
             && everyone_is(data_type::bf16, conf->src_dt, conf->wei_dt);
     const bool is_f32 = everyone_is(data_type::f32, conf->src_dt, conf->wei_dt);

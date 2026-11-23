@@ -120,7 +120,10 @@ status_t ip_attr_check(const inner_product_desc_t &desc, const engine_t *engine,
                               data_type::nf4, data_type::s4, data_type::u4,
                               data_type::f4_e2m1, data_type::u2, data_type::u3))
             || (one_of(src_dt, data_type::f32)
-                    && one_of(wei_dt, data_type::f16, data_type::bf16));
+                    && one_of(wei_dt, data_type::f16, data_type::bf16))
+            || (src_dt == data_type::f16
+                    && one_of(wei_dt, data_type::u4, data_type::u8)
+                    && !attr->src_dyn_quant_params_.has_default_values());
     auto attr_mask = smask_t::none;
     // From oneDNN 3.5, those checks must be skipped if wei_decomp is enabled
     // reference from src/plugins/intel_cpu/thirdparty/onednn/src/common/matmul.cpp:L62

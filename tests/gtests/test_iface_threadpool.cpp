@@ -14,6 +14,10 @@
 * limitations under the License.
 *******************************************************************************/
 
+#include <cstring>
+#include <new>
+
+#include "common/stream_impl.hpp"
 #include "dnnl_test_common.hpp"
 #include "gtest/gtest.h"
 
@@ -72,6 +76,17 @@ TEST_F(threadpool_test_t, TestMaxConcurrencyConcurrent) {
 
     for (auto &r : results)
         ASSERT_EQ(r, dnnl_success);
+}
+
+TEST_F(threadpool_test_t, TestStreamVerboseProfilerInitialization) {
+    // Reused storage must not affect a new stream's profiler state.
+    alignas(impl::stream_impl_t) unsigned char
+            storage[sizeof(impl::stream_impl_t)];
+    std::memset(storage, 0xa5, sizeof(storage));
+    auto *stream = new (storage) impl::stream_impl_t(
+            static_cast<threadpool_interop::threadpool_iface *>(nullptr));
+    EXPECT_FALSE(stream->is_verbose_profiler_enabled());
+    stream->~stream_impl_t();
 }
 
 } // namespace dnnl

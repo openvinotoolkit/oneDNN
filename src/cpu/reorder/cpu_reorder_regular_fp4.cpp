@@ -29,7 +29,7 @@ const impl_list_map_t &regular_fp4_impl_list_map() {
             nullptr,
         }},
         {{f4_e2m1, data_type::undef, 0}, {
-            REG_SR(f4_e2m1, any, f32, any, fmt_order::any, spec::reference)
+            CPU_REORDER_INSTANCE(ref_reorder_t)
             REG_SR(f4_e2m1, any, f4_e2m1, OI8i8o2i, fmt_order_keep)
             REG_SR(f4_e2m1, any, f4_e2m1, OI8i16o2i, fmt_order_keep)
             REG_SR(f4_e2m1, any, f4_e2m1, OI8i24o2i, fmt_order_keep)
@@ -46,7 +46,7 @@ const impl_list_map_t &regular_fp4_impl_list_map() {
             nullptr,
         }},
         {{f4_e3m0, data_type::undef, 0}, {
-            REG_SR(f4_e3m0, any, f32, any, fmt_order::any, spec::reference)
+            CPU_REORDER_INSTANCE(ref_reorder_t)
             nullptr,
         }},
     });

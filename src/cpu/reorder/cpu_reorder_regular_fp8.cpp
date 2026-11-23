@@ -30,11 +30,7 @@ const impl_list_map_t &regular_fp8_impl_list_map() {
             DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64::jit_blk_reorder_t))
             DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64::jit_uni_reorder_t))
 
-            REG_SR(f8_e5m2, any, f8_e5m2, any, fmt_order::any, spec::reference)
-            REG_SR(f8_e5m2, any, f16, any, fmt_order::any, spec::reference)
-            REG_SR(f8_e5m2, any, bf16, any, fmt_order::any, spec::reference)
-            REG_SR(f8_e5m2, any, f32, any, fmt_order::any, spec::reference)
-
+            CPU_REORDER_INSTANCE(ref_reorder_t)
             nullptr,
         }},
         // f8_e4m3 ->
@@ -43,16 +39,12 @@ const impl_list_map_t &regular_fp8_impl_list_map() {
             DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64::jit_blk_reorder_t))
             DNNL_X64_ONLY(CPU_REORDER_INSTANCE(x64::jit_uni_reorder_t))
 
-            REG_SR(f8_e4m3, any, f8_e4m3, any, fmt_order::any, spec::reference)
-            REG_SR(f8_e4m3, any, f16, any, fmt_order::any, spec::reference)
-            REG_SR(f8_e4m3, any, bf16, any, fmt_order::any, spec::reference)
-            REG_SR(f8_e4m3, any, f32, any, fmt_order::any, spec::reference)
-
+            CPU_REORDER_INSTANCE(ref_reorder_t)
             nullptr,
         }},
         // e8m0 -> f32
         {{e8m0, f32, 0}, {
-            REG_SR(e8m0, any, f32, any, fmt_order::any, spec::reference)
+            CPU_REORDER_INSTANCE(ref_reorder_t)
             nullptr,
         }},
 

@@ -1577,7 +1577,9 @@ status_t jit_brgemm_ip_conf_t::init_conf_base(cpu_isa_t isa,
     jbgp.weights_decompression = (one_of(jbgp.src_dt, f32, bf16)
                                          && one_of(jbgp.wei_dt, u8, s8, nf4, s4,
                                                  u4, u2, u3, f4_e2m1))
-            || (one_of(jbgp.src_dt, f32) && one_of(jbgp.wei_dt, f16, bf16));
+            || (one_of(jbgp.src_dt, f32) && one_of(jbgp.wei_dt, f16, bf16))
+            || (jbgp.src_dt == f16 && one_of(jbgp.wei_dt, u4, u8)
+                    && !attr.src_dyn_quant_params_.has_default_values());
     jbgp.wei_decomp_algo = weights_decomp_kind_t::immediate;
     jbgp.orig_wei_dt = jbgp.wei_dt;
     jbgp.with_grouped_weights_decompression = false;
@@ -1738,8 +1740,8 @@ status_t jit_brgemm_ip_conf_t::init_conf_base(cpu_isa_t isa,
 
     if (!IMPLICATION(is_int8,
                 one_of(isa, avx2_vnni, avx2_vnni_2, avx512_core,
-                        avx512_core_vnni, avx512_core_amx, avx10_2,
-                        avx10_2_amx_2)))
+                        avx512_core_vnni, avx512_core_fp16, avx512_core_amx,
+                        avx10_2, avx10_2_amx_2)))
         return status::unimplemented;
     if (!IMPLICATION(is_bf16,
                 one_of(isa, avx2_vnni_2, avx512_core_bf16, avx512_core_amx)))
