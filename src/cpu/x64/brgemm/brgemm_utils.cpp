@@ -1009,8 +1009,9 @@ status_t brgemm_blocking(brgemm_desc_t *brg) {
                     && one_of(brg->dt_b, data_type::u8, data_type::s8))
             && !(one_of(brg->dt_a, data_type::f32)
                     && one_of(brg->dt_b, data_type::bf16, data_type::f16));
-    brg->ld_step
-            = is_b_in_vnni_format ? data_type_vnni_granularity(brg->dt_b) : 1;
+    brg->ld_step = brg->is_f16_b_non_amx_vnni()
+            ? 2
+            : (is_b_in_vnni_format ? data_type_vnni_granularity(brg->dt_b) : 1);
     const bool has_no_vnni_compute_instruction
             = (brg->is_f16
                       && one_of(brg->isa_impl, avx2_vnni_2, avx512_core_fp16))
