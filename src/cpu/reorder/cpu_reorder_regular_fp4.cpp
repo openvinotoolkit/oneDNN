@@ -39,6 +39,16 @@ const impl_list_map_t &regular_fp4_impl_list_map() {
             REG_SR(f4_e2m1, any, f4_e2m1, OI16i32o2i, fmt_order_keep)
             REG_SR(f4_e2m1, any, f4_e2m1, OI16i48o2i, fmt_order_keep)
             REG_SR(f4_e2m1, any, f4_e2m1, OI16i64o2i, fmt_order_keep)
+            // batched (per-expert) weights for GatherMatmul, same _BC kernel as u4
+            REG_SR(f4_e2m1, any, f4_e2m1, aBC8c8b2c, fmt_order_keep)
+            REG_SR(f4_e2m1, any, f4_e2m1, aBC8c16b2c, fmt_order_keep)
+            REG_SR(f4_e2m1, any, f4_e2m1, aBC8c24b2c, fmt_order_keep)
+            REG_SR(f4_e2m1, any, f4_e2m1, aBC8c32b2c, fmt_order_keep)
+            REG_SR(f4_e2m1, any, f4_e2m1, aBC8c64b2c, fmt_order_keep)
+            REG_SR(f4_e2m1, any, f4_e2m1, aBC16c16b2c, fmt_order_keep)
+            REG_SR(f4_e2m1, any, f4_e2m1, aBC16c32b2c, fmt_order_keep)
+            REG_SR(f4_e2m1, any, f4_e2m1, aBC16c48b2c, fmt_order_keep)
+            REG_SR(f4_e2m1, any, f4_e2m1, aBC16c64b2c, fmt_order_keep)
             nullptr,
         }},
         {{f32, f4_e3m0, 0}, {
